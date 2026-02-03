@@ -1,13 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'core/config/secrets.dart';
 import 'core/di/injection.dart';
+import 'core/utils/logger.dart';
 import 'presentation/app.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Supabase for Watch Party (realtime sync)
+  try {
+    await Supabase.initialize(
+      url: Secrets.supabaseUrl,
+      anonKey: Secrets.supabaseAnonKey,
+    );
+    Logger.d('Supabase initialized', tag: 'Main');
+  } catch (e) {
+    Logger.w('Supabase init failed: $e', tag: 'Main');
+  }
 
   // Initialize MediaKit
   MediaKit.ensureInitialized();

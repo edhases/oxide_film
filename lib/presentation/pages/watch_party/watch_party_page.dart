@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:get_it/get_it.dart';
+import 'package:go_router/go_router.dart';
 import '../../../data/services/watch_party_service.dart';
 
 /// Page for creating or joining a watch party
@@ -14,26 +16,37 @@ class WatchPartyPage extends StatefulWidget {
 }
 
 class _WatchPartyPageState extends State<WatchPartyPage> {
-  final _service = WatchPartyService();
-  final _nameController = TextEditingController(text: 'User');
-  final _hostController = TextEditingController();
-  final _portController = TextEditingController();
+  final _service = GetIt.instance<WatchPartyService>();
+  late final TextEditingController _nameController;
+  final _roomCodeController = TextEditingController();
   final _chatController = TextEditingController();
   final _chatScrollController = ScrollController();
+
+  bool _isInPlayer = false;
+  bool _wasPlaying = false;
 
   @override
   void initState() {
     super.initState();
+    _nameController = TextEditingController(text: _service.myName);
     _service.addListener(_onServiceChanged);
+    _wasPlaying = _service.isPlaying;
+    // Check initial state after build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_service.isHost &&
+          _service.isPlaying &&
+          _service.room?.mediaUrl != null) {
+        _enterPlayer();
+      }
+    });
   }
 
   @override
   void dispose() {
     _service.removeListener(_onServiceChanged);
-    _service.dispose();
+    // _service.dispose(); // Singleton, do not dispose
     _nameController.dispose();
-    _hostController.dispose();
-    _portController.dispose();
+    _roomCodeController.dispose();
     _chatController.dispose();
     _chatScrollController.dispose();
     super.dispose();
@@ -41,6 +54,24 @@ class _WatchPartyPageState extends State<WatchPartyPage> {
 
   void _onServiceChanged() {
     setState(() {});
+
+    // Auto-navigate to player if playback starts and we are not host
+    if (!_service.isHost &&
+        _service.state == WatchPartyState.connected &&
+        _service.room?.mediaUrl != null) {
+      // If playing started (edge trigger) or we are playing and not in player
+      if (_service.isPlaying && (!_wasPlaying || !_isInPlayer)) {
+        // If we just backed out, _isInPlayer is false, _wasPlaying is true (from previous loop).
+        // If we want to force re-entry only on NEW play commands, check edge `_service.isPlaying && !_wasPlaying`.
+        // If we want to allow re-entry if the user just sits there, we might need a timeout or the "Join" button.
+        // Let's stick to edge trigger OR if it's playing and we aren't there (but be careful of loops).
+
+        if (_service.isPlaying && !_wasPlaying) {
+          _enterPlayer();
+        }
+      }
+    }
+    _wasPlaying = _service.isPlaying;
 
     // Auto-scroll chat
     if (_chatScrollController.hasClients) {
@@ -52,6 +83,19 @@ class _WatchPartyPageState extends State<WatchPartyPage> {
         );
       });
     }
+  }
+
+  Future<void> _enterPlayer() async {
+    if (_isInPlayer) return;
+    if (_service.room?.mediaUrl == null) return;
+
+    _isInPlayer = true;
+    await context.push(
+      '/player?url=${Uri.encodeComponent(_service.room!.mediaUrl!)}&title=${Uri.encodeComponent(_service.room!.mediaTitle ?? 'Movie')}',
+    );
+    _isInPlayer = false;
+    // When we return, update _wasPlaying to avoid immediate re-trigger if still playing
+    _wasPlaying = _service.isPlaying;
   }
 
   @override
@@ -124,6 +168,38 @@ class _WatchPartyPageState extends State<WatchPartyPage> {
                   ),
                 ],
               ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Info banner about service
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.tertiaryContainer.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: theme.colorScheme.tertiary.withValues(alpha: 0.3),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 20,
+                  color: theme.colorScheme.tertiary,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Спільний перегляд працює через інтернет. '
+                    'Це експериментальна функція.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onTertiaryContainer,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 16),
@@ -212,59 +288,38 @@ class _WatchPartyPageState extends State<WatchPartyPage> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Введіть IP-адресу та порт для підключення',
+                    'Введіть код кімнати для підключення',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: Colors.grey,
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        flex: 2,
-                        child: TextField(
-                          controller: _hostController,
-                          decoration: const InputDecoration(
-                            hintText: '192.168.x.x',
-                            labelText: 'IP адреса',
-                            prefixIcon: Icon(Icons.computer),
-                          ),
-                          keyboardType: TextInputType.number,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextField(
-                          controller: _portController,
-                          decoration: const InputDecoration(
-                            hintText: '8080',
-                            labelText: 'Порт',
-                          ),
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly,
-                          ],
-                        ),
-                      ),
-                    ],
+                  TextField(
+                    controller: _roomCodeController,
+                    decoration: const InputDecoration(
+                      hintText: 'ABCD12',
+                      labelText: 'Код кімнати',
+                      prefixIcon: Icon(Icons.key),
+                    ),
+                    textCapitalization: TextCapitalization.characters,
+                    maxLength: 6,
                   ),
                   const SizedBox(height: 16),
                   FilledButton.icon(
                     onPressed: () async {
-                      final host = _hostController.text.trim();
-                      final port = int.tryParse(_portController.text.trim());
+                      final roomCode = _roomCodeController.text.trim();
 
-                      if (host.isEmpty || port == null) {
+                      if (roomCode.isEmpty || roomCode.length < 6) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content: Text('Введіть IP адресу та порт'),
+                            content: Text('Введіть 6-символьний код кімнати'),
                           ),
                         );
                         return;
                       }
 
                       _service.setMyName(_nameController.text);
-                      await _service.joinRoom(host, port);
+                      await _service.joinRoom(roomCode);
                     },
                     icon: const Icon(Icons.login),
                     label: const Text('Приєднатися'),
@@ -279,95 +334,248 @@ class _WatchPartyPageState extends State<WatchPartyPage> {
   }
 
   Widget _buildConnectedState(ThemeData theme) {
-    return Column(
-      children: [
-        // Room info bar
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          color: theme.colorScheme.surfaceContainerHighest,
-          child: Row(
-            children: [
-              Icon(
-                _service.isHost ? Icons.tv : Icons.group,
-                size: 20,
-                color: theme.colorScheme.primary,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _service.isHost ? 'Ви хост' : 'Підключено до хоста',
-                      style: theme.textTheme.titleSmall,
-                    ),
-                    if (_service.room?.connectionString != null &&
-                        _service.isHost)
-                      Text(
-                        'Код підключення: ${_service.room!.connectionString}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: Colors.grey,
-                        ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 600;
+
+        return Column(
+          children: [
+            // Room info bar
+            _buildRoomHeader(theme, isMobile),
+
+            // Main content
+            Expanded(
+              child: isMobile
+                  ? DefaultTabController(
+                      length: 2,
+                      child: Column(
+                        children: [
+                          Container(
+                            color: theme.colorScheme.surface,
+                            child: const TabBar(
+                              tabs: [
+                                Tab(icon: Icon(Icons.people), text: 'Учасники'),
+                                Tab(icon: Icon(Icons.chat), text: 'Чат'),
+                              ],
+                            ),
+                          ),
+                          Expanded(
+                            child: TabBarView(
+                              children: [
+                                _buildParticipantsPanel(theme),
+                                _buildChatPanel(theme),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                  ],
-                ),
-              ),
-              if (_service.isHost)
-                IconButton(
-                  icon: const Icon(Icons.copy, size: 20),
-                  tooltip: 'Копіювати код',
-                  onPressed: () {
-                    if (_service.room != null) {
-                      Clipboard.setData(
-                        ClipboardData(text: _service.room!.connectionString),
-                      );
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Код скопійовано'),
-                          duration: Duration(seconds: 1),
+                    )
+                  : Row(
+                      children: [
+                        // Participants panel
+                        Container(
+                          width: 250,
+                          decoration: BoxDecoration(
+                            border: Border(
+                              right: BorderSide(color: theme.dividerColor),
+                            ),
+                          ),
+                          child: _buildParticipantsPanel(theme),
                         ),
-                      );
-                    }
-                  },
-                ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.people, size: 16),
-                    const SizedBox(width: 4),
-                    Text('${_service.participants.length}'),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
 
-        // Main content
-        Expanded(
-          child: Row(
-            children: [
-              // Participants panel
-              Container(
-                width: 200,
-                decoration: BoxDecoration(
-                  border: Border(right: BorderSide(color: theme.dividerColor)),
-                ),
-                child: _buildParticipantsPanel(theme),
-              ),
+                        // Chat panel
+                        Expanded(child: _buildChatPanel(theme)),
+                      ],
+                    ),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
-              // Chat panel
-              Expanded(child: _buildChatPanel(theme)),
-            ],
-          ),
+  Widget _buildRoomHeader(ThemeData theme, bool isMobile) {
+    final statusBadge = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: _service.backendType == WatchPartyBackendType.supabase
+            ? Colors.blue.withValues(alpha: 0.1)
+            : Colors.green.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: _service.backendType == WatchPartyBackendType.supabase
+              ? Colors.blue.withValues(alpha: 0.3)
+              : Colors.green.withValues(alpha: 0.3),
         ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            _service.backendType == WatchPartyBackendType.supabase
+                ? Icons.cloud
+                : Icons.hub,
+            size: 14,
+            color: _service.backendType == WatchPartyBackendType.supabase
+                ? Colors.blue
+                : Colors.green,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            _service.backendType == WatchPartyBackendType.supabase
+                ? 'Cloud'
+                : 'P2P',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: _service.backendType == WatchPartyBackendType.supabase
+                  ? Colors.blue
+                  : Colors.green,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final participantsBadge = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primary.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.people, size: 16),
+          const SizedBox(width: 4),
+          Text('${_service.participants.length}'),
+        ],
+      ),
+    );
+
+    final actionButtons = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_service.isHost) ...[
+          FilledButton.icon(
+            onPressed: () {
+              if (_service.room?.mediaUrl != null) {
+                _enterPlayer();
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Спочатку оберіть медіа')),
+                );
+              }
+            },
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('Почати'),
+          ),
+          const SizedBox(width: 8),
+          IconButton.filledTonal(
+            icon: const Icon(Icons.copy, size: 20),
+            tooltip: 'Копіювати код',
+            onPressed: () {
+              if (_service.room != null) {
+                Clipboard.setData(ClipboardData(text: _service.room!.roomCode));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Код скопійовано'),
+                    duration: Duration(seconds: 1),
+                  ),
+                );
+              }
+            },
+          ),
+        ] else if (_service.room?.mediaUrl != null) ...[
+          FilledButton.icon(
+            onPressed: _enterPlayer,
+            icon: const Icon(Icons.play_circle_outline),
+            label: const Text('Приєднатися'),
+          ),
+        ],
       ],
+    );
+
+    if (isMobile) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        color: theme.colorScheme.surfaceContainerHighest,
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Icon(
+                  _service.isHost ? Icons.tv : Icons.group,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _service.isHost ? 'Ви хост' : 'Підключено',
+                        style: theme.textTheme.titleSmall,
+                      ),
+                      if (_service.room?.roomCode != null && _service.isHost)
+                        Text(
+                          'Код: ${_service.room!.roomCode}',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: Colors.grey,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                participantsBadge,
+                const SizedBox(width: 8),
+                statusBadge,
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(width: double.infinity, child: actionButtons),
+          ],
+        ),
+      );
+    }
+
+    // Desktop Layout
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Row(
+        children: [
+          Icon(
+            _service.isHost ? Icons.tv : Icons.group,
+            size: 20,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _service.isHost ? 'Ви хост' : 'Підключено до хоста',
+                  style: theme.textTheme.titleSmall,
+                ),
+                if (_service.room?.roomCode != null && _service.isHost)
+                  Text(
+                    'Код кімнати: ${_service.room!.roomCode}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: Colors.grey,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          actionButtons,
+          const SizedBox(width: 16),
+          participantsBadge,
+          const SizedBox(width: 8),
+          statusBadge,
+        ],
+      ),
     );
   }
 
@@ -561,6 +769,7 @@ class _WatchPartyPageState extends State<WatchPartyPage> {
               ),
               const SizedBox(width: 8),
               IconButton.filled(
+                key: const Key('chat_send_button'),
                 onPressed: () => _sendMessage(_chatController.text),
                 icon: const Icon(Icons.send),
               ),

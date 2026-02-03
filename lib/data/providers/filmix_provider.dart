@@ -67,10 +67,15 @@ class FilmixProvider implements ContentProvider {
     ContentType? type,
     int page = 1,
   }) async {
+    Logger.d('search: query="$query", page=$page', tag: _tag);
     try {
       final url = '$baseUrl/search/${Uri.encodeComponent(query)}';
+      Logger.d('Fetching: $url', tag: _tag);
       final html = await _client.get(url);
-      return _parseSearchResults(html);
+      Logger.d('Response length: ${html.length}', tag: _tag);
+      final items = _parseSearchResults(html);
+      Logger.d('Found ${items.length} items', tag: _tag);
+      return items;
     } catch (e, stack) {
       Logger.e('Search failed', tag: _tag, error: e, stackTrace: stack);
       return [];
@@ -79,8 +84,12 @@ class FilmixProvider implements ContentProvider {
 
   @override
   Future<MediaDetails> getDetails(String id) async {
+    Logger.d('getDetails: id=$id', tag: _tag);
     try {
-      final html = await _client.get('$baseUrl/play/$id');
+      final url = '$baseUrl/play/$id';
+      Logger.d('Fetching: $url', tag: _tag);
+      final html = await _client.get(url);
+      Logger.d('HTML length: ${html.length}', tag: _tag);
       return _parseDetails(html, id);
     } catch (e, stack) {
       Logger.e('Get details failed', tag: _tag, error: e, stackTrace: stack);
@@ -110,14 +119,17 @@ class FilmixProvider implements ContentProvider {
 
       // Look for player data
       final scripts = soup.findAll('script');
+      Logger.d('Found ${scripts.length} scripts to check', tag: _tag);
       for (final script in scripts) {
         final content = script.text;
         if (content.contains('playerParams') ||
             content.contains('player_data')) {
+          Logger.d('Found player script', tag: _tag);
           _parsePlayerScript(content, sources, season, episode);
         }
       }
 
+      Logger.i('Total streams: ${sources.length}', tag: _tag);
       return sources;
     } catch (e, stack) {
       Logger.e('Get streams failed', tag: _tag, error: e, stackTrace: stack);
@@ -449,6 +461,39 @@ class FilmixProvider implements ContentProvider {
         rating = double.tryParse(ratingEl.text.trim());
       }
 
+      // Parse genres
+      List<String>? genres;
+      final genreEl =
+          card.find('div', class_: 'short-genre') ??
+          card.find('span', class_: 'genre');
+      if (genreEl != null) {
+        final genreLinks = genreEl.findAll('a');
+        if (genreLinks.isNotEmpty) {
+          genres = genreLinks
+              .map((a) => a.text.trim())
+              .where((g) => g.isNotEmpty)
+              .toList();
+        } else {
+          final genreText = genreEl.text.trim();
+          if (genreText.isNotEmpty) {
+            genres = genreText
+                .split(RegExp(r'[,/]'))
+                .map((g) => g.trim())
+                .where((g) => g.isNotEmpty)
+                .toList();
+          }
+        }
+      }
+
+      // Parse country
+      String? country;
+      final countryEl =
+          card.find('div', class_: 'short-country') ??
+          card.find('span', class_: 'country');
+      if (countryEl != null) {
+        country = countryEl.text.trim().split(',').first.trim();
+      }
+
       final type = _detectContentType(href);
 
       return MediaItem(
@@ -459,6 +504,8 @@ class FilmixProvider implements ContentProvider {
         year: year,
         rating: rating,
         type: type,
+        genres: genres,
+        country: country,
       );
     } catch (e) {
       return null;

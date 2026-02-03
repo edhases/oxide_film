@@ -264,6 +264,82 @@ class AppStrings {
       _t('Доступно $count нових серій', '$count new episodes available');
 
   // ============================================================================
+  // SETTINGS - EXTENDED
+  // ============================================================================
+
+  // Watch Party settings
+  String get watchPartySettings =>
+      _t('Налаштування спільного перегляду', 'Watch Party settings');
+  String get watchPartyName => _t('Ім\'я в Watch Party', 'Watch Party name');
+  String get watchPartyNameDesc => _t(
+    'Відображатиметься іншим учасникам',
+    'Will be shown to other participants',
+  );
+  String get syncSettings => _t('Налаштування синхронізації', 'Sync settings');
+  String get syncThreshold => _t('Поріг синхронізації', 'Sync threshold');
+  String get syncThresholdDesc =>
+      _t('Максимальна затримка перед корекцією', 'Max delay before correction');
+
+  // Playback extended
+  String get defaultSpeed => _t('Типова швидкість', 'Default speed');
+  String get defaultSpeedDesc =>
+      _t('Швидкість відтворення за замовчуванням', 'Default playback speed');
+  String get gestureControls => _t('Керування жестами', 'Gesture controls');
+  String get gestureControlsDesc => _t(
+    'Свайпи для гучності та яскравості',
+    'Swipe for volume and brightness',
+  );
+  String get skipIntro => _t('Пропуск інтро', 'Skip intro');
+  String get skipIntroDesc =>
+      _t('Автоматично пропускати заставку', 'Auto-skip opening credits');
+  String get nextEpisodeDelay =>
+      _t('Затримка наступної серії', 'Next episode delay');
+  String get nextEpisodeDelayDesc =>
+      _t('Секунд до автоматичного переходу', 'Seconds before auto-transition');
+
+  // Advanced / Developer
+  String get advanced => _t('Розширені', 'Advanced');
+  String get developer => _t('Для розробників', 'Developer');
+  String get debugMode => _t('Режим налагодження', 'Debug mode');
+  String get debugModeDesc => _t(
+    'Показувати логи та технічну інформацію',
+    'Show logs and technical info',
+  );
+  String get deviceTypeOverride => _t('Тип пристрою', 'Device type');
+  String get deviceTypeOverrideDesc =>
+      _t('Авто-визначення або ручний вибір', 'Auto-detect or manual selection');
+  String get deviceAuto => _t('Авто', 'Auto');
+  String get devicePhone => _t('Телефон', 'Phone');
+  String get deviceTablet => _t('Планшет', 'Tablet');
+  String get deviceDesktop => _t('Десктоп', 'Desktop');
+  String get deviceTV => _t('TV', 'TV');
+  String get resetSettings => _t('Скинути налаштування', 'Reset settings');
+  String get resetSettingsDesc => _t(
+    'Повернути всі налаштування за замовчуванням',
+    'Reset all settings to defaults',
+  );
+  String get resetSettingsConfirm => _t(
+    'Ви впевнені? Всі налаштування буде скинуто.',
+    'Are you sure? All settings will be reset.',
+  );
+  String get settingsReset => _t('Налаштування скинуто', 'Settings reset');
+
+  // Notifications
+  String get notifications => _t('Сповіщення', 'Notifications');
+  String get notificationsDesc => _t(
+    'Сповіщення про нові серії та оновлення',
+    'Notifications about new episodes and updates',
+  );
+  String get newEpisodeNotify => _t('Нові серії', 'New episodes');
+  String get newEpisodeNotifyDesc => _t(
+    'Сповіщати про нові серії улюблених',
+    'Notify about new episodes of favorites',
+  );
+  String get updateNotify => _t('Оновлення додатку', 'App updates');
+  String get updateNotifyDesc =>
+      _t('Сповіщати про нові версії', 'Notify about new versions');
+
+  // ============================================================================
   // STATISTICS
   // ============================================================================
 

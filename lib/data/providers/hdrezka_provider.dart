@@ -104,14 +104,11 @@ class HdrezkaProvider implements ContentProvider {
     int? episode,
   }) async {
     Logger.i('getStreams called: id=$id, s=$season, e=$episode', tag: _tag);
-    print('[HDRezka] getStreams: id=$id, s=$season, e=$episode');
     try {
       final url = '$baseUrl/$id.html';
       Logger.d('Fetching: $url', tag: _tag);
-      print('[HDRezka] Fetching: $url');
       final html = await _client.get(url);
       Logger.d('HTML length: ${html.length}', tag: _tag);
-      print('[HDRezka] HTML length: ${html.length}');
       final soup = BeautifulSoup(html);
       final sources = <StreamSource>[];
 
@@ -126,7 +123,6 @@ class HdrezkaProvider implements ContentProvider {
       var dataId = playerDiv?.attributes['data-id'];
       var translatorId = playerDiv?.attributes['data-translator_id'] ?? '0';
       Logger.d('Initial dataId=$dataId, translatorId=$translatorId', tag: _tag);
-      print('[HDRezka] Initial dataId=$dataId, translatorId=$translatorId');
 
       // Fallback 1: Find any element with data-id
       if (dataId == null) {
@@ -137,7 +133,6 @@ class HdrezkaProvider implements ContentProvider {
           translatorId =
               fallback.attributes['data-translator_id'] ?? translatorId;
           Logger.i('Fallback 1 found data-id: $dataId', tag: _tag);
-          print('[HDRezka] Fallback 1: data-id=$dataId');
         }
       }
 
@@ -148,7 +143,6 @@ class HdrezkaProvider implements ContentProvider {
         if (urlMatch != null) {
           dataId = urlMatch.group(1);
           Logger.i('Fallback 2 found data-id from URL: $dataId', tag: _tag);
-          print('[HDRezka] Fallback 2 from URL: data-id=$dataId');
         }
       }
 
@@ -161,7 +155,6 @@ class HdrezkaProvider implements ContentProvider {
           if (match != null) {
             dataId = match.group(1);
             Logger.i('Fallback 3 found data-id in script: $dataId', tag: _tag);
-            print('[HDRezka] Fallback 3 from script: data-id=$dataId');
             break;
           }
         }
@@ -169,7 +162,6 @@ class HdrezkaProvider implements ContentProvider {
 
       if (dataId == null) {
         Logger.e('ERROR: data-id is null after all fallbacks!', tag: _tag);
-        print('[HDRezka] ERROR: No data-id found!');
         return sources;
       }
 
@@ -562,7 +554,7 @@ class HdrezkaProvider implements ContentProvider {
     final addedIds = <String>{};
 
     final cards = soup.findAll('div', class_: 'b-content__inline_item');
-    print('[HDRezka] Parsing ${cards.length} cards');
+    Logger.d('Parsing ${cards.length} cards', tag: _tag);
 
     for (final card in cards) {
       try {
@@ -607,6 +599,46 @@ class HdrezkaProvider implements ContentProvider {
           year = int.tryParse(yearMatch.group(1) ?? '');
         }
 
+        // Try to extract genres
+        List<String>? genres;
+        final genreEl = card.find(
+          'div',
+          class_: 'b-content__inline_item-genre',
+        );
+        if (genreEl != null) {
+          final genreLinks = genreEl.findAll('a');
+          if (genreLinks.isNotEmpty) {
+            genres = genreLinks
+                .map((a) => a.text.trim())
+                .where((g) => g.isNotEmpty)
+                .toList();
+          }
+        }
+        // Fallback: parse from misc text
+        if ((genres == null || genres.isEmpty) && infoText.contains(',')) {
+          final parts = infoText.split(',');
+          if (parts.length > 1) {
+            // First part usually contains year, rest may be country/genre
+            final possibleGenre = parts
+                .skip(1)
+                .map((p) => p.trim())
+                .where((p) => !RegExp(r'^\d{4}$').hasMatch(p) && p.isNotEmpty)
+                .toList();
+            if (possibleGenre.isNotEmpty) {
+              genres = possibleGenre;
+            }
+          }
+        }
+
+        // Try to extract country
+        String? country;
+        final countryMatch = RegExp(
+          r'([А-ЯЁA-Z][а-яёa-z]+)\s*,?\s*\d{4}',
+        ).firstMatch(infoText);
+        if (countryMatch != null) {
+          country = countryMatch.group(1);
+        }
+
         final type = _detectContentType(href);
 
         items.add(
@@ -617,6 +649,8 @@ class HdrezkaProvider implements ContentProvider {
             posterUrl: posterUrl,
             year: year,
             type: type,
+            genres: genres,
+            country: country,
           ),
         );
         addedIds.add(mediaId);
@@ -659,8 +693,8 @@ class HdrezkaProvider implements ContentProvider {
 
   MediaDetails _parseDetails(String html, String mediaId) {
     final soup = BeautifulSoup(html);
-    print('[HDRezka] Parsing details for: $mediaId');
-    print('[HDRezka] HTML length: ${html.length}');
+    Logger.d('Parsing details for: $mediaId', tag: _tag);
+    Logger.d('HTML length: ${html.length}', tag: _tag);
 
     // Title
     final titleEl = soup.find('div', class_: 'b-post__title');
@@ -677,7 +711,7 @@ class HdrezkaProvider implements ContentProvider {
             .trim();
       }
     }
-    print('[HDRezka] Title: $title');
+    Logger.d('Title: $title', tag: _tag);
 
     // Poster
     final posterEl = soup.find('div', class_: 'b-sidecover');
@@ -716,6 +750,17 @@ class HdrezkaProvider implements ContentProvider {
             duration = Duration(minutes: int.parse(durMatch.group(1)!));
           }
         }
+      }
+    }
+
+    // Fallback: search in text if table parsing failed
+    if (year == null) {
+      final yearMatch = RegExp(
+        r'(?:Рік|Год|Year):\s*(\d{4})',
+        caseSensitive: false,
+      ).firstMatch(soup.text);
+      if (yearMatch != null) {
+        year = int.tryParse(yearMatch.group(1) ?? '');
       }
     }
 

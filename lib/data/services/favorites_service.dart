@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import '../../core/utils/logger.dart';
 import '../../domain/entities/entities.dart';
 import '../database/app_database.dart';
 import '../database/dao/favorites_dao.dart';
@@ -21,7 +22,9 @@ class FavoritesService extends ChangeNotifier {
   }
 
   void _init() {
+    Logger.d('Initializing favorites service...', tag: 'Favorites');
     _subscription = _dao.watchAll().listen((items) {
+      Logger.d('Favorites updated: ${items.length} items', tag: 'Favorites');
       _favorites = items;
       notifyListeners();
     });
@@ -36,6 +39,7 @@ class FavoritesService extends ChangeNotifier {
 
   /// Toggle favorite status
   Future<bool> toggle(MediaItem item) async {
+    Logger.d('toggle: ${item.id} (${item.title})', tag: 'Favorites');
     final result = await _dao.toggle(
       mediaId: item.id,
       providerId: item.providerId,
@@ -44,6 +48,7 @@ class FavoritesService extends ChangeNotifier {
       year: item.year,
       mediaType: item.type.name,
     );
+    Logger.d('toggle result: $result', tag: 'Favorites');
     return result;
   }
 

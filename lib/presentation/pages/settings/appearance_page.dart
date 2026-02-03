@@ -84,6 +84,13 @@ class _AppearancePageState extends State<AppearancePage> {
 
                 const SizedBox(height: 24),
 
+                // List style section
+                _buildSectionTitle('Стиль списку'),
+                const SizedBox(height: 12),
+                _buildListStyleSelector(),
+
+                const SizedBox(height: 24),
+
                 // Display options
                 _buildSectionTitle('Параметри відображення'),
                 const SizedBox(height: 12),
@@ -156,26 +163,41 @@ class _AppearancePageState extends State<AppearancePage> {
             ],
           ),
           const SizedBox(height: 16),
-          SizedBox(
-            height: 180,
-            child: Row(
-              children: List.generate(
-                3,
-                (index) => Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      left: index == 0
-                          ? 0
-                          : ui.gridSpacing.crossAxisSpacing / 2,
-                      right: index == 2
-                          ? 0
-                          : ui.gridSpacing.crossAxisSpacing / 2,
-                    ),
-                    child: _buildPreviewPoster(index, accentColor),
-                  ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final screenWidth = MediaQuery.of(context).size.width;
+              final columnCount = ui.posterSize.getColumnCount(screenWidth);
+              final spacing = ui.gridSpacing.crossAxisSpacing;
+
+              // Calculate item width exactly as GridView would
+              // Available width for items = total width - (total spacing)
+              // Note: The LayoutBuilder is inside a card with padding 16*2=32 + screen padding 16*2=32?
+              // No, we should use constraints.maxWidth which is the width INSIDE the preview card.
+              // BUT getColumnCount uses SCREEN width logic.
+
+              final itemWidth =
+                  (constraints.maxWidth - (columnCount - 1) * spacing) /
+                  columnCount;
+              final itemHeight = itemWidth / ui.posterSize.aspectRatio;
+
+              return SizedBox(
+                height: itemHeight,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: List.generate(columnCount, (index) {
+                    return Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.only(
+                          left: index == 0 ? 0 : spacing / 2,
+                          right: index == columnCount - 1 ? 0 : spacing / 2,
+                        ),
+                        child: _buildPreviewPoster(index, accentColor),
+                      ),
+                    );
+                  }),
                 ),
-              ),
-            ),
+              );
+            },
           ),
         ],
       ),
@@ -184,106 +206,135 @@ class _AppearancePageState extends State<AppearancePage> {
 
   Widget _buildPreviewPoster(int index, Color accentColor) {
     final ui = _settings.uiSettings;
-    final titles = ['Фільм 1', 'Серіал 2', 'Аніме 3'];
-    final years = ['2024', '2023', '2024'];
-    final ratings = ['8.5', '7.2', '9.1'];
+    final titles = [
+      'Фільм 1',
+      'Серіал 2',
+      'Аніме 3',
+      'Мульт 4',
+      'Док 5',
+      'Шоу 6',
+      'Фільм 7',
+      'Серіал 8',
+      'Аніме 9',
+      'Мульт 10',
+    ];
+    final years = [
+      '2024',
+      '2023',
+      '2024',
+      '2022',
+      '2023',
+      '2024',
+      '2023',
+      '2022',
+      '2024',
+      '2023',
+    ];
+    final ratings = [
+      '8.5',
+      '7.2',
+      '9.1',
+      '8.0',
+      '7.5',
+      '6.8',
+      '7.9',
+      '8.3',
+      '9.0',
+      '7.7',
+    ];
 
-    return AspectRatio(
-      aspectRatio: ui.posterSize.aspectRatio,
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(ui.posterSize.borderRadius),
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              accentColor.withValues(alpha: 0.3),
-              accentColor.withValues(alpha: 0.6),
-            ],
-          ),
-        ),
-        child: Stack(
-          children: [
-            // Rating badge
-            if (ui.showRatings)
-              Positioned(
-                top: 6,
-                right: 6,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.star, size: 10, color: Colors.amber),
-                      const SizedBox(width: 2),
-                      Text(
-                        ratings[index],
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+    final dataIndex = index % titles.length;
 
-            // Info overlay
-            if (ui.cardInfoStyle == CardInfoStyle.overlay)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.transparent,
-                        Colors.black.withValues(alpha: 0.8),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.only(
-                      bottomLeft: Radius.circular(ui.posterSize.borderRadius),
-                      bottomRight: Radius.circular(ui.posterSize.borderRadius),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        titles[index],
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (ui.showYears)
-                        Text(
-                          years[index],
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: AppTheme.textMuted,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(ui.posterSize.borderRadius),
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            accentColor.withValues(alpha: 0.3),
+            accentColor.withValues(alpha: 0.6),
           ],
         ),
+      ),
+      child: Stack(
+        children: [
+          // Rating badge
+          if (ui.showRatings)
+            Positioned(
+              top: 4,
+              right: 4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.star, size: 8, color: Colors.amber),
+                    const SizedBox(width: 2),
+                    Text(
+                      ratings[dataIndex],
+                      style: const TextStyle(
+                        fontSize: 8,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // Info overlay
+          if (ui.cardInfoStyle == CardInfoStyle.overlay)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.8),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(ui.posterSize.borderRadius),
+                    bottomRight: Radius.circular(ui.posterSize.borderRadius),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      titles[dataIndex],
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (ui.showYears)
+                      Text(
+                        years[dataIndex],
+                        style: TextStyle(
+                          fontSize: 9,
+                          color: AppTheme.textMuted,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -403,6 +454,40 @@ class _AppearancePageState extends State<AppearancePage> {
         return Icons.view_list;
       case CardInfoStyle.hidden:
         return Icons.visibility_off;
+    }
+  }
+
+  Widget _buildListStyleSelector() {
+    final currentStyle = _settings.uiSettings.listStyle;
+
+    return Row(
+      children: ListStyle.values.map((style) {
+        final isSelected = style == currentStyle;
+        return Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(
+              right: style != ListStyle.values.last ? 8 : 0,
+            ),
+            child: _OptionButton(
+              label: style.displayName,
+              icon: _getListStyleIcon(style),
+              isSelected: isSelected,
+              onTap: () => _settings.setListStyle(style),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  IconData _getListStyleIcon(ListStyle style) {
+    switch (style) {
+      case ListStyle.grid:
+        return Icons.grid_view;
+      case ListStyle.list:
+        return Icons.view_list;
+      case ListStyle.compact:
+        return Icons.view_headline;
     }
   }
 

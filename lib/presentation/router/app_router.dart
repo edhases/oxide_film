@@ -13,6 +13,9 @@ import '../pages/category/category_page.dart';
 import '../pages/downloads/downloads_page.dart';
 import '../pages/stats/stats_page.dart';
 import '../pages/watch_party/watch_party_page.dart';
+import '../pages/auth/login_page.dart';
+import '../pages/auth/register_page.dart';
+import '../pages/auth/profile_page.dart';
 
 /// Application router configuration
 class AppRouter {
@@ -24,6 +27,23 @@ class AppRouter {
         path: '/',
         name: 'home',
         builder: (context, state) => const HomePage(),
+      ),
+
+      // Auth routes
+      GoRoute(
+        path: '/login',
+        name: 'login',
+        builder: (context, state) => const LoginPage(),
+      ),
+      GoRoute(
+        path: '/register',
+        name: 'register',
+        builder: (context, state) => const RegisterPage(),
+      ),
+      GoRoute(
+        path: '/profile',
+        name: 'profile',
+        builder: (context, state) => const ProfilePage(),
       ),
 
       // Categories/Browse

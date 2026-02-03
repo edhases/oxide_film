@@ -104,4 +104,9 @@ class SettingsDao {
       return {for (var row in rows) row.providerId: row.isEnabled};
     });
   }
+
+  /// Clear all app settings (reset to defaults)
+  Future<void> clearAllSettings() async {
+    await _db.delete(_db.appSettings).go();
+  }
 }

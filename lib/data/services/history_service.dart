@@ -24,6 +24,14 @@ class HistoryService extends ChangeNotifier {
   }
 
   void _init() {
+    // Cleanup duplicates on startup (fire and forget)
+    _dao.cleanupDuplicates().then((count) {
+      if (count > 0) {
+        debugPrint('Cleaned up $count duplicate history entries');
+        notifyListeners();
+      }
+    });
+
     _historySubscription = _dao.watchAll(limit: 50).listen((items) {
       _history = items;
       notifyListeners();

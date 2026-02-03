@@ -26,15 +26,12 @@ class HistoryDao {
   }) async {
     var query = _db.select(_db.watchHistory)
       ..where(
-        (t) => t.mediaId.equals(mediaId) & t.providerId.equals(providerId),
+        (t) =>
+            t.mediaId.equals(mediaId) &
+            t.providerId.equals(providerId) &
+            (season != null ? t.season.equals(season) : t.season.isNull()) &
+            (episode != null ? t.episode.equals(episode) : t.episode.isNull()),
       );
-
-    if (season != null) {
-      query = query..where((t) => t.season.equals(season));
-    }
-    if (episode != null) {
-      query = query..where((t) => t.episode.equals(episode));
-    }
 
     return query.getSingleOrNull();
   }
@@ -76,45 +73,92 @@ class HistoryDao {
     String? lastStreamUrl,
     String? voiceover,
   }) async {
-    await _db
-        .into(_db.watchHistory)
-        .insert(
-          WatchHistoryCompanion.insert(
-            mediaId: mediaId,
-            providerId: providerId,
-            title: title,
-            posterUrl: Value(posterUrl),
-            year: Value(year),
-            mediaType: mediaType,
-            positionMs: Value(positionMs),
-            durationMs: Value(durationMs),
-            season: Value(season),
-            episode: Value(episode),
-            episodeTitle: Value(episodeTitle),
-            lastStreamUrl: Value(lastStreamUrl),
-            voiceover: Value(voiceover),
-            watchedAt: Value(DateTime.now()),
-          ),
-          onConflict: DoUpdate(
-            (old) => WatchHistoryCompanion(
-              title: Value(title),
+    // Manually check for existing entry to handle NULLs in Unique Keys correctly
+    final existing =
+        await (_db.select(_db.watchHistory)..where(
+              (t) =>
+                  t.mediaId.equals(mediaId) &
+                  t.providerId.equals(providerId) &
+                  (season != null
+                      ? t.season.equals(season)
+                      : t.season.isNull()) &
+                  (episode != null
+                      ? t.episode.equals(episode)
+                      : t.episode.isNull()),
+            ))
+            .getSingleOrNull();
+
+    if (existing != null) {
+      // Update existing
+      await (_db.update(
+        _db.watchHistory,
+      )..where((t) => t.id.equals(existing.id))).write(
+        WatchHistoryCompanion(
+          title: Value(title),
+          posterUrl: Value(posterUrl),
+          year: Value(year),
+          positionMs: Value(positionMs),
+          durationMs: Value(durationMs),
+          episodeTitle: Value(episodeTitle),
+          lastStreamUrl: Value(lastStreamUrl),
+          voiceover: Value(voiceover),
+          watchedAt: Value(DateTime.now()),
+        ),
+      );
+    } else {
+      // Insert new
+      await _db
+          .into(_db.watchHistory)
+          .insert(
+            WatchHistoryCompanion.insert(
+              mediaId: mediaId,
+              providerId: providerId,
+              title: title,
               posterUrl: Value(posterUrl),
               year: Value(year),
+              mediaType: mediaType,
               positionMs: Value(positionMs),
               durationMs: Value(durationMs),
+              season: Value(season),
+              episode: Value(episode),
               episodeTitle: Value(episodeTitle),
               lastStreamUrl: Value(lastStreamUrl),
               voiceover: Value(voiceover),
               watchedAt: Value(DateTime.now()),
             ),
-            target: [
-              _db.watchHistory.mediaId,
-              _db.watchHistory.providerId,
-              _db.watchHistory.season,
-              _db.watchHistory.episode,
-            ],
-          ),
-        );
+          );
+    }
+  }
+
+  /// Remove duplicates from history
+  /// Keeps only the most recent entry for each unique media/episode combination
+  Future<int> cleanupDuplicates() async {
+    final allHistory = await getAll();
+    final uniqueKeys = <String>{};
+    final idsToDelete = <int>[];
+
+    // history is already ordered by watchedAt DESC (newest first)
+    for (final item in allHistory) {
+      final key =
+          '${item.mediaId}_${item.providerId}_${item.season}_${item.episode}';
+
+      if (uniqueKeys.contains(key)) {
+        // This is a duplicate (older than the one we already saw)
+        idsToDelete.add(item.id);
+      } else {
+        uniqueKeys.add(key);
+      }
+    }
+
+    if (idsToDelete.isEmpty) return 0;
+
+    // Delete in batches if needed, but for now single batch is fine
+    // Drift doesn't support 'WHERE id IN list' easily in fluent API for delete
+    // So we use custom statement or loop.
+    // Actually, we can use where((t) => t.id.isIn(idsToDelete))
+    return (_db.delete(
+      _db.watchHistory,
+    )..where((t) => t.id.isIn(idsToDelete))).go();
   }
 
   /// Get last watched position for media

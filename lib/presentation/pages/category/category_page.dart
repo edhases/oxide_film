@@ -348,16 +348,23 @@ class _CategoryPageState extends State<CategoryPage>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(_getTypeIcon(type), size: 18),
-                const SizedBox(width: 8),
-                Text(type.pluralName),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    type.pluralName,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
               ],
             ),
           );
         }).toList(),
-        isScrollable: _tabs.length > 4,
+        isScrollable: true, // Always scrollable to prevent overflow
         indicatorColor: AppTheme.primaryColor,
         labelColor: AppTheme.primaryColor,
         unselectedLabelColor: AppTheme.textMuted,
+        tabAlignment: TabAlignment.start,
       ),
     );
   }

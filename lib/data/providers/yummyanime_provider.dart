@@ -522,6 +522,30 @@ class YummyAnimeProvider implements ContentProvider {
         rating = double.tryParse(ratingEl.text.trim());
       }
 
+      // Parse genres
+      List<String>? genres;
+      final genreEl =
+          card.find('div', class_: 'anime-genre') ??
+          card.find('span', class_: 'genre');
+      if (genreEl != null) {
+        final genreLinks = genreEl.findAll('a');
+        if (genreLinks.isNotEmpty) {
+          genres = genreLinks
+              .map((a) => a.text.trim())
+              .where((g) => g.isNotEmpty)
+              .toList();
+        } else {
+          final genreText = genreEl.text.trim();
+          if (genreText.isNotEmpty) {
+            genres = genreText
+                .split(RegExp(r'[,/]'))
+                .map((g) => g.trim())
+                .where((g) => g.isNotEmpty)
+                .toList();
+          }
+        }
+      }
+
       return MediaItem(
         id: mediaId,
         providerId: id,
@@ -530,6 +554,7 @@ class YummyAnimeProvider implements ContentProvider {
         year: year,
         rating: rating,
         type: ContentType.anime,
+        genres: genres,
       );
     } catch (e) {
       return null;

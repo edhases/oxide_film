@@ -34,6 +34,22 @@ extension ContentTypeExtension on ContentType {
         return 'Контент';
     }
   }
+
+  /// Short name for badges (2-4 chars)
+  String get shortName {
+    switch (this) {
+      case ContentType.movie:
+        return 'ФМ';
+      case ContentType.series:
+        return 'СР';
+      case ContentType.cartoon:
+        return 'МФ';
+      case ContentType.anime:
+        return 'АН';
+      case ContentType.unknown:
+        return '?';
+    }
+  }
 }
 
 /// Basic media item representation (search results, catalog items)
@@ -47,6 +63,8 @@ class MediaItem extends Equatable {
   final double? rating;
   final ContentType type;
   final String? description;
+  final List<String>? genres;
+  final String? country;
 
   const MediaItem({
     required this.id,
@@ -58,6 +76,8 @@ class MediaItem extends Equatable {
     this.rating,
     this.type = ContentType.unknown,
     this.description,
+    this.genres,
+    this.country,
   });
 
   @override
@@ -71,6 +91,8 @@ class MediaItem extends Equatable {
     rating,
     type,
     description,
+    genres,
+    country,
   ];
 
   /// Unique identifier combining provider and media ID

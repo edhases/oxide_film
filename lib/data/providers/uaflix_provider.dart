@@ -1,4 +1,5 @@
 import 'package:beautiful_soup_dart/beautiful_soup.dart';
+import 'package:flutter/foundation.dart'; // Added for compute
 
 import '../../core/network/api_client.dart';
 import '../../core/utils/logger.dart';
@@ -56,7 +57,7 @@ class UaflixProvider implements ContentProvider {
 
       Logger.d('Search: $url', tag: _tag);
       final html = await _client.get(url);
-      return _parseSearchResults(html);
+      return compute(_parseSearchResultsStatic, html);
     } catch (e, stack) {
       Logger.e('Search failed', tag: _tag, error: e, stackTrace: stack);
       return [];
@@ -87,7 +88,7 @@ class UaflixProvider implements ContentProvider {
       final url = '$baseUrl/$category/page/$page/';
       Logger.d('Get popular: $url', tag: _tag);
       final html = await _client.get(url);
-      return _parseSearchResults(html);
+      return compute(_parseSearchResultsStatic, html);
     } catch (e, stack) {
       Logger.e('Get popular failed', tag: _tag, error: e, stackTrace: stack);
       return [];
@@ -112,7 +113,7 @@ class UaflixProvider implements ContentProvider {
       final url = '$baseUrl/$category/page/$page/';
       Logger.d('Get new: $url', tag: _tag);
       final html = await _client.get(url);
-      return _parseSearchResults(html);
+      return compute(_parseSearchResultsStatic, html);
     } catch (e, stack) {
       Logger.e('Get new failed', tag: _tag, error: e, stackTrace: stack);
       return [];
@@ -149,7 +150,7 @@ class UaflixProvider implements ContentProvider {
       final url = '$baseUrl/$category/page/$page/';
       Logger.d('Get by category: $url', tag: _tag);
       final html = await _client.get(url);
-      return _parseSearchResults(html);
+      return compute(_parseSearchResultsStatic, html);
     } catch (e, stack) {
       Logger.e(
         'Get by category failed',
@@ -168,7 +169,7 @@ class UaflixProvider implements ContentProvider {
       final url = '$baseUrl/$mediaId/';
       Logger.d('Get details: $url', tag: _tag);
       final html = await _client.get(url);
-      return _parseDetails(html, mediaId);
+      return compute(_parseDetailsStatic, ParseDetailsArgs(html, mediaId));
     } catch (e, stack) {
       Logger.e('Get details failed', tag: _tag, error: e, stackTrace: stack);
       rethrow;
@@ -182,20 +183,19 @@ class UaflixProvider implements ContentProvider {
     int? episode,
   }) async {
     Logger.d('getStreams: id=$mediaId, s=$season, e=$episode', tag: _tag);
-    print('[UAFlix] getStreams: id=$mediaId, s=$season, e=$episode');
     try {
       // UAFlix URLs end with / not .html
       final url = '$baseUrl/$mediaId/';
-      print('[UAFlix] Fetching: $url');
+      Logger.d('Fetching: $url', tag: _tag);
       final html = await _client.get(url);
-      print('[UAFlix] HTML length: ${html.length}');
+      Logger.d('HTML length: ${html.length}', tag: _tag);
 
       final soup = BeautifulSoup(html);
       final sources = <StreamSource>[];
 
       // Try iframes first
       final iframes = soup.findAll('iframe');
-      print('[UAFlix] Found ${iframes.length} iframes');
+      Logger.d('Found ${iframes.length} iframes', tag: _tag);
       for (final iframe in iframes) {
         final src = iframe.attributes['src'] ?? iframe.attributes['data-src'];
         if (src != null && src.isNotEmpty) {
@@ -205,9 +205,10 @@ class UaflixProvider implements ContentProvider {
 
       // Try PlayerJS parsing
       if (sources.isEmpty) {
-        print('[UAFlix] Trying PlayerJS parsing...');
-        final parsed = PlayerJsParser.parseFromHtml(html);
-        print('[UAFlix] PlayerJS found ${parsed.length} sources');
+        Logger.d('Trying PlayerJS parsing...', tag: _tag);
+        // Use compute for PlayerJS parsing
+        final parsed = await PlayerJsParser.parseFromHtmlCompute(html);
+        Logger.d('PlayerJS found ${parsed.length} sources', tag: _tag);
         sources.addAll(parsed);
       }
 
@@ -221,7 +222,7 @@ class UaflixProvider implements ContentProvider {
           if (src != null && src.isNotEmpty) {
             sources.add(
               StreamSource(
-                url: _absoluteUrl(src) ?? src,
+                url: _absoluteUrlStatic(src) ?? src,
                 quality: StreamQuality.unknown,
                 sourceName: 'default',
               ),
@@ -231,13 +232,21 @@ class UaflixProvider implements ContentProvider {
       }
 
       Logger.d('Total sources found: ${sources.length}', tag: _tag);
-      print('[UAFlix] Total: ${sources.length} sources');
-      return sources;
+      return _deduplicateSources(sources);
     } catch (e, stack) {
       Logger.e('Get streams failed', tag: _tag, error: e, stackTrace: stack);
-      print('[UAFlix] ERROR: $e');
       return [];
     }
+  }
+
+  List<StreamSource> _deduplicateSources(List<StreamSource> sources) {
+    final unique = <String, StreamSource>{};
+    for (final source in sources) {
+      if (!unique.containsKey(source.url)) {
+        unique[source.url] = source;
+      }
+    }
+    return unique.values.toList();
   }
 
   Future<void> _parseIframeSource(
@@ -245,48 +254,49 @@ class UaflixProvider implements ContentProvider {
     List<StreamSource> sources,
   ) async {
     try {
-      final fullUrl = _absoluteUrl(src) ?? src;
+      final fullUrl = _absoluteUrlStatic(src) ?? src;
       Logger.d('Parsing iframe: $fullUrl', tag: _tag);
-      print('[UAFlix] Parsing iframe: $fullUrl');
 
       // UAFlix iframes require Referer from main site
       final html = await _client.get(
         fullUrl,
         headers: {'Referer': '$baseUrl/'},
       );
-      final parsed = PlayerJsParser.parseFromHtml(html);
-      print('[UAFlix] Iframe PlayerJS found ${parsed.length} sources');
+      // Use compute for iframe parsing too
+      final parsed = await PlayerJsParser.parseFromHtmlCompute(html);
+      Logger.d('Iframe PlayerJS found ${parsed.length} sources', tag: _tag);
       sources.addAll(parsed);
     } catch (e) {
       Logger.w('Failed to parse iframe: $src', tag: _tag);
     }
   }
 
-  List<MediaItem> _parseSearchResults(String html) {
+  // Static parsing methods for Compute (Isolate)
+
+  static List<MediaItem> _parseSearchResultsStatic(String html) {
+    // Moved logic from _parseSearchResults
     final soup = BeautifulSoup(html);
     final items = <MediaItem>[];
 
     // UAFlix uses div.video-item for cards
     final cards = soup.findAll('div', class_: 'video-item');
 
-    print('[UAFlix] Found ${cards.length} cards');
-
     for (final card in cards) {
-      final item = _parseCard(card);
+      final item = _parseCardStatic(card);
       if (item != null) items.add(item);
     }
 
     return items;
   }
 
-  MediaItem? _parseCard(dynamic card) {
+  static MediaItem? _parseCardStatic(dynamic card) {
     try {
       // UAFlix: link is a.vi-img
       final link = card.find('a', class_: 'vi-img') ?? card.find('a');
       if (link == null) return null;
 
       final href = link.attributes['href'] ?? '';
-      final mediaId = _extractIdFromUrl(href);
+      final mediaId = _extractIdFromUrlStatic(href);
       if (mediaId.isEmpty) return null;
 
       final img = card.find('img');
@@ -318,23 +328,59 @@ class UaflixProvider implements ContentProvider {
         rating = double.tryParse(ratingEl.text.trim().replaceAll(',', '.'));
       }
 
-      final type = _detectContentType(href);
+      // Parse genres
+      List<String>? genres;
+      final genreEl =
+          card.find('div', class_: 'vi-genre') ??
+          card.find('span', class_: 'genre') ??
+          card.find('div', class_: 'genres');
+      if (genreEl != null) {
+        final genreLinks = genreEl.findAll('a');
+        if (genreLinks.isNotEmpty) {
+          genres = genreLinks
+              .map((a) => a.text.trim())
+              .where((g) => g.isNotEmpty)
+              .toList();
+        } else {
+          final genreText = genreEl.text.trim();
+          if (genreText.isNotEmpty) {
+            genres = genreText
+                .split(RegExp(r'[,/]'))
+                .map((g) => g.trim())
+                .where((g) => g.isNotEmpty)
+                .toList();
+          }
+        }
+      }
+
+      // Parse country
+      String? country;
+      final countryEl =
+          card.find('div', class_: 'vi-country') ??
+          card.find('span', class_: 'country');
+      if (countryEl != null) {
+        country = countryEl.text.trim().split(',').first.trim();
+      }
+
+      final type = _detectContentTypeStatic(href);
 
       return MediaItem(
         id: mediaId,
-        providerId: id,
+        providerId: 'uaflix', // Use hardcoded id for static context
         title: title,
-        posterUrl: _absoluteUrl(posterUrl),
+        posterUrl: _absoluteUrlStatic(posterUrl),
         year: year,
         rating: rating,
         type: type,
+        genres: genres,
+        country: country,
       );
     } catch (e) {
       return null;
     }
   }
 
-  String _extractIdFromUrl(String url) {
+  static String _extractIdFromUrlStatic(String url) {
     final uri = Uri.tryParse(url);
     if (uri != null && uri.path.isNotEmpty) {
       var path = uri.path;
@@ -354,54 +400,102 @@ class UaflixProvider implements ContentProvider {
     return '';
   }
 
-  ContentType _detectContentType(String url) {
-    if (url.contains('/film/') || url.contains('/films/'))
+  static ContentType _detectContentTypeStatic(String url) {
+    if (url.contains('/film/') || url.contains('/films/')) {
       return ContentType.movie;
-    if (url.contains('/serial/') || url.contains('/serials/'))
+    }
+    if (url.contains('/serial/') || url.contains('/serials/')) {
       return ContentType.series;
-    if (url.contains('/cartoon/') || url.contains('/cartoons/'))
+    }
+    if (url.contains('/cartoon/') || url.contains('/cartoons/')) {
       return ContentType.cartoon;
-    if (url.contains('/anime/')) return ContentType.anime;
-    if (url.contains('/dorama/')) return ContentType.series;
+    }
+    if (url.contains('/anime/')) {
+      return ContentType.anime;
+    }
+    if (url.contains('/dorama/')) {
+      return ContentType.series;
+    }
     return ContentType.unknown;
   }
 
-  MediaDetails _parseDetails(String html, String mediaId) {
+  static MediaDetails _parseDetailsStatic(ParseDetailsArgs args) {
+    return _parseDetails(args.html, args.mediaId);
+  }
+
+  static MediaDetails _parseDetails(String html, String mediaId) {
     final soup = BeautifulSoup(html);
 
     // Title
     final titleEl = soup.find('h1');
     final title = titleEl?.text.trim() ?? '';
 
-    // Poster
+    // Poster - improved detection
     String? posterUrl;
 
     // 1. Try specific classes first
     final posterEl =
         soup.find('div', class_: 'fposter') ??
         soup.find('div', class_: 'full-poster') ??
-        soup.find('div', class_: 'poster');
+        soup.find('div', class_: 'poster') ??
+        soup.find('div', class_: 'fimg');
 
     if (posterEl != null) {
       final img = posterEl.find('img');
-      posterUrl = img?.attributes['src'] ?? img?.attributes['data-src'];
+      final src = img?.attributes['src'] ?? img?.attributes['data-src'];
+      // Validate poster URL - skip if it's a logo/placeholder
+      if (src != null &&
+          !src.toLowerCase().contains('logo') &&
+          !src.toLowerCase().contains('netflix') &&
+          !src.toLowerCase().contains('placeholder') &&
+          !src.toLowerCase().contains('default')) {
+        posterUrl = src;
+      }
     }
 
-    // 2. Fallback: Robust finder but exclude logos
+    // 2. Fallback: Search all images but exclude logos/placeholders
     if (posterUrl == null) {
       final images = soup.findAll('img');
       for (final img in images) {
         final src = img.attributes['src'] ?? img.attributes['data-src'];
+        final alt = (img.attributes['alt'] ?? '').toLowerCase();
 
-        if (src != null &&
-            (src.contains('/uploads/posts/') || src.contains('/posters/'))) {
-          // Skip logos
-          if (src.toLowerCase().contains('logo') ||
-              src.toLowerCase().contains('netflix')) {
-            continue;
-          }
+        if (src == null) continue;
+
+        // Skip logos and placeholders
+        if (src.toLowerCase().contains('logo') ||
+            src.toLowerCase().contains('netflix') ||
+            src.toLowerCase().contains('placeholder') ||
+            src.toLowerCase().contains('default') ||
+            src.toLowerCase().contains('icon') ||
+            alt.contains('logo') ||
+            alt.contains('netflix')) {
+          continue;
+        }
+
+        // Prefer posters from known paths
+        if (src.contains('/uploads/posts/') ||
+            src.contains('/posters/') ||
+            src.contains('/covers/') ||
+            src.contains('/thumbs/')) {
           posterUrl = src;
           break;
+        }
+      }
+
+      // Last resort: first large-ish image
+      if (posterUrl == null) {
+        for (final img in images) {
+          final src = img.attributes['src'] ?? img.attributes['data-src'];
+          if (src != null &&
+              !src.toLowerCase().contains('logo') &&
+              !src.toLowerCase().contains('netflix') &&
+              !src.toLowerCase().contains('icon') &&
+              !src.endsWith('.ico') &&
+              !src.endsWith('.svg')) {
+            posterUrl = src;
+            break;
+          }
         }
       }
     }
@@ -450,14 +544,14 @@ class UaflixProvider implements ContentProvider {
       }
     }
 
-    final type = _detectContentType('/$mediaId');
+    final type = _detectContentTypeStatic('/$mediaId');
 
     // Create MediaItem first
     final item = MediaItem(
       id: mediaId,
-      providerId: id,
+      providerId: 'uaflix', // Use hardcoded id for static context
       title: title,
-      posterUrl: _absoluteUrl(posterUrl),
+      posterUrl: _absoluteUrlStatic(posterUrl),
       year: year,
       type: type,
     );
@@ -473,11 +567,20 @@ class UaflixProvider implements ContentProvider {
     );
   }
 
-  String? _absoluteUrl(String? url) {
+  static String? _absoluteUrlStatic(String? url) {
+    const baseUrl = 'https://uaflix.net'; // Hardcoded for static context
     if (url == null) return null;
     if (url.startsWith('http')) return url;
     if (url.startsWith('//')) return 'https:$url';
     if (url.startsWith('/')) return '$baseUrl$url';
     return '$baseUrl/$url';
   }
+}
+
+/// Arguments wrapper for parseDetails
+class ParseDetailsArgs {
+  final String html;
+  final String mediaId;
+
+  ParseDetailsArgs(this.html, this.mediaId);
 }

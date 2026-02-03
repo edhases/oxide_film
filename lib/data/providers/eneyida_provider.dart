@@ -1,5 +1,6 @@
 import 'package:beautiful_soup_dart/beautiful_soup.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart'; // Added for compute
 
 import '../../core/network/api_client.dart';
 import '../../core/utils/logger.dart';
@@ -63,7 +64,7 @@ class EneyidaProvider implements ContentProvider {
           '&search_start=$page';
 
       final html = await _client.get(url);
-      return _parseSearchResults(html);
+      return compute(_parseSearchResultsStatic, html);
     } catch (e, stack) {
       Logger.e('Search failed', tag: _tag, error: e, stackTrace: stack);
       return [];
@@ -83,7 +84,7 @@ class EneyidaProvider implements ContentProvider {
       }
 
       final html = await _client.get('$baseUrl/$cleanId.html');
-      return _parseDetails(html, cleanId);
+      return compute(_parseDetailsStatic, ParseDetailsArgs(html, cleanId));
     } catch (e, stack) {
       Logger.e('Get details failed', tag: _tag, error: e, stackTrace: stack);
       rethrow;
@@ -97,7 +98,6 @@ class EneyidaProvider implements ContentProvider {
     int? episode,
   }) async {
     Logger.d('getStreams: id=$id, s=$season, e=$episode', tag: _tag);
-    print('[Eneyida] getStreams: id=$id, s=$season, e=$episode');
     try {
       // Sanitize ID - remove domain if present
       var cleanId = id;
@@ -109,27 +109,24 @@ class EneyidaProvider implements ContentProvider {
       }
 
       final url = '$baseUrl/$cleanId.html';
-      print('[Eneyida] Fetching: $url');
+      Logger.d('Fetching: $url', tag: _tag);
       final html = await _client.get(url);
-      print('[Eneyida] HTML length: ${html.length}');
+      Logger.d('HTML length: ${html.length}', tag: _tag);
       final soup = BeautifulSoup(html);
       final sources = <StreamSource>[];
 
       // 1. Try AJAX playlist first (most common method)
       final newsId = _extractNewsId(soup, id);
       Logger.d('Extracted news_id: $newsId', tag: _tag);
-      print('[Eneyida] newsId: $newsId');
 
       if (newsId != null) {
         await _loadAjaxPlaylist(newsId, sources, season, episode);
         Logger.d('AJAX playlist returned ${sources.length} sources', tag: _tag);
-        print('[Eneyida] AJAX returned ${sources.length} sources');
       }
 
       // 2. Try to find player iframe if AJAX didn't work
       if (sources.isEmpty) {
         final iframes = soup.findAll('iframe');
-        print('[Eneyida] Found ${iframes.length} iframes');
         Logger.d('Found ${iframes.length} iframes', tag: _tag);
         for (final iframe in iframes) {
           final src = iframe.attributes['src'] ?? iframe.attributes['data-src'];
@@ -142,13 +139,16 @@ class EneyidaProvider implements ContentProvider {
 
       // 3. Try direct script parsing for PlayerJS
       if (sources.isEmpty) {
-        print('[Eneyida] Trying script parsing...');
+        Logger.d('Trying script parsing...', tag: _tag);
         final scripts = soup.findAll('script');
         for (final script in scripts) {
           final content = script.text;
           if (content.contains('new Playerjs') || content.contains('file:')) {
-            final parsed = PlayerJsParser.parseFromHtml(content);
-            print('[Eneyida] Script parsing found ${parsed.length} sources');
+            final parsed = await PlayerJsParser.parseFromHtmlCompute(content);
+            Logger.d(
+              'Script parsing found ${parsed.length} sources',
+              tag: _tag,
+            );
             sources.addAll(parsed);
           }
         }
@@ -157,20 +157,27 @@ class EneyidaProvider implements ContentProvider {
       // 4. Fallback to full HTML PlayerJS parsing
       if (sources.isEmpty) {
         Logger.d('Fallback to PlayerJS parse', tag: _tag);
-        print('[Eneyida] Fallback to full HTML PlayerJS');
-        final parsed = PlayerJsParser.parseFromHtml(html);
-        print('[Eneyida] PlayerJS found ${parsed.length} sources');
+        final parsed = await PlayerJsParser.parseFromHtmlCompute(html);
+        Logger.d('PlayerJS found ${parsed.length} sources', tag: _tag);
         sources.addAll(parsed);
       }
 
       Logger.d('Total sources found: ${sources.length}', tag: _tag);
-      print('[Eneyida] Total: ${sources.length} sources');
-      return sources;
+      return _deduplicateSources(sources);
     } catch (e, stack) {
       Logger.e('Get streams failed', tag: _tag, error: e, stackTrace: stack);
-      print('[Eneyida] ERROR: $e');
       return [];
     }
+  }
+
+  List<StreamSource> _deduplicateSources(List<StreamSource> sources) {
+    final unique = <String, StreamSource>{};
+    for (final source in sources) {
+      if (!unique.containsKey(source.url)) {
+        unique[source.url] = source;
+      }
+    }
+    return unique.values.toList();
   }
 
   String? _extractNewsId(BeautifulSoup soup, String id) {
@@ -291,6 +298,215 @@ class EneyidaProvider implements ContentProvider {
     }
   }
 
+  // Static parsing methods for Compute (Isolate)
+
+  static List<MediaItem> _parseSearchResultsStatic(String html) {
+    // Moved logic from _parseSearchResults
+    final soup = BeautifulSoup(html);
+    final items = <MediaItem>[];
+
+    // Main content cards
+    final cards = soup.findAll('article', class_: 'short');
+    if (cards.isEmpty) {
+      // Try alternative
+      final altCards = soup.findAll('div', class_: 'short-item');
+      for (final card in altCards) {
+        final item = _parseCardStatic(card);
+        if (item != null) items.add(item);
+      }
+    }
+
+    for (final card in cards) {
+      final item = _parseCardStatic(card);
+      if (item != null) items.add(item);
+    }
+
+    return items;
+  }
+
+  static MediaItem? _parseCardStatic(dynamic card) {
+    try {
+      final link = card.find('a', class_: 'short_img') ?? card.find('a');
+      if (link == null) return null;
+
+      final href = link.attributes['href'] ?? '';
+      final mediaId = _extractIdFromUrlStatic(href);
+      if (mediaId.isEmpty) return null;
+
+      final img = card.find('img');
+      final posterUrl = img?.attributes['src'] ?? img?.attributes['data-src'];
+
+      final titleEl =
+          card.find('a', class_: 'short_title') ??
+          card.find('div', class_: 'short_title');
+      final title = titleEl?.text.trim() ?? link.attributes['title'] ?? '';
+
+      int? year;
+      final infoEl = card.find('div', class_: 'short_info');
+      if (infoEl != null) {
+        final yearMatch = RegExp(r'(\d{4})').firstMatch(infoEl.text);
+        if (yearMatch != null) {
+          year = int.tryParse(yearMatch.group(1) ?? '');
+        }
+      }
+
+      double? rating;
+      final ratingEl = card.find('span', class_: 'rating');
+      if (ratingEl != null) {
+        rating = double.tryParse(ratingEl.text.trim());
+      }
+
+      // Parse genres from card
+      List<String>? genres;
+      final genreEl =
+          card.find('div', class_: 'short_genre') ??
+          card.find('span', class_: 'genre');
+      if (genreEl != null) {
+        final genreLinks = genreEl.findAll('a');
+        if (genreLinks.isNotEmpty) {
+          genres = genreLinks
+              .map((a) => a.text.trim())
+              .where((g) => g.isNotEmpty)
+              .toList();
+        } else {
+          // Try parsing comma-separated text
+          final genreText = genreEl.text.trim();
+          if (genreText.isNotEmpty) {
+            genres = genreText
+                .split(RegExp(r'[,/]'))
+                .map((g) => g.trim())
+                .where((g) => g.isNotEmpty)
+                .toList();
+          }
+        }
+      }
+
+      // Parse country if available
+      String? country;
+      final countryEl =
+          card.find('span', class_: 'country') ??
+          card.find('div', class_: 'short_country');
+      if (countryEl != null) {
+        country = countryEl.text.trim();
+      }
+
+      final type = _detectContentTypeStatic(href);
+
+      return MediaItem(
+        id: mediaId,
+        providerId: 'eneyida', // Cannot use id getter in static context
+        title: title,
+        posterUrl: _absoluteUrlStatic(posterUrl),
+        year: year,
+        rating: rating,
+        type: type,
+        genres: genres,
+        country: country,
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static String? _absoluteUrlStatic(String? url) {
+    const baseUrl =
+        'https://eneyida.tv'; // Hardcoded for static context or pass as arg if needed
+    if (url == null) return null;
+    if (url.startsWith('http')) return url;
+    if (url.startsWith('//')) return 'https:$url';
+    if (url.startsWith('/')) return '$baseUrl$url';
+    return '$baseUrl/$url';
+  }
+
+  static String _extractIdFromUrlStatic(String url) {
+    // Format: https://eneyida.tv/films/12345-movie-name.html
+    final match = RegExp(r'/([^/]+)/(\d+-[^/]+)\.html').firstMatch(url);
+    if (match != null) {
+      return '${match.group(1)}/${match.group(2)}';
+    }
+    // Fallback
+    final uri = Uri.tryParse(url);
+    if (uri != null && uri.path.isNotEmpty) {
+      var path = uri.path;
+      // Fix for double domain in path issue
+      if (path.contains('eneyida.tv/')) {
+        path = path.replaceAll('eneyida.tv/', '');
+      }
+      if (path.endsWith('.html')) {
+        path = path.substring(0, path.length - 5);
+      }
+      if (path.startsWith('/')) {
+        path = path.substring(1);
+      }
+      return path;
+    }
+    return '';
+  }
+
+  static ContentType _detectContentTypeStatic(String url) {
+    if (url.contains('/films/') || url.contains('films/'))
+      return ContentType.movie;
+    if (url.contains('/series/') || url.contains('series/'))
+      return ContentType.series;
+    if (url.contains('/cartoon/') || url.contains('cartoon/'))
+      return ContentType.cartoon;
+    if (url.contains('/anime/') || url.contains('anime/'))
+      return ContentType.anime;
+    return ContentType.unknown;
+  }
+
+  /// Detect content type from HTML page structure (breadcrumbs, links, etc.)
+  static ContentType _detectContentTypeFromHtml(
+    BeautifulSoup soup,
+    String mediaId,
+  ) {
+    // First try from mediaId/URL
+    final urlType = _detectContentTypeStatic(mediaId);
+    if (urlType != ContentType.unknown) return urlType;
+
+    // Try breadcrumbs
+    final breadcrumbs =
+        soup.find('ul', class_: 'bread-crumbs') ??
+        soup.find('div', class_: 'breadcrumb');
+    if (breadcrumbs != null) {
+      final links = breadcrumbs.findAll('a');
+      for (final link in links) {
+        final href = link.attributes['href'] ?? '';
+        final text = link.text.toLowerCase();
+        if (href.contains('/films/') || text.contains('фільм'))
+          return ContentType.movie;
+        if (href.contains('/series/') || text.contains('серіал'))
+          return ContentType.series;
+        if (href.contains('/cartoon/') || text.contains('мультфільм'))
+          return ContentType.cartoon;
+        if (href.contains('/anime/') || text.contains('аніме'))
+          return ContentType.anime;
+      }
+    }
+
+    // Try category info block
+    final categoryEl =
+        soup.find('span', class_: 'category') ??
+        soup.find('div', class_: 'full_category');
+    if (categoryEl != null) {
+      final text = categoryEl.text.toLowerCase();
+      if (text.contains('фільм')) return ContentType.movie;
+      if (text.contains('серіал')) return ContentType.series;
+      if (text.contains('мультфільм')) return ContentType.cartoon;
+      if (text.contains('аніме')) return ContentType.anime;
+    }
+
+    // Check if it has seasons (series indicator)
+    final hasSeasonsBlock = soup.find('div', class_: 'playlists-ajax') != null;
+    if (hasSeasonsBlock) return ContentType.series;
+
+    return ContentType.unknown;
+  }
+
+  static MediaDetails _parseDetailsStatic(ParseDetailsArgs args) {
+    return _parseDetails(args.html, args.mediaId);
+  }
+
   Future<void> _parseIframeSource(
     String src,
     List<StreamSource> sources,
@@ -302,7 +518,7 @@ class EneyidaProvider implements ContentProvider {
       }
 
       final html = await _client.get(url);
-      final parsed = PlayerJsParser.parseFromHtml(html);
+      final parsed = await PlayerJsParser.parseFromHtmlCompute(html);
       sources.addAll(parsed);
     } catch (e) {
       Logger.w('Failed to parse iframe: $e', tag: _tag);
@@ -356,7 +572,7 @@ class EneyidaProvider implements ContentProvider {
         Logger.d('  Fetching player page: $url', tag: _tag);
         final html = await _client.get(url);
         Logger.d('  Player page length: ${html.length}', tag: _tag);
-        final parsed = PlayerJsParser.parseFromHtml(html);
+        final parsed = await PlayerJsParser.parseFromHtmlCompute(html);
         Logger.d('  PlayerJS parsed ${parsed.length} streams', tag: _tag);
         for (final stream in parsed) {
           Logger.d(
@@ -411,7 +627,7 @@ class EneyidaProvider implements ContentProvider {
       }
 
       final html = await _client.get('$baseUrl/$section/page/$page/');
-      return _parseSearchResults(html);
+      return compute(_parseSearchResultsStatic, html);
     } catch (e, stack) {
       Logger.e('Get popular failed', tag: _tag, error: e, stackTrace: stack);
       return [];
@@ -422,7 +638,7 @@ class EneyidaProvider implements ContentProvider {
   Future<List<MediaItem>> getNew({ContentType? type, int page = 1}) async {
     try {
       final html = await _client.get('$baseUrl/page/$page/');
-      return _parseSearchResults(html);
+      return compute(_parseSearchResultsStatic, html);
     } catch (e, stack) {
       Logger.e('Get new failed', tag: _tag, error: e, stackTrace: stack);
       return [];
@@ -455,7 +671,7 @@ class EneyidaProvider implements ContentProvider {
     try {
       final genreSlug = _categoryToSlug(category);
       final html = await _client.get('$baseUrl/genre/$genreSlug/page/$page/');
-      return _parseSearchResults(html);
+      return compute(_parseSearchResultsStatic, html);
     } catch (e, stack) {
       Logger.e(
         'Get by category failed',
@@ -484,119 +700,8 @@ class EneyidaProvider implements ContentProvider {
     return map[category] ?? category.toLowerCase();
   }
 
-  List<MediaItem> _parseSearchResults(String html) {
-    final soup = BeautifulSoup(html);
-    final items = <MediaItem>[];
-
-    // Main content cards
-    final cards = soup.findAll('article', class_: 'short');
-    if (cards.isEmpty) {
-      // Try alternative
-      final altCards = soup.findAll('div', class_: 'short-item');
-      for (final card in altCards) {
-        final item = _parseCard(card);
-        if (item != null) items.add(item);
-      }
-    }
-
-    for (final card in cards) {
-      final item = _parseCard(card);
-      if (item != null) items.add(item);
-    }
-
-    return items;
-  }
-
-  MediaItem? _parseCard(dynamic card) {
-    try {
-      final link = card.find('a', class_: 'short_img') ?? card.find('a');
-      if (link == null) return null;
-
-      final href = link.attributes['href'] ?? '';
-      final mediaId = _extractIdFromUrl(href);
-      if (mediaId.isEmpty) return null;
-
-      final img = card.find('img');
-      final posterUrl = img?.attributes['src'] ?? img?.attributes['data-src'];
-
-      final titleEl =
-          card.find('a', class_: 'short_title') ??
-          card.find('div', class_: 'short_title');
-      final title = titleEl?.text.trim() ?? link.attributes['title'] ?? '';
-
-      int? year;
-      final infoEl = card.find('div', class_: 'short_info');
-      if (infoEl != null) {
-        final yearMatch = RegExp(r'(\d{4})').firstMatch(infoEl.text);
-        if (yearMatch != null) {
-          year = int.tryParse(yearMatch.group(1) ?? '');
-        }
-      }
-
-      double? rating;
-      final ratingEl = card.find('span', class_: 'rating');
-      if (ratingEl != null) {
-        rating = double.tryParse(ratingEl.text.trim());
-      }
-
-      final type = _detectContentType(href);
-
-      return MediaItem(
-        id: mediaId,
-        providerId: id,
-        title: title,
-        posterUrl: _absoluteUrl(posterUrl),
-        year: year,
-        rating: rating,
-        type: type,
-      );
-    } catch (e) {
-      return null;
-    }
-  }
-
-  String? _absoluteUrl(String? url) {
-    if (url == null) return null;
-    if (url.startsWith('http')) return url;
-    if (url.startsWith('//')) return 'https:$url';
-    if (url.startsWith('/')) return '$baseUrl$url';
-    return '$baseUrl/$url';
-  }
-
-  String _extractIdFromUrl(String url) {
-    // Format: https://eneyida.tv/films/12345-movie-name.html
-    final match = RegExp(r'/([^/]+)/(\d+-[^/]+)\.html').firstMatch(url);
-    if (match != null) {
-      return '${match.group(1)}/${match.group(2)}';
-    }
-    // Fallback
-    final uri = Uri.tryParse(url);
-    if (uri != null && uri.path.isNotEmpty) {
-      var path = uri.path;
-      // Fix for double domain in path issue
-      if (path.contains('eneyida.tv/')) {
-        path = path.replaceAll('eneyida.tv/', '');
-      }
-      if (path.endsWith('.html')) {
-        path = path.substring(0, path.length - 5);
-      }
-      if (path.startsWith('/')) {
-        path = path.substring(1);
-      }
-      return path;
-    }
-    return '';
-  }
-
-  ContentType _detectContentType(String url) {
-    if (url.contains('/films/')) return ContentType.movie;
-    if (url.contains('/series/')) return ContentType.series;
-    if (url.contains('/cartoon/')) return ContentType.cartoon;
-    if (url.contains('/anime/')) return ContentType.anime;
-    return ContentType.unknown;
-  }
-
-  MediaDetails _parseDetails(String html, String mediaId) {
+  // Method _parseDetails made static for compute
+  static MediaDetails _parseDetails(String html, String mediaId) {
     final soup = BeautifulSoup(html);
 
     // Title
@@ -677,6 +782,14 @@ class EneyidaProvider implements ContentProvider {
       }
     }
 
+    // Fallback: search in description or full text if year/countries/director missing
+    if (year == null) {
+      final yearMatch = RegExp(r'Рік:\s*(\d{4})').firstMatch(soup.text);
+      if (yearMatch != null) {
+        year = int.tryParse(yearMatch.group(1) ?? '');
+      }
+    }
+
     // Description
     final descEl = soup.find('div', class_: 'full_text');
     final description = descEl?.text.trim();
@@ -698,15 +811,16 @@ class EneyidaProvider implements ContentProvider {
       seasons = _parseSeasons(soup);
     }
 
-    final type = _detectContentType('/$mediaId.html');
+    // Use enhanced type detection from HTML
+    final type = _detectContentTypeFromHtml(soup, mediaId);
 
     return MediaDetails(
       item: MediaItem(
         id: mediaId,
-        providerId: id,
+        providerId: 'eneyida', // Hardcoded for static parsing
         title: title,
         originalTitle: originalTitle,
-        posterUrl: _absoluteUrl(posterUrl),
+        posterUrl: _absoluteUrlStatic(posterUrl),
         year: year,
         rating: rating,
         type: type,
@@ -721,7 +835,7 @@ class EneyidaProvider implements ContentProvider {
     );
   }
 
-  List<Season> _parseSeasons(BeautifulSoup soup) {
+  static List<Season> _parseSeasons(BeautifulSoup soup) {
     final seasons = <Season>[];
 
     final seasonTabs = soup.findAll('li', class_: 'season-tab');
@@ -755,4 +869,12 @@ class EneyidaProvider implements ContentProvider {
 
     return seasons;
   }
+}
+
+/// Arguments wrapper for parseDetails
+class ParseDetailsArgs {
+  final String html;
+  final String mediaId;
+
+  ParseDetailsArgs(this.html, this.mediaId);
 }

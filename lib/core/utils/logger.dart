@@ -1,12 +1,19 @@
 import 'dart:developer' as developer;
 
+import 'package:flutter/foundation.dart';
+
 /// Simple logger utility for debugging
 class Logger {
   static const String _tag = 'OxideFilm';
-  static bool useConsoleLogs = false; // For CLI debugging
+
+  /// Enable console logs for CLI debugging (only works in debug mode)
+  static bool useConsoleLogs = false;
+
+  /// Check if logging should output to console
+  static bool get _shouldLogToConsole => !kReleaseMode && useConsoleLogs;
 
   static void d(String message, {String? tag}) {
-    if (useConsoleLogs) print('[DEBUG] [$tag] $message');
+    if (_shouldLogToConsole) print('[DEBUG] [$tag] $message');
     developer.log(
       message,
       name: tag ?? _tag,
@@ -15,7 +22,7 @@ class Logger {
   }
 
   static void i(String message, {String? tag}) {
-    if (useConsoleLogs) print('[INFO] [$tag] $message');
+    if (_shouldLogToConsole) print('[INFO] [$tag] $message');
     developer.log(
       message,
       name: tag ?? _tag,
@@ -24,7 +31,7 @@ class Logger {
   }
 
   static void w(String message, {String? tag}) {
-    if (useConsoleLogs) print('[WARN] [$tag] $message');
+    if (_shouldLogToConsole) print('[WARN] [$tag] $message');
     developer.log(
       message,
       name: tag ?? _tag,
@@ -38,7 +45,7 @@ class Logger {
     Object? error,
     StackTrace? stackTrace,
   }) {
-    if (useConsoleLogs) {
+    if (_shouldLogToConsole) {
       print('[ERROR] [$tag] $message');
       if (error != null) print(error);
       if (stackTrace != null) print(stackTrace);

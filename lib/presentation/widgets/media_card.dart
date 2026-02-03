@@ -82,9 +82,18 @@ class _MediaCardState extends State<MediaCard> {
                 // Provider badge (top-left)
                 _buildProviderBadge(),
 
+                // Type badge (below provider)
+                if (widget.item.type != ContentType.unknown) _buildTypeBadge(),
+
                 // Rating badge (top-right)
                 if (widget.item.rating != null && _ui.showRatings)
                   _buildRatingBadge(),
+
+                // Year badge (if no overlay style and year exists)
+                if (_ui.cardInfoStyle != CardInfoStyle.overlay &&
+                    widget.item.year != null &&
+                    _ui.showYears)
+                  _buildYearBadge(),
 
                 // Focus border
                 if (isFocused) _buildFocusBorder(),
@@ -205,8 +214,21 @@ class _MediaCardState extends State<MediaCard> {
     );
   }
 
+  /// Normalize rating to 0-10 scale
+  double _normalizeRating(double rating) {
+    // Negative ratings are invalid
+    if (rating < 0) return 0;
+    // Ratings above 10 are likely percentages (0-100 scale)
+    if (rating > 10) return (rating / 10).clamp(0, 10);
+    return rating;
+  }
+
   Widget _buildRatingBadge() {
-    final rating = widget.item.rating!;
+    final rawRating = widget.item.rating!;
+    // Skip display for invalid ratings
+    if (rawRating < 0) return const SizedBox.shrink();
+
+    final rating = _normalizeRating(rawRating);
     final color = rating >= 7.0
         ? AppTheme.successColor
         : rating >= 5.0
@@ -250,6 +272,75 @@ class _MediaCardState extends State<MediaCard> {
             color: Colors.white70,
             fontSize: 9,
             fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTypeBadge() {
+    final typeColor = _getTypeColor();
+    final typeIcon = _getTypeIcon();
+
+    return Positioned(
+      top: 28,
+      left: 8,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        decoration: BoxDecoration(
+          color: typeColor.withValues(alpha: 0.9),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(typeIcon, size: 10, color: Colors.white),
+            const SizedBox(width: 2),
+            Text(
+              widget.item.type.shortName,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 8,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Color _getTypeColor() {
+    switch (widget.item.type) {
+      case ContentType.movie:
+        return Colors.blue;
+      case ContentType.series:
+        return Colors.purple;
+      case ContentType.cartoon:
+        return Colors.orange;
+      case ContentType.anime:
+        return Colors.pink;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  Widget _buildYearBadge() {
+    return Positioned(
+      bottom: 8,
+      left: 8,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          '${widget.item.year}',
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 10,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ),

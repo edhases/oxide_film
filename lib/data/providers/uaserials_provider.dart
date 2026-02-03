@@ -45,13 +45,17 @@ class UaserialsProvider implements ContentProvider {
     ContentType? type,
     int page = 1,
   }) async {
+    Logger.d('search: query="$query", page=$page', tag: _tag);
     try {
       // DLE standard search
       final url =
           '$baseUrl/index.php?do=search&subaction=search&story=${Uri.encodeComponent(query)}&search_start=$page';
-      Logger.d('Search: $url', tag: _tag);
+      Logger.d('Search URL: $url', tag: _tag);
       final html = await _client.get(url);
-      return _parseList(html);
+      Logger.d('Search response length: ${html.length}', tag: _tag);
+      final items = _parseList(html);
+      Logger.d('Search found ${items.length} items', tag: _tag);
+      return items;
     } catch (e, stack) {
       Logger.e('Search failed', tag: _tag, error: e, stackTrace: stack);
       return [];
@@ -60,10 +64,15 @@ class UaserialsProvider implements ContentProvider {
 
   @override
   Future<List<MediaItem>> getPopular({ContentType? type, int page = 1}) async {
+    Logger.d('getPopular: page=$page', tag: _tag);
     try {
       final url = page == 1 ? baseUrl : '$baseUrl/page/$page/';
+      Logger.d('Fetching: $url', tag: _tag);
       final html = await _client.get(url);
-      return _parseList(html);
+      Logger.d('Response length: ${html.length}', tag: _tag);
+      final items = _parseList(html);
+      Logger.d('Parsed ${items.length} items', tag: _tag);
+      return items;
     } catch (e, stack) {
       Logger.e('Get popular failed', tag: _tag, error: e, stackTrace: stack);
       return [];
@@ -120,9 +129,12 @@ class UaserialsProvider implements ContentProvider {
     int? season,
     int? episode,
   }) async {
+    Logger.d('getStreams: id=$id, season=$season, episode=$episode', tag: _tag);
     try {
       final url = '$baseUrl/$id.html';
+      Logger.d('Fetching page: $url', tag: _tag);
       final html = await _client.get(url);
+      Logger.d('HTML length: ${html.length}', tag: _tag);
 
       final sources = <StreamSource>[];
       final soup = BeautifulSoup(html);
@@ -173,6 +185,7 @@ class UaserialsProvider implements ContentProvider {
       Logger.d('Found ${pageSources.length} sources on main page', tag: _tag);
       sources.addAll(pageSources);
 
+      Logger.i('Total streams: ${sources.length}', tag: _tag);
       return sources;
     } catch (e, stack) {
       Logger.e('Get streams failed', tag: _tag, error: e, stackTrace: stack);
@@ -254,18 +267,105 @@ class UaserialsProvider implements ContentProvider {
                 '')
           : link.text.trim();
 
+      // Try to extract year from title or nearby elements
+      int? year;
+      final parent = link.parent;
+      if (parent != null) {
+        // Look for year in parent container
+        final yearEl =
+            parent.find('span', class_: 'year') ??
+            parent.find('div', class_: 'year') ??
+            parent.find('span', class_: 'serial-year');
+        if (yearEl != null) {
+          year = int.tryParse(
+            yearEl.text.trim().replaceAll(RegExp(r'[^\d]'), ''),
+          );
+        }
+        // Try to find year in text like (2024) or 2024
+        if (year == null) {
+          final yearMatch = RegExp(r'(\d{4})').firstMatch(parent.text);
+          if (yearMatch != null) {
+            final parsed = int.tryParse(yearMatch.group(1) ?? '');
+            if (parsed != null && parsed >= 1900 && parsed <= 2030) {
+              year = parsed;
+            }
+          }
+        }
+      }
+
+      // Try to extract rating
+      double? rating;
+      if (parent != null) {
+        final ratingEl =
+            parent.find('span', class_: 'rating') ??
+            parent.find('div', class_: 'rating') ??
+            parent.find('span', class_: 'imdb') ??
+            parent.find('span', class_: 'serial-rating');
+        if (ratingEl != null) {
+          rating = double.tryParse(
+            ratingEl.text
+                .trim()
+                .replaceAll(',', '.')
+                .replaceAll(RegExp(r'[^\d.]'), ''),
+          );
+        }
+      }
+
       // Determine type
       ContentType type = ContentType.series; // Default
-      if (href.contains('/filmss/') || href.contains('movies'))
+      if (href.contains('/filmss/') || href.contains('movies')) {
         type = ContentType.movie;
+      }
       if (href.contains('cartoons')) type = ContentType.cartoon;
+
+      // Try to extract genres
+      List<String>? genres;
+      if (parent != null) {
+        final genreEl =
+            parent.find('div', class_: 'serial-genre') ??
+            parent.find('span', class_: 'genre') ??
+            parent.find('div', class_: 'genres');
+        if (genreEl != null) {
+          final genreLinks = genreEl.findAll('a');
+          if (genreLinks.isNotEmpty) {
+            genres = genreLinks
+                .map((a) => a.text.trim())
+                .where((g) => g.isNotEmpty)
+                .toList();
+          } else {
+            final genreText = genreEl.text.trim();
+            if (genreText.isNotEmpty) {
+              genres = genreText
+                  .split(RegExp(r'[,/]'))
+                  .map((g) => g.trim())
+                  .where((g) => g.isNotEmpty)
+                  .toList();
+            }
+          }
+        }
+      }
+
+      // Try to extract country
+      String? country;
+      if (parent != null) {
+        final countryEl =
+            parent.find('div', class_: 'serial-country') ??
+            parent.find('span', class_: 'country');
+        if (countryEl != null) {
+          country = countryEl.text.trim().split(',').first.trim();
+        }
+      }
 
       return MediaItem(
         id: id,
         providerId: this.id,
         title: title,
         posterUrl: _absoluteUrl(posterUrl),
+        year: year,
+        rating: rating,
         type: type,
+        genres: genres,
+        country: country,
       );
     } catch (e) {
       return null;

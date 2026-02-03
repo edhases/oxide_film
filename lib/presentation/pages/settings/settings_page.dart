@@ -9,6 +9,7 @@ import '../../../core/l10n/app_strings.dart';
 import '../../../data/providers/provider_registry.dart';
 import '../../../data/services/settings_service.dart';
 import '../../../data/services/sync_service.dart';
+import '../../../data/services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/custom_titlebar.dart';
 import '../../widgets/settings_widgets.dart';
@@ -25,6 +26,7 @@ class _SettingsPageState extends State<SettingsPage> {
   final _registry = GetIt.instance<ProviderRegistry>();
   final _settings = GetIt.instance<SettingsService>();
   final _syncService = GetIt.instance<SyncService>();
+  final _authService = GetIt.instance<AuthService>();
 
   AppStrings get _s => AppStrings.of(context);
 
@@ -63,6 +65,9 @@ class _SettingsPageState extends State<SettingsPage> {
               children: [
                 const SizedBox(height: 8),
 
+                // Account section
+                _buildAccountSection(),
+
                 // Providers section
                 SettingsSection(
                   title: _s.contentSources,
@@ -87,6 +92,12 @@ class _SettingsPageState extends State<SettingsPage> {
                       value: _settings.state.defaultQuality.displayName,
                       onTap: () => _showQualityDialog(),
                     ),
+                    SettingsTile(
+                      icon: Icons.speed,
+                      title: _s.defaultSpeed,
+                      value: '${_settings.state.defaultSpeed}x',
+                      onTap: () => _showSpeedDialog(),
+                    ),
                     SettingsSwitch(
                       icon: Icons.skip_next,
                       title: _s.autoPlayNext,
@@ -101,6 +112,41 @@ class _SettingsPageState extends State<SettingsPage> {
                       value: _settings.state.rememberPosition,
                       onChanged: (value) =>
                           _settings.setRememberPosition(value),
+                    ),
+                    SettingsSwitch(
+                      icon: Icons.swipe,
+                      title: _s.gestureControls,
+                      subtitle: _s.gestureControlsDesc,
+                      value: _settings.state.gestureControls,
+                      onChanged: (value) => _settings.setGestureControls(value),
+                    ),
+                    SettingsSwitch(
+                      icon: Icons.fast_forward,
+                      title: _s.skipIntro,
+                      subtitle: _s.skipIntroDesc,
+                      value: _settings.state.skipIntro,
+                      onChanged: (value) => _settings.setSkipIntro(value),
+                    ),
+                    SettingsTile(
+                      icon: Icons.timer,
+                      title: _s.nextEpisodeDelay,
+                      value:
+                          '${_settings.state.nextEpisodeDelay} ${_s.nextEpisodeDelayDesc}',
+                      onTap: () => _showNextEpisodeDelayDialog(),
+                    ),
+                  ],
+                ),
+
+                // Watch Party section
+                SettingsSection(
+                  title: _s.watchParty,
+                  icon: Icons.groups,
+                  children: [
+                    SettingsTile(
+                      icon: Icons.person,
+                      title: _s.watchPartyName,
+                      value: _settings.state.watchPartyName,
+                      onTap: () => _showWatchPartyNameDialog(),
                     ),
                   ],
                 ),
@@ -196,6 +242,59 @@ class _SettingsPageState extends State<SettingsPage> {
                   ],
                 ),
 
+                // Notifications section
+                SettingsSection(
+                  title: _s.notifications,
+                  icon: Icons.notifications_outlined,
+                  children: [
+                    SettingsSwitch(
+                      icon: Icons.new_releases,
+                      title: _s.newEpisodeNotify,
+                      subtitle: _s.newEpisodeNotifyDesc,
+                      value: _settings.state.newEpisodeNotify,
+                      onChanged: (value) =>
+                          _settings.setNewEpisodeNotify(value),
+                    ),
+                    SettingsSwitch(
+                      icon: Icons.system_update,
+                      title: _s.updateNotify,
+                      subtitle: _s.updateNotifyDesc,
+                      value: _settings.state.updateNotify,
+                      onChanged: (value) => _settings.setUpdateNotify(value),
+                    ),
+                  ],
+                ),
+
+                // Advanced section
+                SettingsSection(
+                  title: _s.advanced,
+                  icon: Icons.settings_applications,
+                  children: [
+                    SettingsTile(
+                      icon: Icons.devices,
+                      title: _s.deviceTypeOverride,
+                      value: _getDeviceTypeDisplayName(
+                        _settings.state.deviceTypeOverride,
+                      ),
+                      onTap: () => _showDeviceTypeDialog(),
+                    ),
+                    SettingsSwitch(
+                      icon: Icons.bug_report,
+                      title: _s.debugMode,
+                      subtitle: _s.debugModeDesc,
+                      value: _settings.state.debugMode,
+                      onChanged: (value) => _settings.setDebugMode(value),
+                    ),
+                    SettingsTile(
+                      icon: Icons.restore,
+                      title: _s.resetSettings,
+                      value: _s.resetSettingsDesc,
+                      onTap: () => _showResetSettingsDialog(),
+                      destructive: true,
+                    ),
+                  ],
+                ),
+
                 // About section
                 SettingsSection(
                   title: _s.about,
@@ -245,6 +344,161 @@ class _SettingsPageState extends State<SettingsPage> {
           Text(
             _s.settings,
             style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAccountSection() {
+    return ListenableBuilder(
+      listenable: _authService,
+      builder: (context, _) {
+        if (_authService.isAuthenticated) {
+          return SettingsSection(
+            title: 'Акаунт',
+            icon: Icons.account_circle,
+            children: [
+              ListTile(
+                leading: CircleAvatar(
+                  radius: 20,
+                  backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.2),
+                  backgroundImage: _authService.avatarUrl != null
+                      ? NetworkImage(_authService.avatarUrl!)
+                      : null,
+                  child: _authService.avatarUrl == null
+                      ? Text(
+                          _authService.displayName[0].toUpperCase(),
+                          style: const TextStyle(
+                            color: AppTheme.primaryColor,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        )
+                      : null,
+                ),
+                title: Text(_authService.displayName),
+                subtitle: Text(
+                  _authService.userEmail ?? '',
+                  style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                ),
+                trailing: const Icon(
+                  Icons.chevron_right,
+                  color: AppTheme.textMuted,
+                ),
+                onTap: () => context.push('/profile'),
+              ),
+              SettingsTile(
+                icon: Icons.sync,
+                title: 'Синхронізація',
+                value: 'Історія та обране в хмарі',
+                onTap: () => _showSyncInfo(),
+              ),
+            ],
+          );
+        } else {
+          return SettingsSection(
+            title: 'Акаунт',
+            icon: Icons.account_circle,
+            children: [
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppTheme.darkCard,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 24,
+                      backgroundColor: AppTheme.primaryColor.withValues(
+                        alpha: 0.2,
+                      ),
+                      child: const Icon(
+                        Icons.person_outline,
+                        color: AppTheme.primaryColor,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Увійдіть в акаунт',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                          Text(
+                            'Синхронізуйте дані між пристроями',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.6),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => context.push('/login'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryColor,
+                      ),
+                      child: const Text('Увійти'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        }
+      },
+    );
+  }
+
+  void _showSyncInfo() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.darkCard,
+        title: const Text('Синхронізація'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Ваші дані автоматично синхронізуються:'),
+            SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green, size: 20),
+                SizedBox(width: 8),
+                Text('Історія переглядів'),
+              ],
+            ),
+            SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green, size: 20),
+                SizedBox(width: 8),
+                Text('Обране'),
+              ],
+            ),
+            SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green, size: 20),
+                SizedBox(width: 8),
+                Text('Позиція перегляду'),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Зрозуміло'),
           ),
         ],
       ),
@@ -540,5 +794,334 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _shareData() async {
     await _syncService.exportAndShare();
+  }
+
+  // ============================================================================
+  // NEW DIALOGS
+  // ============================================================================
+
+  String _getDeviceTypeDisplayName(String type) {
+    switch (type) {
+      case 'phone':
+        return _s.devicePhone;
+      case 'tablet':
+        return _s.deviceTablet;
+      case 'desktop':
+        return _s.deviceDesktop;
+      case 'tv':
+        return _s.deviceTV;
+      default:
+        return _s.deviceAuto;
+    }
+  }
+
+  void _showSpeedDialog() {
+    final speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.surfaceColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 12),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppTheme.textMuted.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                _s.defaultSpeed,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            ...speeds.map((speed) {
+              final isSelected = speed == _settings.state.defaultSpeed;
+              return ListTile(
+                leading: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? AppTheme.primaryColor.withValues(alpha: 0.15)
+                        : AppTheme.textMuted.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.speed,
+                    color: isSelected
+                        ? AppTheme.primaryColor
+                        : AppTheme.textSecondary,
+                  ),
+                ),
+                title: Text(
+                  '${speed}x',
+                  style: TextStyle(
+                    fontWeight: isSelected
+                        ? FontWeight.bold
+                        : FontWeight.normal,
+                    color: isSelected ? AppTheme.primaryColor : null,
+                  ),
+                ),
+                trailing: isSelected
+                    ? Icon(Icons.check_circle, color: AppTheme.primaryColor)
+                    : null,
+                onTap: () {
+                  _settings.setDefaultSpeed(speed);
+                  Navigator.pop(context);
+                },
+              );
+            }),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showNextEpisodeDelayDialog() {
+    final delays = [0, 3, 5, 10, 15, 30];
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.surfaceColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 12),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppTheme.textMuted.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                _s.nextEpisodeDelay,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            ...delays.map((delay) {
+              final isSelected = delay == _settings.state.nextEpisodeDelay;
+              return ListTile(
+                leading: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? AppTheme.primaryColor.withValues(alpha: 0.15)
+                        : AppTheme.textMuted.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.timer,
+                    color: isSelected
+                        ? AppTheme.primaryColor
+                        : AppTheme.textSecondary,
+                  ),
+                ),
+                title: Text(
+                  delay == 0 ? 'Вимкнено' : '$delay сек',
+                  style: TextStyle(
+                    fontWeight: isSelected
+                        ? FontWeight.bold
+                        : FontWeight.normal,
+                    color: isSelected ? AppTheme.primaryColor : null,
+                  ),
+                ),
+                trailing: isSelected
+                    ? Icon(Icons.check_circle, color: AppTheme.primaryColor)
+                    : null,
+                onTap: () {
+                  _settings.setNextEpisodeDelay(delay);
+                  Navigator.pop(context);
+                },
+              );
+            }),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showWatchPartyNameDialog() {
+    final controller = TextEditingController(
+      text: _settings.state.watchPartyName,
+    );
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surfaceColor,
+        title: Text(_s.watchPartyName),
+        content: TextField(
+          controller: controller,
+          decoration: InputDecoration(
+            hintText: _s.enterYourName,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+          maxLength: 20,
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(_s.cancel),
+          ),
+          TextButton(
+            onPressed: () {
+              final name = controller.text.trim();
+              if (name.isNotEmpty) {
+                _settings.setWatchPartyName(name);
+              }
+              Navigator.pop(ctx);
+            },
+            child: Text(_s.save),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeviceTypeDialog() {
+    final types = ['auto', 'phone', 'tablet', 'desktop', 'tv'];
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.surfaceColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 12),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppTheme.textMuted.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                _s.deviceTypeOverride,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            ...types.map((type) {
+              final isSelected = type == _settings.state.deviceTypeOverride;
+              return ListTile(
+                leading: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? AppTheme.primaryColor.withValues(alpha: 0.15)
+                        : AppTheme.textMuted.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    _getDeviceIcon(type),
+                    color: isSelected
+                        ? AppTheme.primaryColor
+                        : AppTheme.textSecondary,
+                  ),
+                ),
+                title: Text(
+                  _getDeviceTypeDisplayName(type),
+                  style: TextStyle(
+                    fontWeight: isSelected
+                        ? FontWeight.bold
+                        : FontWeight.normal,
+                    color: isSelected ? AppTheme.primaryColor : null,
+                  ),
+                ),
+                trailing: isSelected
+                    ? Icon(Icons.check_circle, color: AppTheme.primaryColor)
+                    : null,
+                onTap: () {
+                  _settings.setDeviceTypeOverride(type);
+                  Navigator.pop(context);
+                },
+              );
+            }),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  IconData _getDeviceIcon(String type) {
+    switch (type) {
+      case 'phone':
+        return Icons.phone_android;
+      case 'tablet':
+        return Icons.tablet_android;
+      case 'desktop':
+        return Icons.computer;
+      case 'tv':
+        return Icons.tv;
+      default:
+        return Icons.auto_awesome;
+    }
+  }
+
+  void _showResetSettingsDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surfaceColor,
+        title: Text(_s.resetSettings),
+        content: Text(_s.resetSettingsConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(_s.cancel),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _settings.resetAllSettings();
+              if (mounted) {
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text(_s.settingsReset)));
+              }
+            },
+            child: Text(
+              _s.confirm,
+              style: TextStyle(color: AppTheme.errorColor),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

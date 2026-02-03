@@ -72,9 +72,25 @@ class _HomePageState extends State<HomePage> {
       final allItems = <MediaItem>[];
       final seenIds = <String>{};
 
+      // Check if genre filter is active
+      final selectedGenre = _filter.genres.isNotEmpty
+          ? _filter.genres.first
+          : null;
+      final selectedType = _filter.type;
+
       for (final provider in providers) {
         try {
-          final items = await provider.getPopular(page: 1);
+          List<MediaItem> items;
+          if (selectedGenre != null) {
+            // Use getByCategory for server-side genre filtering
+            items = await provider.getByCategory(
+              selectedGenre,
+              type: selectedType,
+              page: 1,
+            );
+          } else {
+            items = await provider.getPopular(type: selectedType, page: 1);
+          }
           for (final item in items) {
             // Deduplicate by unique ID
             if (!seenIds.contains(item.uniqueId)) {
@@ -110,13 +126,30 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _showFilterSheet() async {
+    final oldFilter = _filter;
     final newFilter = await FilterSheet.show(context, initialFilter: _filter);
     if (newFilter != null && mounted) {
+      // Check if genre or type changed - need to reload from server
+      final genresChanged = !_setEquals(oldFilter.genres, newFilter.genres);
+      final typeChanged = oldFilter.type != newFilter.type;
+
       setState(() {
         _filter = newFilter;
-        _applyFilter();
       });
+
+      if (genresChanged || typeChanged) {
+        // Reload content with new filter from server
+        _loadContent();
+      } else {
+        // Only client-side filtering needed
+        _applyFilter();
+      }
     }
+  }
+
+  bool _setEquals<T>(Set<T> a, Set<T> b) {
+    if (a.length != b.length) return false;
+    return a.every((item) => b.contains(item));
   }
 
   @override
@@ -198,10 +231,18 @@ class _HomePageState extends State<HomePage> {
             if (_filter.hasActiveFilters) ...[
               const SizedBox(height: 16),
               TextButton.icon(
-                onPressed: () => setState(() {
-                  _filter = const ContentFilter();
-                  _applyFilter();
-                }),
+                onPressed: () {
+                  final hadGenresOrType =
+                      _filter.genres.isNotEmpty || _filter.type != null;
+                  setState(() {
+                    _filter = const ContentFilter();
+                  });
+                  if (hadGenresOrType) {
+                    _loadContent();
+                  } else {
+                    _applyFilter();
+                  }
+                },
                 icon: const Icon(Icons.clear_all),
                 label: const Text('Скинути фільтри'),
               ),
@@ -254,6 +295,11 @@ class _HomePageState extends State<HomePage> {
                 tooltip: 'Історія',
               ),
               IconButton(
+                icon: const Icon(Icons.group_work),
+                onPressed: () => context.push('/watch-party'),
+                tooltip: 'Спільний перегляд',
+              ),
+              IconButton(
                 icon: const Icon(Icons.settings),
                 onPressed: () => context.push('/settings'),
                 tooltip: 'Налаштування',
@@ -266,10 +312,24 @@ class _HomePageState extends State<HomePage> {
             SliverToBoxAdapter(
               child: QuickFilterChips(
                 filter: _filter,
-                onFilterChanged: (newFilter) => setState(() {
-                  _filter = newFilter;
-                  _applyFilter();
-                }),
+                onFilterChanged: (newFilter) {
+                  final oldFilter = _filter;
+                  final genresChanged = !_setEquals(
+                    oldFilter.genres,
+                    newFilter.genres,
+                  );
+                  final typeChanged = oldFilter.type != newFilter.type;
+
+                  setState(() {
+                    _filter = newFilter;
+                  });
+
+                  if (genresChanged || typeChanged) {
+                    _loadContent();
+                  } else {
+                    _applyFilter();
+                  }
+                },
               ),
             ),
 
@@ -296,36 +356,8 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
 
-          // Media grid with Focus support for D-Pad
-          SliverPadding(
-            padding: EdgeInsets.symmetric(horizontal: _ui.gridSpacing.padding),
-            sliver: SliverGrid(
-              gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: _getMaxCrossAxisExtent(),
-                childAspectRatio: _ui.posterSize.aspectRatio,
-                crossAxisSpacing: _ui.gridSpacing.crossAxisSpacing,
-                mainAxisSpacing: _ui.gridSpacing.mainAxisSpacing,
-              ),
-              delegate: SliverChildBuilderDelegate((context, index) {
-                final item = _filteredItems[index];
-                return Focus(
-                  onKeyEvent: (node, event) {
-                    if (event is KeyDownEvent &&
-                        event.logicalKey == LogicalKeyboardKey.select) {
-                      _onItemTap(item);
-                      return KeyEventResult.handled;
-                    }
-                    return KeyEventResult.ignored;
-                  },
-                  child: MediaCard(
-                    item: item,
-                    onTap: () => _onItemTap(item),
-                    isFocused: _focusedIndex == index,
-                  ),
-                );
-              }, childCount: _filteredItems.length),
-            ),
-          ),
+          // Media grid/list with Focus support for D-Pad
+          _buildMediaSection(),
 
           // Bottom padding
           const SliverPadding(padding: EdgeInsets.only(bottom: 80)),
@@ -428,6 +460,70 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Widget _buildMediaSection() {
+    switch (_ui.listStyle) {
+      case ListStyle.list:
+        return SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: _ui.gridSpacing.padding),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate((context, index) {
+              final item = _filteredItems[index];
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _MediaListTile(
+                  item: item,
+                  onTap: () => _onItemTap(item),
+                ),
+              );
+            }, childCount: _filteredItems.length),
+          ),
+        );
+      case ListStyle.compact:
+        return SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: _ui.gridSpacing.padding),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate((context, index) {
+              final item = _filteredItems[index];
+              return _MediaCompactTile(
+                item: item,
+                onTap: () => _onItemTap(item),
+              );
+            }, childCount: _filteredItems.length),
+          ),
+        );
+      case ListStyle.grid:
+        return SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: _ui.gridSpacing.padding),
+          sliver: SliverGrid(
+            gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: _getMaxCrossAxisExtent(),
+              childAspectRatio: _ui.posterSize.aspectRatio,
+              crossAxisSpacing: _ui.gridSpacing.crossAxisSpacing,
+              mainAxisSpacing: _ui.gridSpacing.mainAxisSpacing,
+            ),
+            delegate: SliverChildBuilderDelegate((context, index) {
+              final item = _filteredItems[index];
+              return Focus(
+                onKeyEvent: (node, event) {
+                  if (event is KeyDownEvent &&
+                      event.logicalKey == LogicalKeyboardKey.select) {
+                    _onItemTap(item);
+                    return KeyEventResult.handled;
+                  }
+                  return KeyEventResult.ignored;
+                },
+                child: MediaCard(
+                  item: item,
+                  onTap: () => _onItemTap(item),
+                  isFocused: _focusedIndex == index,
+                ),
+              );
+            }, childCount: _filteredItems.length),
+          ),
+        );
+    }
+  }
+
   void _onItemTap(MediaItem item) {
     context.push('/details/${item.providerId}/${Uri.encodeComponent(item.id)}');
   }
@@ -485,6 +581,183 @@ class _CategoryCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Media list tile for list view
+class _MediaListTile extends StatelessWidget {
+  final MediaItem item;
+  final VoidCallback onTap;
+
+  const _MediaListTile({required this.item, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              // Poster
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: SizedBox(
+                  width: 60,
+                  height: 90,
+                  child: item.posterUrl != null
+                      ? Image.network(
+                          item.posterUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => _posterPlaceholder(),
+                        )
+                      : _posterPlaceholder(),
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Info
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        if (item.year != null)
+                          _buildChip(Icons.calendar_today, '${item.year}'),
+                        if (item.rating != null)
+                          _buildChip(
+                            Icons.star,
+                            item.rating!.toStringAsFixed(1),
+                            color: item.rating! >= 7.0
+                                ? Colors.green
+                                : item.rating! >= 5.0
+                                ? Colors.orange
+                                : Colors.red,
+                          ),
+                        _buildChip(
+                          _getTypeIcon(item.type),
+                          item.type.displayName,
+                          color: _getTypeColor(item.type),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _posterPlaceholder() {
+    return Container(
+      color: Colors.grey[800],
+      child: const Icon(Icons.movie, color: Colors.grey),
+    );
+  }
+
+  Widget _buildChip(IconData icon, String text, {Color? color}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: color ?? Colors.grey),
+        const SizedBox(width: 4),
+        Text(text, style: TextStyle(fontSize: 12, color: color ?? Colors.grey)),
+      ],
+    );
+  }
+
+  IconData _getTypeIcon(ContentType type) {
+    switch (type) {
+      case ContentType.movie:
+        return Icons.movie;
+      case ContentType.series:
+        return Icons.tv;
+      case ContentType.cartoon:
+        return Icons.animation;
+      case ContentType.anime:
+        return Icons.auto_awesome;
+      default:
+        return Icons.video_library;
+    }
+  }
+
+  Color _getTypeColor(ContentType type) {
+    switch (type) {
+      case ContentType.movie:
+        return Colors.blue;
+      case ContentType.series:
+        return Colors.purple;
+      case ContentType.cartoon:
+        return Colors.orange;
+      case ContentType.anime:
+        return Colors.pink;
+      default:
+        return Colors.grey;
+    }
+  }
+}
+
+/// Compact media tile for compact list view
+class _MediaCompactTile extends StatelessWidget {
+  final MediaItem item;
+  final VoidCallback onTap;
+
+  const _MediaCompactTile({required this.item, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: SizedBox(
+          width: 36,
+          height: 54,
+          child: item.posterUrl != null
+              ? Image.network(
+                  item.posterUrl!,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) =>
+                      Container(color: Colors.grey[800]),
+                )
+              : Container(color: Colors.grey[800]),
+        ),
+      ),
+      title: Text(
+        item.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 14),
+      ),
+      subtitle: Text(
+        [
+          if (item.year != null) '${item.year}',
+          item.type.displayName,
+          if (item.rating != null) '★${item.rating!.toStringAsFixed(1)}',
+        ].join(' • '),
+        style: const TextStyle(fontSize: 12),
+      ),
+      trailing: const Icon(Icons.chevron_right, size: 20),
+      onTap: onTap,
     );
   }
 }

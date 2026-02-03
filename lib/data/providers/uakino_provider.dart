@@ -342,10 +342,6 @@ class UakinoProvider implements ContentProvider {
         'Total unique streams found: ${uniqueSources.length}',
         tag: _tag,
       );
-      Logger.d(
-        'Total unique streams found: ${uniqueSources.length}',
-        tag: _tag,
-      );
 
       final result = uniqueSources.values.toList();
 
@@ -878,13 +874,90 @@ class UakinoProvider implements ContentProvider {
             }
           }
 
+          // Try to extract year from parent container
+          int? year;
+          double? rating;
+          List<String>? genres;
+          String? country;
+          if (link.parent != null) {
+            final parent = link.parent!;
+            // Year
+            final yearEl =
+                parent.find('div', class_: 'movie-year') ??
+                parent.find('span', class_: 'year') ??
+                parent.find('div', class_: 'year');
+            if (yearEl != null) {
+              year = int.tryParse(
+                yearEl.text.trim().replaceAll(RegExp(r'[^\d]'), ''),
+              );
+            }
+            // Rating
+            final ratingEl =
+                parent.find('div', class_: 'movie-rating') ??
+                parent.find('span', class_: 'rating') ??
+                parent.find('div', class_: 'rating');
+            if (ratingEl != null) {
+              rating = double.tryParse(
+                ratingEl.text
+                    .trim()
+                    .replaceAll(',', '.')
+                    .replaceAll(RegExp(r'[^\d.]'), ''),
+              );
+            }
+            // Fallback: search in text
+            if (year == null) {
+              final yearMatch = RegExp(
+                r'\b(19\d{2}|20[0-3]\d)\b',
+              ).firstMatch(parent.text);
+              if (yearMatch != null) {
+                year = int.tryParse(yearMatch.group(1) ?? '');
+              }
+            }
+
+            // Parse genres if available
+            final genreEl =
+                parent.find('div', class_: 'movie-genre') ??
+                parent.find('span', class_: 'genre') ??
+                parent.find('div', class_: 'genres');
+            if (genreEl != null) {
+              final genreLinks = genreEl.findAll('a');
+              if (genreLinks.isNotEmpty) {
+                genres = genreLinks
+                    .map((a) => a.text.trim())
+                    .where((g) => g.isNotEmpty)
+                    .toList();
+              } else {
+                final genreText = genreEl.text.trim();
+                if (genreText.isNotEmpty) {
+                  genres = genreText
+                      .split(RegExp(r'[,/]'))
+                      .map((g) => g.trim())
+                      .where((g) => g.isNotEmpty)
+                      .toList();
+                }
+              }
+            }
+
+            // Parse country if available
+            final countryEl =
+                parent.find('div', class_: 'movie-country') ??
+                parent.find('span', class_: 'country');
+            if (countryEl != null) {
+              country = countryEl.text.trim().split(',').first.trim();
+            }
+          }
+
           items.add(
             MediaItem(
               id: itemId,
               providerId: id,
               title: title,
               posterUrl: _normalizeImageUrl(posterUrl),
+              year: year,
+              rating: rating,
               type: _detectType(href),
+              genres: genres,
+              country: country,
             ),
           );
         } catch (e) {
@@ -926,7 +999,17 @@ class UakinoProvider implements ContentProvider {
           final yearEl =
               card.find('div', class_: 'movie-year') ??
               card.find('span', class_: 'year');
-          final year = yearEl != null ? int.tryParse(yearEl.text.trim()) : null;
+          var year = yearEl != null ? int.tryParse(yearEl.text.trim()) : null;
+
+          // Fallback: search in text if year is null
+          if (year == null) {
+            final yearMatch = RegExp(
+              r'\b(19\d{2}|20[0-3]\d)\b',
+            ).firstMatch(card.text);
+            if (yearMatch != null) {
+              year = int.tryParse(yearMatch.group(1) ?? '');
+            }
+          }
 
           // Get rating if available
           final ratingEl =
@@ -935,6 +1018,28 @@ class UakinoProvider implements ContentProvider {
           final rating = ratingEl != null
               ? double.tryParse(ratingEl.text.trim().replaceAll(',', '.'))
               : null;
+
+          // Get genres if available
+          List<String>? genres;
+          final genreEl =
+              card.find('div', class_: 'movie-genre') ??
+              card.find('span', class_: 'genre');
+          if (genreEl != null) {
+            final genreLinks = genreEl.findAll('a');
+            if (genreLinks.isNotEmpty) {
+              genres = genreLinks
+                  .map((a) => a.text.trim())
+                  .where((g) => g.isNotEmpty)
+                  .toList();
+            }
+          }
+
+          // Get country if available
+          String? country;
+          final countryEl = card.find('div', class_: 'movie-country');
+          if (countryEl != null) {
+            country = countryEl.text.trim().split(',').first.trim();
+          }
 
           items.add(
             MediaItem(
@@ -945,6 +1050,8 @@ class UakinoProvider implements ContentProvider {
               year: year,
               rating: rating,
               type: _detectType(href),
+              genres: genres,
+              country: country,
             ),
           );
         } catch (e) {
@@ -1082,12 +1189,51 @@ class UakinoProvider implements ContentProvider {
               row.find('a')?.text.trim() ?? row.text.split(':').last.trim();
         } else if (text.contains('актор')) {
           actors = row.findAll('a').map((a) => a.text.trim()).toList();
+          // Fallback: if no links, split by comma
+          if (actors.isEmpty) {
+            actors = row.text
+                .split(':')
+                .last
+                .split(',')
+                .map((s) => s.trim())
+                .where((s) => s.isNotEmpty)
+                .toList();
+          }
         } else if (text.contains('жанр')) {
           genres = row.findAll('a').map((a) => a.text.trim()).toList();
         } else if (text.contains('країна')) {
           countries = row.findAll('a').map((a) => a.text.trim()).toList();
         } else if (text.contains('рік')) {
-          year = int.tryParse(row.find('a')?.text.trim() ?? '');
+          final yearStr =
+              row.find('a')?.text.trim() ??
+              row.text.replaceAll(RegExp(r'\D'), '');
+          year = int.tryParse(yearStr);
+        }
+      }
+    } else {
+      // Fallback: Parsing from description or generic text if table is missing
+      final fullText = soup.text;
+
+      // Year
+      if (year == null) {
+        final yearMatch = RegExp(r'Рік:\s*(\d{4})').firstMatch(fullText);
+        if (yearMatch != null) {
+          year = int.tryParse(yearMatch.group(1) ?? '');
+        }
+      }
+
+      // Country
+      if (countries == null) {
+        final countryMatch = RegExp(
+          r'Країна:\s*([^<\n\r]+)',
+        ).firstMatch(fullText);
+        if (countryMatch != null) {
+          countries = countryMatch
+              .group(1)!
+              .split(',')
+              .map((s) => s.trim())
+              .where((s) => s.isNotEmpty)
+              .toList();
         }
       }
     }
@@ -1101,6 +1247,8 @@ class UakinoProvider implements ContentProvider {
         year: year,
         type: _detectType(mediaId),
         description: description,
+        country: countries?.firstOrNull,
+        genres: genres,
       ),
       fullDescription: description,
       director: director,

@@ -72,6 +72,10 @@ dependencies:
   # TMDB API
   tmdb_api: ^2.1.7
   wakelock_plus: ^1.4.0
+  
+  # Realtime sync for Watch Party
+  supabase_flutter: ^2.8.0
+  peerdart: ^0.5.6
 
 dev_dependencies:
   flutter_test:
@@ -83,6 +87,10 @@ dev_dependencies:
   json_serializable: ^6.9.2
   injectable_generator: ^2.7.0
   drift_dev: ^2.22.1
+
+dependency_overrides:
+  # Fix for Flutter 3.29 removing Registrar API (needed for peerdart)
+  flutter_webrtc: ^0.12.9
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

@@ -17,6 +17,8 @@ import '../../data/services/sync_service.dart';
 import '../../data/services/download_service.dart';
 import '../../data/services/stats_service.dart';
 import '../../data/services/episode_update_service.dart';
+import '../../data/services/watch_party_service.dart';
+import '../../data/services/auth_service.dart';
 // External API services
 import '../../data/services/tmdb_service.dart';
 import '../../data/services/jikan_service.dart';
@@ -35,6 +37,9 @@ Future<void> configureDependencies() async {
   // Core services - register ApiClient first
   getIt.registerLazySingleton<ApiClient>(() => ApiClient());
 
+  // Auth service (must be early as others may depend on it)
+  getIt.registerLazySingleton<AuthService>(() => AuthService());
+
   // Services
   getIt.registerLazySingleton<SettingsService>(() => SettingsService(database));
   getIt.registerLazySingleton<FavoritesService>(
@@ -46,6 +51,7 @@ Future<void> configureDependencies() async {
     () => DownloadService(database, getIt<ApiClient>()),
   );
   getIt.registerLazySingleton<StatsService>(() => StatsService(database));
+  getIt.registerLazySingleton<WatchPartyService>(() => WatchPartyService());
 
   // External API services
   getIt.registerLazySingleton<TMDbService>(

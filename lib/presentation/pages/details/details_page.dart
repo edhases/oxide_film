@@ -385,6 +385,42 @@ class _DetailsPageState extends State<DetailsPage> {
           const SizedBox(height: 24),
         ],
 
+        // Director
+        if (_details!.director != null && _details!.director!.isNotEmpty) ...[
+          _buildDetailSection(
+            icon: Icons.movie_creation,
+            title: 'Режисер',
+            content: _details!.director!,
+          ),
+          const SizedBox(height: 16),
+        ],
+
+        // All Genres
+        if (_details!.genres != null && _details!.genres!.isNotEmpty) ...[
+          Text(
+            'Жанри',
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _details!.genres!.map((genre) {
+              return Chip(
+                avatar: const Icon(Icons.category, size: 16),
+                label: Text(genre),
+                backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.15),
+                side: BorderSide(
+                  color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 16),
+        ],
+
         // Cast
         if (_details!.actors != null && _details!.actors!.isNotEmpty) ...[
           Text(
@@ -398,7 +434,12 @@ class _DetailsPageState extends State<DetailsPage> {
             spacing: 8,
             runSpacing: 8,
             children: _details!.actors!.take(10).map((actor) {
-              return Chip(label: Text(actor));
+              return Chip(
+                avatar: const Icon(Icons.person, size: 16),
+                label: Text(actor),
+                backgroundColor: Colors.purple.withValues(alpha: 0.15),
+                side: BorderSide(color: Colors.purple.withValues(alpha: 0.3)),
+              );
             }).toList(),
           ),
           const SizedBox(height: 24),
@@ -698,24 +739,53 @@ class _DetailsPageState extends State<DetailsPage> {
   Widget _buildInfoRow() {
     final items = <Widget>[];
 
+    // Content type
+    items.add(
+      _buildInfoChip(
+        _getTypeIcon(_details!.item.type),
+        _details!.item.type.displayName,
+        color: _getTypeColor(_details!.item.type),
+      ),
+    );
+
+    // Year
     if (_details!.item.year != null) {
       items.add(_buildInfoChip(Icons.calendar_today, '${_details!.item.year}'));
     }
 
-    if (_details!.item.rating != null) {
+    // Rating
+    if (_details!.item.rating != null && _details!.item.rating! >= 0) {
+      final rawRating = _details!.item.rating!;
+      // Normalize: if > 10, treat as percentage
+      final rating = rawRating > 10
+          ? (rawRating / 10).clamp(0.0, 10.0)
+          : rawRating;
+      final color = rating >= 7.0
+          ? AppTheme.successColor
+          : rating >= 5.0
+          ? Colors.orange
+          : AppTheme.errorColor;
       items.add(
-        _buildInfoChip(Icons.star, _details!.item.rating!.toStringAsFixed(1)),
+        _buildInfoChip(Icons.star, rating.toStringAsFixed(1), color: color),
       );
     }
 
+    // Duration
+    if (_details!.duration != null) {
+      final dur = _details!.duration!;
+      final hours = dur.inHours;
+      final minutes = dur.inMinutes.remainder(60);
+      final durText = hours > 0 ? '${hours}г ${minutes}хв' : '${minutes}хв';
+      items.add(_buildInfoChip(Icons.access_time, durText));
+    }
+
+    // Genres (show up to 2)
     if (_details!.genres != null && _details!.genres!.isNotEmpty) {
-      items.add(_buildInfoChip(Icons.category, _details!.genres!.first));
+      final genresText = _details!.genres!.take(2).join(', ');
+      items.add(_buildInfoChip(Icons.category, genresText));
     }
 
-    if (_details!.director != null) {
-      items.add(_buildInfoChip(Icons.movie_creation, _details!.director!));
-    }
-
+    // Country (first one)
     if (_details!.countries != null && _details!.countries!.isNotEmpty) {
       items.add(_buildInfoChip(Icons.public, _details!.countries!.first));
     }
@@ -723,22 +793,84 @@ class _DetailsPageState extends State<DetailsPage> {
     return Wrap(spacing: 12, runSpacing: 8, children: items);
   }
 
-  Widget _buildInfoChip(IconData icon, String text) {
+  IconData _getTypeIcon(ContentType type) {
+    switch (type) {
+      case ContentType.movie:
+        return Icons.movie;
+      case ContentType.series:
+        return Icons.tv;
+      case ContentType.cartoon:
+        return Icons.animation;
+      case ContentType.anime:
+        return Icons.auto_awesome;
+      default:
+        return Icons.video_library;
+    }
+  }
+
+  Color _getTypeColor(ContentType type) {
+    switch (type) {
+      case ContentType.movie:
+        return Colors.blue;
+      case ContentType.series:
+        return Colors.purple;
+      case ContentType.cartoon:
+        return Colors.orange;
+      case ContentType.anime:
+        return Colors.pink;
+      default:
+        return AppTheme.textSecondary;
+    }
+  }
+
+  Widget _buildInfoChip(IconData icon, String text, {Color? color}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: AppTheme.darkCard,
+        color: color?.withValues(alpha: 0.15) ?? AppTheme.darkCard,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppTheme.darkBorder),
+        border: Border.all(
+          color: color?.withValues(alpha: 0.3) ?? AppTheme.darkBorder,
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16, color: AppTheme.textSecondary),
+          Icon(icon, size: 16, color: color ?? AppTheme.textSecondary),
           const SizedBox(width: 6),
-          Text(text, style: const TextStyle(color: AppTheme.textSecondary)),
+          Text(text, style: TextStyle(color: color ?? AppTheme.textSecondary)),
         ],
       ),
+    );
+  }
+
+  Widget _buildDetailSection({
+    required IconData icon,
+    required String title,
+    required String content,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 20, color: AppTheme.primaryColor),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                content,
+                style: const TextStyle(fontWeight: FontWeight.w500),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

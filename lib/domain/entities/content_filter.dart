@@ -186,6 +186,41 @@ class ContentFilter extends Equatable {
       // Rating filter
       if (!ratingRange.matches(item.rating)) return false;
 
+      // Genres filter (if item has genres, check if any match)
+      if (genres.isNotEmpty) {
+        if (item.genres == null || item.genres!.isEmpty) {
+          // Item has no genres - skip filtering by genre for this item
+          // to avoid excluding items where genres weren't parsed
+        } else {
+          // Check if any of item's genres match filter genres
+          final hasMatchingGenre = item.genres!.any(
+            (itemGenre) => genres.any(
+              (filterGenre) =>
+                  itemGenre.toLowerCase() == filterGenre.toLowerCase() ||
+                  itemGenre.toLowerCase().contains(filterGenre.toLowerCase()) ||
+                  filterGenre.toLowerCase().contains(itemGenre.toLowerCase()),
+            ),
+          );
+          if (!hasMatchingGenre) return false;
+        }
+      }
+
+      // Countries filter
+      if (countries.isNotEmpty) {
+        if (item.country == null || item.country!.isEmpty) {
+          // Item has no country - skip filtering by country for this item
+        } else {
+          final hasMatchingCountry = countries.any(
+            (filterCountry) =>
+                item.country!.toLowerCase() == filterCountry.toLowerCase() ||
+                item.country!.toLowerCase().contains(
+                  filterCountry.toLowerCase(),
+                ),
+          );
+          if (!hasMatchingCountry) return false;
+        }
+      }
+
       return true;
     }).toList();
 

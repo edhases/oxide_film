@@ -143,6 +143,18 @@ class _FavoritesPageState extends State<FavoritesPage>
       );
     }
 
+    // Use listStyle from settings
+    switch (_ui.listStyle) {
+      case ListStyle.list:
+        return _buildListView(items);
+      case ListStyle.compact:
+        return _buildCompactListView(items);
+      case ListStyle.grid:
+        return _buildGridView(items);
+    }
+  }
+
+  Widget _buildGridView(List<Favorite> items) {
     return GridView.builder(
       padding: EdgeInsets.all(_ui.gridSpacing.padding),
       gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
@@ -155,6 +167,36 @@ class _FavoritesPageState extends State<FavoritesPage>
       itemBuilder: (context, index) {
         final item = items[index];
         return _FavoriteCard(
+          favorite: item,
+          onTap: () => _openDetails(item),
+          onRemove: () => _removeFavorite(item),
+        );
+      },
+    );
+  }
+
+  Widget _buildListView(List<Favorite> items) {
+    return ListView.builder(
+      padding: EdgeInsets.all(_ui.gridSpacing.padding),
+      itemCount: items.length,
+      itemBuilder: (context, index) {
+        final item = items[index];
+        return _FavoriteListTile(
+          favorite: item,
+          onTap: () => _openDetails(item),
+          onRemove: () => _removeFavorite(item),
+        );
+      },
+    );
+  }
+
+  Widget _buildCompactListView(List<Favorite> items) {
+    return ListView.builder(
+      padding: EdgeInsets.all(_ui.gridSpacing.padding),
+      itemCount: items.length,
+      itemBuilder: (context, index) {
+        final item = items[index];
+        return _FavoriteCompactTile(
           favorite: item,
           onTap: () => _openDetails(item),
           onRemove: () => _removeFavorite(item),
@@ -352,6 +394,180 @@ class _PosterPlaceholder extends StatelessWidget {
       child: Center(
         child: Icon(Icons.movie, size: 48, color: AppTheme.textMuted),
       ),
+    );
+  }
+}
+
+/// List tile style for favorites
+class _FavoriteListTile extends StatelessWidget {
+  final Favorite favorite;
+  final VoidCallback onTap;
+  final VoidCallback onRemove;
+
+  const _FavoriteListTile({
+    required this.favorite,
+    required this.onTap,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: AppTheme.surfaceColor,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              // Poster
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: SizedBox(
+                  width: 60,
+                  height: 90,
+                  child: favorite.posterUrl != null
+                      ? CachedNetworkImage(
+                          imageUrl: favorite.posterUrl!,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => _PosterPlaceholder(),
+                          errorWidget: (_, __, ___) => _PosterPlaceholder(),
+                        )
+                      : _PosterPlaceholder(),
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Info
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      favorite.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        if (favorite.year != null) ...[
+                          Icon(
+                            Icons.calendar_today,
+                            size: 14,
+                            color: AppTheme.textMuted,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${favorite.year}',
+                            style: TextStyle(
+                              color: AppTheme.textMuted,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                        ],
+                        Icon(
+                          Icons.category,
+                          size: 14,
+                          color: AppTheme.textMuted,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _getTypeName(favorite.mediaType),
+                          style: TextStyle(
+                            color: AppTheme.textMuted,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              // Remove button
+              IconButton(
+                icon: Icon(Icons.delete_outline, color: AppTheme.textMuted),
+                onPressed: onRemove,
+                tooltip: 'Видалити',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _getTypeName(String? type) {
+    switch (type) {
+      case 'movie':
+        return 'Фільм';
+      case 'series':
+        return 'Серіал';
+      case 'cartoon':
+        return 'Мультфільм';
+      case 'anime':
+        return 'Аніме';
+      default:
+        return 'Відео';
+    }
+  }
+}
+
+/// Compact list tile for favorites
+class _FavoriteCompactTile extends StatelessWidget {
+  final Favorite favorite;
+  final VoidCallback onTap;
+  final VoidCallback onRemove;
+
+  const _FavoriteCompactTile({
+    required this.favorite,
+    required this.onTap,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: SizedBox(
+          width: 40,
+          height: 60,
+          child: favorite.posterUrl != null
+              ? CachedNetworkImage(
+                  imageUrl: favorite.posterUrl!,
+                  fit: BoxFit.cover,
+                  placeholder: (_, __) =>
+                      Container(color: AppTheme.surfaceColor),
+                  errorWidget: (_, __, ___) =>
+                      Container(color: AppTheme.surfaceColor),
+                )
+              : Container(color: AppTheme.surfaceColor),
+        ),
+      ),
+      title: Text(
+        favorite.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 14),
+      ),
+      subtitle: favorite.year != null
+          ? Text('${favorite.year}', style: TextStyle(fontSize: 12))
+          : null,
+      trailing: IconButton(
+        icon: const Icon(Icons.close, size: 18),
+        onPressed: onRemove,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+      ),
+      onTap: onTap,
     );
   }
 }

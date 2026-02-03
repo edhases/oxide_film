@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import '../../core/utils/logger.dart';
 import '../../domain/entities/entities.dart';
 
@@ -15,6 +16,10 @@ class PlayerJsParser {
   /// - new Playerjs({...file:"..."...})
   /// - Playerjs({...file:"..."...})
   /// - file:"[encoded_data]"
+  static Future<List<StreamSource>> parseFromHtmlCompute(String html) async {
+    return compute(parseFromHtml, html);
+  }
+
   static List<StreamSource> parseFromHtml(String html) {
     final sources = <StreamSource>[];
 
