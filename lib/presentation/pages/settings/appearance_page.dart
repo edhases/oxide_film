@@ -1,0 +1,600 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:get_it/get_it.dart';
+
+import '../../../data/services/settings_service.dart';
+import '../../../domain/entities/ui_settings.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/custom_titlebar.dart';
+
+/// Appearance customization page
+class AppearancePage extends StatefulWidget {
+  const AppearancePage({super.key});
+
+  @override
+  State<AppearancePage> createState() => _AppearancePageState();
+}
+
+class _AppearancePageState extends State<AppearancePage> {
+  final _settings = GetIt.instance<SettingsService>();
+
+  bool get _isDesktop =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.linux ||
+          defaultTargetPlatform == TargetPlatform.macOS);
+
+  @override
+  void initState() {
+    super.initState();
+    _settings.addListener(_onSettingsChanged);
+  }
+
+  @override
+  void dispose() {
+    _settings.removeListener(_onSettingsChanged);
+    super.dispose();
+  }
+
+  void _onSettingsChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Column(
+        children: [
+          if (_isDesktop) const CustomTitleBar(),
+          _buildAppBar(),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                // Preview section
+                _buildPreviewCard(),
+
+                const SizedBox(height: 24),
+
+                // Poster size section
+                _buildSectionTitle('Розмір постерів'),
+                const SizedBox(height: 12),
+                _buildPosterSizeSelector(),
+
+                const SizedBox(height: 24),
+
+                // Grid spacing section
+                _buildSectionTitle('Відступи сітки'),
+                const SizedBox(height: 12),
+                _buildGridSpacingSelector(),
+
+                const SizedBox(height: 24),
+
+                // Accent color section
+                _buildSectionTitle('Акцентний колір'),
+                const SizedBox(height: 12),
+                _buildAccentColorSelector(),
+
+                const SizedBox(height: 24),
+
+                // Card info style section
+                _buildSectionTitle('Інформація на картці'),
+                const SizedBox(height: 12),
+                _buildCardInfoStyleSelector(),
+
+                const SizedBox(height: 24),
+
+                // Display options
+                _buildSectionTitle('Параметри відображення'),
+                const SizedBox(height: 12),
+                _buildDisplayOptions(),
+
+                const SizedBox(height: 32),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAppBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          const SizedBox(width: 8),
+          const Text(
+            'Зовнішній вигляд',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Text(
+      title,
+      style: const TextStyle(
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
+        color: AppTheme.textPrimary,
+      ),
+    );
+  }
+
+  Widget _buildPreviewCard() {
+    final ui = _settings.uiSettings;
+    final accentColor = Color(ui.accentColor.colorValue);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.darkCard,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.visibility, color: accentColor, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Попередній перегляд',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 180,
+            child: Row(
+              children: List.generate(
+                3,
+                (index) => Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      left: index == 0
+                          ? 0
+                          : ui.gridSpacing.crossAxisSpacing / 2,
+                      right: index == 2
+                          ? 0
+                          : ui.gridSpacing.crossAxisSpacing / 2,
+                    ),
+                    child: _buildPreviewPoster(index, accentColor),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPreviewPoster(int index, Color accentColor) {
+    final ui = _settings.uiSettings;
+    final titles = ['Фільм 1', 'Серіал 2', 'Аніме 3'];
+    final years = ['2024', '2023', '2024'];
+    final ratings = ['8.5', '7.2', '9.1'];
+
+    return AspectRatio(
+      aspectRatio: ui.posterSize.aspectRatio,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(ui.posterSize.borderRadius),
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              accentColor.withValues(alpha: 0.3),
+              accentColor.withValues(alpha: 0.6),
+            ],
+          ),
+        ),
+        child: Stack(
+          children: [
+            // Rating badge
+            if (ui.showRatings)
+              Positioned(
+                top: 6,
+                right: 6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.star, size: 10, color: Colors.amber),
+                      const SizedBox(width: 2),
+                      Text(
+                        ratings[index],
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            // Info overlay
+            if (ui.cardInfoStyle == CardInfoStyle.overlay)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        Colors.black.withValues(alpha: 0.8),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.only(
+                      bottomLeft: Radius.circular(ui.posterSize.borderRadius),
+                      bottomRight: Radius.circular(ui.posterSize.borderRadius),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        titles[index],
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (ui.showYears)
+                        Text(
+                          years[index],
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: AppTheme.textMuted,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPosterSizeSelector() {
+    final currentSize = _settings.uiSettings.posterSize;
+
+    return Row(
+      children: PosterSize.values.map((size) {
+        final isSelected = size == currentSize;
+        return Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(
+              right: size != PosterSize.values.last ? 8 : 0,
+            ),
+            child: _OptionButton(
+              label: size.displayName,
+              icon: _getSizeIcon(size),
+              isSelected: isSelected,
+              onTap: () => _settings.setPosterSize(size),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  IconData _getSizeIcon(PosterSize size) {
+    switch (size) {
+      case PosterSize.small:
+        return Icons.grid_view;
+      case PosterSize.medium:
+        return Icons.view_module;
+      case PosterSize.large:
+        return Icons.view_agenda;
+    }
+  }
+
+  Widget _buildGridSpacingSelector() {
+    final currentSpacing = _settings.uiSettings.gridSpacing;
+
+    return Row(
+      children: GridSpacing.values.map((spacing) {
+        final isSelected = spacing == currentSpacing;
+        return Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(
+              right: spacing != GridSpacing.values.last ? 8 : 0,
+            ),
+            child: _OptionButton(
+              label: spacing.displayName,
+              icon: _getSpacingIcon(spacing),
+              isSelected: isSelected,
+              onTap: () => _settings.setGridSpacing(spacing),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  IconData _getSpacingIcon(GridSpacing spacing) {
+    switch (spacing) {
+      case GridSpacing.compact:
+        return Icons.density_small;
+      case GridSpacing.normal:
+        return Icons.density_medium;
+      case GridSpacing.relaxed:
+        return Icons.density_large;
+    }
+  }
+
+  Widget _buildAccentColorSelector() {
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      children: AccentColor.values.map((color) {
+        final isSelected = color == _settings.uiSettings.accentColor;
+        return _ColorButton(
+          color: Color(color.colorValue),
+          isSelected: isSelected,
+          onTap: () => _settings.setAccentColor(color),
+          tooltip: color.displayName,
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildCardInfoStyleSelector() {
+    final currentStyle = _settings.uiSettings.cardInfoStyle;
+
+    return Row(
+      children: CardInfoStyle.values.map((style) {
+        final isSelected = style == currentStyle;
+        return Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(
+              right: style != CardInfoStyle.values.last ? 8 : 0,
+            ),
+            child: _OptionButton(
+              label: style.displayName,
+              icon: _getStyleIcon(style),
+              isSelected: isSelected,
+              onTap: () => _settings.setCardInfoStyle(style),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  IconData _getStyleIcon(CardInfoStyle style) {
+    switch (style) {
+      case CardInfoStyle.overlay:
+        return Icons.layers;
+      case CardInfoStyle.below:
+        return Icons.view_list;
+      case CardInfoStyle.hidden:
+        return Icons.visibility_off;
+    }
+  }
+
+  Widget _buildDisplayOptions() {
+    final ui = _settings.uiSettings;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.darkCard,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.borderColor),
+      ),
+      child: Column(
+        children: [
+          _SwitchTile(
+            icon: Icons.star,
+            title: 'Показувати рейтинг',
+            subtitle: 'Відображати бейдж з рейтингом',
+            value: ui.showRatings,
+            onChanged: (v) => _settings.setShowRatings(v),
+          ),
+          const Divider(height: 1, indent: 56),
+          _SwitchTile(
+            icon: Icons.calendar_today,
+            title: 'Показувати рік',
+            subtitle: 'Відображати рік випуску',
+            value: ui.showYears,
+            onChanged: (v) => _settings.setShowYears(v),
+          ),
+          const Divider(height: 1, indent: 56),
+          _SwitchTile(
+            icon: Icons.animation,
+            title: 'Анімації',
+            subtitle: 'Увімкнути анімації інтерфейсу',
+            value: ui.animationsEnabled,
+            onChanged: (v) => _settings.setAnimationsEnabled(v),
+          ),
+          const Divider(height: 1, indent: 56),
+          _SwitchTile(
+            icon: Icons.blur_on,
+            title: 'Розмиття фону',
+            subtitle: 'Ефект скла на панелях',
+            value: ui.blurBackgrounds,
+            onChanged: (v) => _settings.setBlurBackgrounds(v),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OptionButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _OptionButton({
+    required this.label,
+    required this.icon,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = GetIt.instance<SettingsService>();
+    final accentColor = Color(settings.uiSettings.accentColor.colorValue);
+
+    return Material(
+      color: isSelected
+          ? accentColor.withValues(alpha: 0.2)
+          : AppTheme.darkCard,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected ? accentColor : AppTheme.borderColor,
+              width: isSelected ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                color: isSelected ? accentColor : AppTheme.textSecondary,
+                size: 28,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  color: isSelected ? accentColor : AppTheme.textPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ColorButton extends StatelessWidget {
+  final Color color;
+  final bool isSelected;
+  final VoidCallback onTap;
+  final String tooltip;
+
+  const _ColorButton({
+    required this.color,
+    required this.isSelected,
+    required this.onTap,
+    required this.tooltip,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: isSelected ? Colors.white : Colors.transparent,
+              width: 3,
+            ),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: color.withValues(alpha: 0.6),
+                      blurRadius: 12,
+                      spreadRadius: 2,
+                    ),
+                  ]
+                : null,
+          ),
+          child: isSelected
+              ? const Icon(Icons.check, color: Colors.white, size: 20)
+              : null,
+        ),
+      ),
+    );
+  }
+}
+
+class _SwitchTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _SwitchTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = GetIt.instance<SettingsService>();
+    final accentColor = Color(settings.uiSettings.accentColor.colorValue);
+
+    return ListTile(
+      leading: Icon(icon, color: AppTheme.textSecondary),
+      title: Text(title, style: const TextStyle(color: AppTheme.textPrimary)),
+      subtitle: Text(
+        subtitle,
+        style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+      ),
+      trailing: Switch(
+        value: value,
+        onChanged: onChanged,
+        activeThumbColor: accentColor,
+      ),
+    );
+  }
+}
