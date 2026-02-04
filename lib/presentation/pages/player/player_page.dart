@@ -106,9 +106,16 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   @override
   void didChangeMetrics() {
     Logger.d('PlayerPage: didChangeMetrics called', tag: 'PlayerPage');
-    // When window metrics change (resize/fullscreen), the GPU texture context
-    // may become invalidated on Windows. The PlayerController handles this via
-    // textureKey, but we still need to trigger a rebuild to pick up the changes.
+
+    // FLOOD PREVENTION: Skip heavy rebuilds while the window is animating
+    if (_controller.isTogglingFullscreen) {
+      Logger.d(
+        'PlayerPage: Skipping rebuild during fullscreen transition',
+        tag: 'PlayerPage',
+      );
+      return;
+    }
+
     if (mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {

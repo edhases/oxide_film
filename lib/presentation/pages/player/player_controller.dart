@@ -135,6 +135,9 @@ class PlayerController extends ChangeNotifier {
   PlayerState _state = const PlayerState();
   PlayerState get state => _state;
 
+  bool _isTogglingFullscreen = false;
+  bool get isTogglingFullscreen => _isTogglingFullscreen;
+
   // High-frequency updates
   final ValueNotifier<Duration> positionNotifier = ValueNotifier(Duration.zero);
 
@@ -575,8 +578,6 @@ class PlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool _isTogglingFullscreen = false;
-
   Future<void> toggleFullscreen() async {
     if (_isTogglingFullscreen) {
       Logger.w(
@@ -586,7 +587,7 @@ class PlayerController extends ChangeNotifier {
       return;
     }
     _isTogglingFullscreen = true;
-    Logger.d('Starting toggleFullscreen', tag: _tag);
+    Logger.d('Starting toggleFullscreen (Flood Prevention Mode)', tag: _tag);
 
     final newFullscreenState = !_state.isFullscreen;
     final isDesktop =
@@ -596,11 +597,9 @@ class PlayerController extends ChangeNotifier {
             defaultTargetPlatform == TargetPlatform.macOS);
 
     try {
-      // === DESKTOP: Robust texture refresh for fullscreen transitions ===
-      // The GPU texture can become stale during DirectX/ANGLE context changes.
-      // We force texture recreation by cycling through setSize values.
+      // 1. Desktop logic: Minimize GPU noise during transition
       if (isDesktop) {
-        // Step 1: Update state and change window
+        // Update logical state first so UI can start preparing
         _state = _state.copyWith(isFullscreen: newFullscreenState);
         notifyListeners();
 
@@ -617,47 +616,24 @@ class PlayerController extends ChangeNotifier {
           return;
         }
 
-        // Step 2: Wait longer for window manager AND DirectX/ANGLE to fully settle
-        // 500ms gives more time for GPU context to stabilize
+        // 2. STABILITY PERIOD: Wait for OS window animation to fully finish
+        // During this time, didChangeMetrics in PlayerPage will ignore events
         await Future.delayed(const Duration(milliseconds: 500));
 
-        // Get actual window size after transition
-        final windowSize = await windowManager.getSize();
-        final width = windowSize.width.toInt();
-        final height = windowSize.height.toInt();
-        Logger.d(
-          'Window settled, size: ${width}x$height, forcing texture refresh',
-          tag: _tag,
-        );
+        Logger.d('Window stable, performing final texture refresh', tag: _tag);
 
-        // Step 3: Force texture recreation via setSize cycle
+        // 3. One final "kick" to ensure the texture is correctly bound
+        // notifyListeners will trigger a build in PlayerPage with the new size
+        notifyListeners();
+
+        // Micro-seek is the most reliable way to force libmpv to redraw the frame
         try {
-          // Destroy old texture by setting minimal size
-          await _videoController.setSize(width: 1, height: 1);
-          await Future.delayed(const Duration(milliseconds: 150));
-
-          // Create new texture with actual window dimensions
-          // Using explicit size instead of null ensures correct dimensions
-          await _videoController.setSize(width: width, height: height);
-          await Future.delayed(const Duration(milliseconds: 150));
-
-          // Step 4: Force frame redraw via micro-seek as additional guarantee
           final currentPos = _state.position;
           await _player.seek(currentPos);
-
-          Logger.d('Texture refresh completed', tag: _tag);
-        } catch (e) {
-          Logger.w('Texture refresh failed: $e', tag: _tag);
-          // Last resort: just seek to force some kind of update
-          try {
-            final currentPos = _state.position;
-            await _player.seek(currentPos);
-          } catch (_) {}
-        }
+        } catch (_) {}
       }
-
-      // === MOBILE: Standard handling (no issues on mobile) ===
-      if (!kIsWeb &&
+      // 4. Mobile logic: Standard handling
+      else if (!kIsWeb &&
           (defaultTargetPlatform == TargetPlatform.android ||
               defaultTargetPlatform == TargetPlatform.iOS)) {
         _state = _state.copyWith(isFullscreen: newFullscreenState);
@@ -692,6 +668,9 @@ class PlayerController extends ChangeNotifier {
     } finally {
       _isTogglingFullscreen = false;
       Logger.d('toggleFullscreen operation completed', tag: _tag);
+
+      // Final catch-all notify after flag is cleared
+      notifyListeners();
     }
   }
 
