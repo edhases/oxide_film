@@ -97,4 +97,32 @@ class MediaItem extends Equatable {
 
   /// Unique identifier combining provider and media ID
   String get uniqueId => '$providerId:$id';
+
+  MediaItem copyWith({
+    String? id,
+    String? providerId,
+    String? title,
+    String? originalTitle,
+    String? posterUrl,
+    int? year,
+    double? rating,
+    ContentType? type,
+    String? description,
+    List<String>? genres,
+    String? country,
+  }) {
+    return MediaItem(
+      id: id ?? this.id,
+      providerId: providerId ?? this.providerId,
+      title: title ?? this.title,
+      originalTitle: originalTitle ?? this.originalTitle,
+      posterUrl: posterUrl ?? this.posterUrl,
+      year: year ?? this.year,
+      rating: rating ?? this.rating,
+      type: type ?? this.type,
+      description: description ?? this.description,
+      genres: genres ?? this.genres,
+      country: country ?? this.country,
+    );
+  }
 }

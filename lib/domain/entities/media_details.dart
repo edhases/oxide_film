@@ -39,6 +39,30 @@ class MediaDetails extends Equatable {
     trailerUrl,
     seasons,
   ];
+
+  MediaDetails copyWith({
+    MediaItem? item,
+    String? fullDescription,
+    List<String>? genres,
+    List<String>? countries,
+    String? director,
+    List<String>? actors,
+    Duration? duration,
+    String? trailerUrl,
+    List<Season>? seasons,
+  }) {
+    return MediaDetails(
+      item: item ?? this.item,
+      fullDescription: fullDescription ?? this.fullDescription,
+      genres: genres ?? this.genres,
+      countries: countries ?? this.countries,
+      director: director ?? this.director,
+      actors: actors ?? this.actors,
+      duration: duration ?? this.duration,
+      trailerUrl: trailerUrl ?? this.trailerUrl,
+      seasons: seasons ?? this.seasons,
+    );
+  }
 }
 
 /// Season of a series

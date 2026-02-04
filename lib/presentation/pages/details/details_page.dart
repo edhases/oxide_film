@@ -9,6 +9,8 @@ import '../../../data/services/favorites_service.dart';
 import '../../../domain/entities/entities.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/custom_titlebar.dart';
+import '../../widgets/common/skeleton.dart';
+import '../../widgets/tv/focusable_card.dart';
 
 /// Media details page with improved layout
 class DetailsPage extends StatefulWidget {
@@ -154,7 +156,7 @@ class _DetailsPageState extends State<DetailsPage> {
 
   Widget _buildContent() {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return _buildSkeleton();
     }
 
     if (_error != null) {
@@ -257,11 +259,12 @@ class _DetailsPageState extends State<DetailsPage> {
       return CachedNetworkImage(
         imageUrl: _details!.item.posterUrl!,
         fit: BoxFit.contain,
-        placeholder: (_, __) => Container(
-          color: AppTheme.darkCard,
-          child: const Center(child: CircularProgressIndicator()),
+        placeholder: (context, url) => const Skeleton(
+          width: double.infinity,
+          height: double.infinity,
+          borderRadius: 0,
         ),
-        errorWidget: (_, __, ___) => Container(
+        errorWidget: (context, url, error) => Container(
           color: AppTheme.darkCard,
           child: const Icon(Icons.movie, size: 64, color: Colors.grey),
         ),
@@ -576,13 +579,13 @@ class _DetailsPageState extends State<DetailsPage> {
             children: episodesForVoiceover.map((stream) {
               final isSelected = _selectedStream == stream;
               final episodeNum = stream.episode ?? 0;
-              return InkWell(
+              return FocusableCard(
                 onTap: () {
                   setState(() {
                     _selectedStream = stream;
                   });
                 },
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: 8,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
@@ -1123,5 +1126,98 @@ class _DetailsPageState extends State<DetailsPage> {
         'episode': episode,
       },
     );
+  }
+
+  Widget _buildSkeleton() {
+    if (_isDesktop) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Poster skeleton
+          SizedBox(
+            width: 350,
+            child: Column(
+              children: [
+                const SizedBox(height: 16 + 48), // Spacer for back button row
+                const Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Skeleton(borderRadius: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Info skeleton
+          const Expanded(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Skeleton(width: 300, height: 32),
+                  SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Skeleton(width: 80, height: 24),
+                      SizedBox(width: 8),
+                      Skeleton(width: 60, height: 24),
+                      SizedBox(width: 8),
+                      Skeleton(width: 100, height: 24),
+                    ],
+                  ),
+                  SizedBox(height: 24),
+                  Skeleton(
+                    width: double.infinity,
+                    height: 48,
+                  ), // Play button area
+                  SizedBox(height: 24),
+                  Skeleton(width: 100, height: 20),
+                  SizedBox(height: 8),
+                  Skeleton(width: double.infinity, height: 100),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    } else {
+      return CustomScrollView(
+        slivers: [
+          const SliverAppBar(
+            expandedHeight: 300,
+            pinned: true,
+            flexibleSpace: FlexibleSpaceBar(
+              background: Skeleton(borderRadius: 0),
+            ),
+          ),
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Skeleton(width: 250, height: 28),
+                  SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Skeleton(width: 70, height: 24),
+                      SizedBox(width: 8),
+                      Skeleton(width: 90, height: 24),
+                    ],
+                  ),
+                  SizedBox(height: 24),
+                  Skeleton(width: double.infinity, height: 48),
+                  SizedBox(height: 24),
+                  Skeleton(width: 80, height: 20),
+                  SizedBox(height: 8),
+                  Skeleton(width: double.infinity, height: 120),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
   }
 }

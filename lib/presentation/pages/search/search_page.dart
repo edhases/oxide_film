@@ -14,6 +14,8 @@ import '../../../domain/entities/entities.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/media_card.dart';
 import '../../widgets/custom_titlebar.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../../widgets/common/skeleton.dart';
 
 /// Search page with autocomplete suggestions
 class SearchPage extends StatefulWidget {
@@ -542,12 +544,18 @@ class _SearchPageState extends State<SearchPage> {
                   leading: mediaItem.posterUrl != null
                       ? ClipRRect(
                           borderRadius: BorderRadius.circular(4),
-                          child: Image.network(
-                            mediaItem.posterUrl!,
+                          child: CachedNetworkImage(
+                            imageUrl: mediaItem.posterUrl!,
                             width: 40,
                             height: 56,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
+                            memCacheHeight: 200,
+                            placeholder: (context, url) => const Skeleton(
+                              width: 40,
+                              height: 56,
+                              borderRadius: 0,
+                            ),
+                            errorWidget: (context, url, error) =>
                                 const Icon(Icons.movie, size: 40),
                           ),
                         )
@@ -589,7 +597,7 @@ class _SearchPageState extends State<SearchPage> {
 
   Widget _buildResults() {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return _buildSkeletonResults();
     }
 
     if (_error != null) {
@@ -722,5 +730,20 @@ class _SearchPageState extends State<SearchPage> {
       case PosterSize.large:
         return 250;
     }
+  }
+
+  Widget _buildSkeletonResults() {
+    return GridView.builder(
+      padding: EdgeInsets.all(_ui.gridSpacing.padding),
+      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: _getMaxCrossAxisExtent(),
+        childAspectRatio: _ui.posterSize.aspectRatio,
+        crossAxisSpacing: _ui.gridSpacing.crossAxisSpacing,
+        mainAxisSpacing: _ui.gridSpacing.mainAxisSpacing,
+      ),
+      itemCount: 12,
+      itemBuilder: (context, index) =>
+          Skeleton(borderRadius: _ui.posterSize.borderRadius),
+    );
   }
 }

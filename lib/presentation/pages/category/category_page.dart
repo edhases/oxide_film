@@ -12,6 +12,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/media_card.dart';
 import '../../widgets/custom_titlebar.dart';
 import '../../widgets/filter_sheet.dart';
+import '../../widgets/common/skeleton.dart';
 
 const _tag = 'CategoryPage';
 
@@ -424,7 +425,7 @@ class _CategoryPageState extends State<CategoryPage>
     final filter = _filterByType[type]!;
 
     if (isLoading && items.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return _buildSkeletonGrid();
     }
 
     if (error != null && items.isEmpty) {
@@ -518,10 +519,16 @@ class _CategoryPageState extends State<CategoryPage>
 
           // Loading indicator
           if (isLoading)
-            const SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(child: CircularProgressIndicator()),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              sliver: SliverToBoxAdapter(
+                child: Center(
+                  child: SizedBox(
+                    width: 50,
+                    height: 50,
+                    child: Skeleton(borderRadius: _ui.posterSize.borderRadius),
+                  ),
+                ),
               ),
             ),
 
@@ -547,6 +554,21 @@ class _CategoryPageState extends State<CategoryPage>
         return _isDesktop ? 250 : 180;
     }
   }
+
+  Widget _buildSkeletonGrid() {
+    return GridView.builder(
+      padding: EdgeInsets.all(_ui.gridSpacing.padding),
+      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: _getMaxCrossAxisExtent(),
+        childAspectRatio: _ui.posterSize.aspectRatio,
+        crossAxisSpacing: _ui.gridSpacing.crossAxisSpacing,
+        mainAxisSpacing: _ui.gridSpacing.mainAxisSpacing,
+      ),
+      itemCount: 12,
+      itemBuilder: (context, index) =>
+          Skeleton(borderRadius: _ui.posterSize.borderRadius),
+    );
+  }
 }
 
 /// Button for separate providers (HDRezka, YouTube)
@@ -568,9 +590,9 @@ class _SeparateProviderButton extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: color.withOpacity(0.15),
+            color: color.withValues(alpha: 0.15),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: color.withOpacity(0.3)),
+            border: Border.all(color: color.withValues(alpha: 0.3)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,

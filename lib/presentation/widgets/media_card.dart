@@ -2,15 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:get_it/get_it.dart';
 
+import 'package:flutter/services.dart';
 import '../../data/services/settings_service.dart';
 import '../../domain/entities/entities.dart';
 import '../theme/app_theme.dart';
+import 'common/skeleton.dart';
 
 /// Media item card for grids and lists
 class MediaCard extends StatefulWidget {
   final MediaItem item;
   final VoidCallback? onTap;
-  final bool isFocused;
+  final bool isFocused; // Deprecated but kept for compatibility
 
   const MediaCard({
     super.key,
@@ -24,80 +26,112 @@ class MediaCard extends StatefulWidget {
 }
 
 class _MediaCardState extends State<MediaCard> {
-  bool _isHovered = false;
   final _settings = GetIt.instance<SettingsService>();
+  final _focusNode = FocusNode();
+  bool _isHovered = false;
+  bool _hasFocus = false;
 
   UISettings get _ui => _settings.uiSettings;
   Color get _accentColor => Color(_ui.accentColor.colorValue);
 
   @override
+  void initState() {
+    super.initState();
+    _focusNode.addListener(_onFocusChange);
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_onFocusChange);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _onFocusChange() {
+    if (mounted) setState(() => _hasFocus = _focusNode.hasFocus);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final isFocused = widget.isFocused || _isHovered;
+    final isFocused = _hasFocus || _isHovered || widget.isFocused;
     final animationsEnabled = _ui.animationsEnabled;
 
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: animationsEnabled
-              ? const Duration(milliseconds: 200)
-              : Duration.zero,
-          curve: Curves.easeOutCubic,
-          transform: isFocused && animationsEnabled
-              ? (Matrix4.identity()
-                  ..setEntry(0, 0, 1.05)
-                  ..setEntry(1, 1, 1.05))
-              : Matrix4.identity(),
-          transformAlignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(_ui.posterSize.borderRadius),
-            boxShadow: isFocused
-                ? [
-                    BoxShadow(
-                      color: _accentColor.withValues(alpha: 0.4),
-                      blurRadius: 16,
-                      spreadRadius: 2,
-                    ),
-                  ]
-                : null,
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(_ui.posterSize.borderRadius),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                // Poster image
-                _buildPoster(),
+    return Focus(
+      focusNode: _focusNode,
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent &&
+            (event.logicalKey == LogicalKeyboardKey.select ||
+                event.logicalKey == LogicalKeyboardKey.enter)) {
+          widget.onTap?.call();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: AnimatedContainer(
+            duration: animationsEnabled
+                ? const Duration(milliseconds: 200)
+                : Duration.zero,
+            curve: Curves.easeOutCubic,
+            transform: isFocused && animationsEnabled
+                ? (Matrix4.identity()
+                    ..setEntry(0, 0, 1.05)
+                    ..setEntry(1, 1, 1.05))
+                : Matrix4.identity(),
+            transformAlignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(_ui.posterSize.borderRadius),
+              boxShadow: isFocused
+                  ? [
+                      BoxShadow(
+                        color: _accentColor.withValues(alpha: 0.4),
+                        blurRadius: 16,
+                        spreadRadius: 2,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(_ui.posterSize.borderRadius),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Poster image
+                  _buildPoster(),
 
-                // Gradient overlay (only for overlay style)
-                if (_ui.cardInfoStyle == CardInfoStyle.overlay)
-                  _buildGradientOverlay(),
+                  // Gradient overlay (only for overlay style)
+                  if (_ui.cardInfoStyle == CardInfoStyle.overlay)
+                    _buildGradientOverlay(),
 
-                // Content info (only for overlay style)
-                if (_ui.cardInfoStyle == CardInfoStyle.overlay)
-                  _buildInfoOverlay(),
+                  // Content info (only for overlay style)
+                  if (_ui.cardInfoStyle == CardInfoStyle.overlay)
+                    _buildInfoOverlay(),
 
-                // Provider badge (top-left)
-                _buildProviderBadge(),
+                  // Provider badge (top-left)
+                  _buildProviderBadge(),
 
-                // Type badge (below provider)
-                if (widget.item.type != ContentType.unknown) _buildTypeBadge(),
+                  // Type badge (below provider)
+                  if (widget.item.type != ContentType.unknown)
+                    _buildTypeBadge(),
 
-                // Rating badge (top-right)
-                if (widget.item.rating != null && _ui.showRatings)
-                  _buildRatingBadge(),
+                  // Rating badge (top-right)
+                  if (widget.item.rating != null && _ui.showRatings)
+                    _buildRatingBadge(),
 
-                // Year badge (if no overlay style and year exists)
-                if (_ui.cardInfoStyle != CardInfoStyle.overlay &&
-                    widget.item.year != null &&
-                    _ui.showYears)
-                  _buildYearBadge(),
+                  // Year badge (if no overlay style and year exists)
+                  if (_ui.cardInfoStyle != CardInfoStyle.overlay &&
+                      widget.item.year != null &&
+                      _ui.showYears)
+                    _buildYearBadge(),
 
-                // Focus border
-                if (isFocused) _buildFocusBorder(),
-              ],
+                  // Focus border
+                  if (isFocused) _buildFocusBorder(),
+                ],
+              ),
             ),
           ),
         ),
@@ -110,9 +144,11 @@ class _MediaCardState extends State<MediaCard> {
       return CachedNetworkImage(
         imageUrl: widget.item.posterUrl!,
         fit: BoxFit.cover,
-        placeholder: (context, url) => Container(
-          color: AppTheme.darkCard,
-          child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        memCacheHeight: 400, // Optimize memory usage for lists
+        placeholder: (context, url) => const Skeleton(
+          width: double.infinity,
+          height: double.infinity,
+          borderRadius: 0,
         ),
         errorWidget: (context, url, error) => _buildPlaceholder(),
       );

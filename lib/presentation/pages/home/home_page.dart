@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
@@ -12,6 +13,8 @@ import '../../widgets/media_card.dart';
 import '../../widgets/custom_titlebar.dart';
 import '../../widgets/filter_sheet.dart';
 import '../../widgets/new_episodes_widget.dart';
+import '../../widgets/common/skeleton.dart';
+import '../../widgets/tv/focusable_card.dart';
 
 /// Home page with content browsing
 class HomePage extends StatefulWidget {
@@ -32,9 +35,6 @@ class _HomePageState extends State<HomePage> {
   bool _isLoading = true;
   String? _error;
   ContentFilter _filter = const ContentFilter();
-
-  // For D-Pad navigation
-  final int _focusedIndex = 0;
 
   UISettings get _ui => _settings.uiSettings;
 
@@ -78,29 +78,31 @@ class _HomePageState extends State<HomePage> {
           : null;
       final selectedType = _filter.type;
 
-      for (final provider in providers) {
-        try {
-          List<MediaItem> items;
-          if (selectedGenre != null) {
-            // Use getByCategory for server-side genre filtering
-            items = await provider.getByCategory(
-              selectedGenre,
-              type: selectedType,
-              page: 1,
-            );
-          } else {
-            items = await provider.getPopular(type: selectedType, page: 1);
-          }
-          for (final item in items) {
-            // Deduplicate by unique ID
-            if (!seenIds.contains(item.uniqueId)) {
-              seenIds.add(item.uniqueId);
-              allItems.add(item);
+      final results = await Future.wait(
+        providers.map((provider) async {
+          try {
+            if (selectedGenre != null) {
+              return await provider.getByCategory(
+                selectedGenre,
+                type: selectedType,
+                page: 1,
+              );
+            } else {
+              return await provider.getPopular(type: selectedType, page: 1);
             }
+          } catch (e) {
+            debugPrint('Failed to load from ${provider.name}: $e');
+            return <MediaItem>[];
           }
-        } catch (e) {
-          // Continue with other providers
-          debugPrint('Failed to load from ${provider.name}: $e');
+        }),
+      );
+
+      for (final items in results) {
+        for (final item in items) {
+          if (!seenIds.contains(item.uniqueId)) {
+            seenIds.add(item.uniqueId);
+            allItems.add(item);
+          }
         }
       }
 
@@ -176,7 +178,7 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildBody() {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return _buildSkeletonGrid();
     }
 
     if (_error != null) {
@@ -470,9 +472,13 @@ class _HomePageState extends State<HomePage> {
               final item = _filteredItems[index];
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: _MediaListTile(
-                  item: item,
+                child: FocusableCard(
                   onTap: () => _onItemTap(item),
+                  borderRadius: 12,
+                  child: _MediaListTile(
+                    item: item,
+                    onTap: () => _onItemTap(item),
+                  ),
                 ),
               );
             }, childCount: _filteredItems.length),
@@ -484,9 +490,13 @@ class _HomePageState extends State<HomePage> {
           sliver: SliverList(
             delegate: SliverChildBuilderDelegate((context, index) {
               final item = _filteredItems[index];
-              return _MediaCompactTile(
-                item: item,
+              return FocusableCard(
                 onTap: () => _onItemTap(item),
+                borderRadius: 8,
+                child: _MediaCompactTile(
+                  item: item,
+                  onTap: () => _onItemTap(item),
+                ),
               );
             }, childCount: _filteredItems.length),
           ),
@@ -503,21 +513,7 @@ class _HomePageState extends State<HomePage> {
             ),
             delegate: SliverChildBuilderDelegate((context, index) {
               final item = _filteredItems[index];
-              return Focus(
-                onKeyEvent: (node, event) {
-                  if (event is KeyDownEvent &&
-                      event.logicalKey == LogicalKeyboardKey.select) {
-                    _onItemTap(item);
-                    return KeyEventResult.handled;
-                  }
-                  return KeyEventResult.ignored;
-                },
-                child: MediaCard(
-                  item: item,
-                  onTap: () => _onItemTap(item),
-                  isFocused: _focusedIndex == index,
-                ),
-              );
+              return MediaCard(item: item, onTap: () => _onItemTap(item));
             }, childCount: _filteredItems.length),
           ),
         );
@@ -537,6 +533,70 @@ class _HomePageState extends State<HomePage> {
       case PosterSize.large:
         return 250;
     }
+  }
+
+  Widget _buildSkeletonGrid() {
+    return CustomScrollView(
+      slivers: [
+        // App bar skeleton
+        const SliverAppBar(floating: true, title: Text('Oxide Film')),
+
+        // Categories skeleton
+        SliverToBoxAdapter(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 16, 16, 12),
+                child: Skeleton(width: 100, height: 24),
+              ),
+              SizedBox(
+                height: 100,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  itemCount: 4,
+                  itemBuilder: (context, index) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Skeleton(
+                        width: 100,
+                        height: 100,
+                        borderRadius: 12,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Title skeleton
+        const SliverPadding(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+          sliver: SliverToBoxAdapter(child: Skeleton(width: 150, height: 28)),
+        ),
+
+        // Grid skeleton
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: _ui.gridSpacing.padding),
+          sliver: SliverGrid(
+            gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: _getMaxCrossAxisExtent(),
+              childAspectRatio: _ui.posterSize.aspectRatio,
+              crossAxisSpacing: _ui.gridSpacing.crossAxisSpacing,
+              mainAxisSpacing: _ui.gridSpacing.mainAxisSpacing,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) =>
+                  Skeleton(borderRadius: _ui.posterSize.borderRadius),
+              childCount: 12,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -609,10 +669,17 @@ class _MediaListTile extends StatelessWidget {
                   width: 60,
                   height: 90,
                   child: item.posterUrl != null
-                      ? Image.network(
-                          item.posterUrl!,
+                      ? CachedNetworkImage(
+                          imageUrl: item.posterUrl!,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => _posterPlaceholder(),
+                          memCacheHeight: 400,
+                          placeholder: (context, url) => const Skeleton(
+                            width: 60,
+                            height: 90,
+                            borderRadius: 0,
+                          ),
+                          errorWidget: (context, url, error) =>
+                              _posterPlaceholder(),
                         )
                       : _posterPlaceholder(),
                 ),
@@ -733,10 +800,13 @@ class _MediaCompactTile extends StatelessWidget {
           width: 36,
           height: 54,
           child: item.posterUrl != null
-              ? Image.network(
-                  item.posterUrl!,
+              ? CachedNetworkImage(
+                  imageUrl: item.posterUrl!,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) =>
+                  memCacheHeight: 200,
+                  placeholder: (context, url) =>
+                      const Skeleton(width: 36, height: 54, borderRadius: 0),
+                  errorWidget: (context, url, error) =>
                       Container(color: Colors.grey[800]),
                 )
               : Container(color: Colors.grey[800]),

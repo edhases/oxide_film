@@ -30,12 +30,22 @@ class Logger {
     );
   }
 
-  static void w(String message, {String? tag}) {
-    if (_shouldLogToConsole) print('[WARN] [$tag] $message');
+  static void w(
+    String message, {
+    String? tag,
+    Object? error,
+    StackTrace? stackTrace,
+  }) {
+    if (_shouldLogToConsole) {
+      print('[WARN] [$tag] $message');
+      if (error != null) print(error);
+    }
     developer.log(
       message,
       name: tag ?? _tag,
       level: 900, // Warning
+      error: error,
+      stackTrace: stackTrace,
     );
   }
 
