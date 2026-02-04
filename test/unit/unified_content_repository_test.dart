@@ -253,7 +253,8 @@ void main() {
     });
 
     test('search should aggregate results from enabled providers', () async {
-      final results = await repository.search('test');
+      final streamEvents = await repository.search('test').toList();
+      final results = streamEvents.isEmpty ? <MediaItem>[] : streamEvents.last;
 
       expect(results.length, 2);
       // Verify IDs are prefixed
@@ -274,7 +275,11 @@ void main() {
         mediaItemsDao,
       );
 
-      await repo.search('error');
+      final events = await repo.search('error').toList();
+      // Expect no results or partial results if one fails?
+      // With 'error' query, both mocks throw according to my analysis (unless I fix mock).
+      // If both throw, stream should be empty (no items added).
+      expect(events, isEmpty);
       // providerA returns 1 result (mock doesn't throw on 'error', my mock logic above says if query == 'error' throw.
       // Wait, providerA is MockContentProvider('provA'). It checks query == 'error'.
       // So both will throw if query is 'error'.
@@ -312,13 +317,19 @@ void main() {
     });
 
     test('getPopular should aggregate if no provider specified', () async {
-      final popular = await repository.getPopular();
+      final streamEvents = await repository.getPopular().toList();
+      final popular = streamEvents.isEmpty ? <MediaItem>[] : streamEvents.last;
+
       expect(popular.length, 2);
       expect(popular.any((m) => m.id == 'provA:pop1'), isTrue);
     });
 
     test('getPopular should query specific provider if specified', () async {
-      final popular = await repository.getPopular(providerId: 'provB');
+      final streamEvents = await repository
+          .getPopular(providerId: 'provB')
+          .toList();
+      final popular = streamEvents.isEmpty ? <MediaItem>[] : streamEvents.last;
+
       expect(popular.length, 1);
       expect(popular.first.id, 'provB:pop1');
     });

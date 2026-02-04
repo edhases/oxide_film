@@ -200,7 +200,12 @@ class _PlayerChatOverlayState extends State<PlayerChatOverlay> {
 
             // Input
             Padding(
-              padding: EdgeInsets.all(padding),
+              padding: EdgeInsets.fromLTRB(
+                padding,
+                padding,
+                padding,
+                padding + MediaQuery.of(context).viewInsets.bottom,
+              ),
               child: Row(
                 children: [
                   Expanded(

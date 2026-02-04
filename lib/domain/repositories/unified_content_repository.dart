@@ -6,7 +6,7 @@ abstract class UnifiedContentRepository {
   List<String> get providerIds;
 
   /// Search for content across all enabled providers
-  Future<List<MediaItem>> search(
+  Stream<List<MediaItem>> search(
     String query, {
     ContentType? type,
     int page = 1,
@@ -21,21 +21,21 @@ abstract class UnifiedContentRepository {
   Future<List<StreamSource>> getStreams(String id, {int? season, int? episode});
 
   /// Get popular content (aggregated or from specific provider)
-  Future<List<MediaItem>> getPopular({
+  Stream<List<MediaItem>> getPopular({
     ContentType? type,
     int page = 1,
     String? providerId,
   });
 
   /// Get new content (aggregated or from specific provider)
-  Future<List<MediaItem>> getNew({
+  Stream<List<MediaItem>> getNew({
     ContentType? type,
     int page = 1,
     String? providerId,
   });
 
   /// Get content by category
-  Future<List<MediaItem>> getByCategory(
+  Stream<List<MediaItem>> getByCategory(
     String category, {
     ContentType? type,
     int page = 1,

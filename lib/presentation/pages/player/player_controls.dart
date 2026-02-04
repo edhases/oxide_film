@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:media_kit/media_kit.dart';
@@ -102,6 +103,7 @@ class _TopBar extends StatelessWidget {
         child: Row(
           children: [
             IconButton(
+              focusColor: Colors.white24,
               icon: Icon(Icons.arrow_back, color: Colors.white, size: iconSize),
               onPressed: () => context.pop(),
               padding: EdgeInsets.all(useCompactControls ? 4 : 8),
@@ -313,6 +315,7 @@ class _ExpandedMenu extends StatelessWidget {
           }).toList(),
         ),
         IconButton(
+          focusColor: Colors.white24,
           icon: Icon(Icons.settings, color: Colors.white, size: iconSize),
           tooltip: 'Налаштування',
           onPressed: () {
@@ -321,6 +324,7 @@ class _ExpandedMenu extends StatelessWidget {
         ),
         if (controller.watchPartyService.state == WatchPartyState.connected)
           IconButton(
+            focusColor: Colors.white24,
             icon: Icon(
               Icons.chat_bubble_outline,
               color: Colors.white,
@@ -330,6 +334,7 @@ class _ExpandedMenu extends StatelessWidget {
             onPressed: onToggleChat,
           ),
         IconButton(
+          focusColor: Colors.white24,
           icon: Icon(Icons.aspect_ratio, color: Colors.white, size: iconSize),
           tooltip: 'Масштаб',
           onPressed: controller.cycleFit,
@@ -413,11 +418,13 @@ class _BottomControls extends StatelessWidget {
                     ),
                     const Spacer(),
                     IconButton(
+                      focusColor: Colors.white24,
                       iconSize: iconSize,
                       icon: const Icon(Icons.replay_10, color: Colors.white),
                       onPressed: () => controller.seekBackward(),
                     ),
                     IconButton(
+                      focusColor: Colors.white24,
                       iconSize: playPauseSize,
                       icon: Icon(
                         controller.state.isPlaying
@@ -428,12 +435,19 @@ class _BottomControls extends StatelessWidget {
                       onPressed: controller.playOrPause,
                     ),
                     IconButton(
+                      focusColor: Colors.white24,
                       iconSize: iconSize,
                       icon: const Icon(Icons.forward_10, color: Colors.white),
                       onPressed: () => controller.seekForward(),
                     ),
+                    if (!kIsWeb &&
+                        (defaultTargetPlatform == TargetPlatform.windows ||
+                            defaultTargetPlatform == TargetPlatform.linux ||
+                            defaultTargetPlatform == TargetPlatform.macOS))
+                      _VolumeSlider(controller: controller),
                     const Spacer(),
                     IconButton(
+                      focusColor: Colors.white24,
                       icon: Icon(
                         controller.state.isFullscreen
                             ? Icons.fullscreen_exit
@@ -686,4 +700,50 @@ void _showSpeedSheet(BuildContext context, PlayerController controller) {
       ),
     ),
   );
+}
+
+class _VolumeSlider extends StatelessWidget {
+  final PlayerController controller;
+
+  const _VolumeSlider({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 120, // Width for the volume slider area
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Row(
+        children: [
+          Icon(
+            _getVolumeIcon(controller.state.volume),
+            color: Colors.white,
+            size: 20,
+          ),
+          Expanded(
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                trackHeight: 2,
+              ),
+              child: Slider(
+                value: controller.state.volume.clamp(0.0, 100.0),
+                min: 0.0,
+                max: 100.0,
+                onChanged: (value) {
+                  controller.setVolume(value);
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  IconData _getVolumeIcon(double volume) {
+    if (volume == 0) return Icons.volume_off;
+    if (volume < 50) return Icons.volume_down;
+    return Icons.volume_up;
+  }
 }

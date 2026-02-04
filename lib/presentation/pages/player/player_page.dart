@@ -4,6 +4,7 @@ import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import '../../../core/utils/logger.dart';
 import '../../../data/services/history_service.dart';
 import '../../../data/services/settings_service.dart';
 import '../../../data/services/watch_party_service.dart';
@@ -104,12 +105,19 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
 
   @override
   void didChangeMetrics() {
-    // FORCE Update UI when window metrics change (resize/fullscreen)
-    // This prevents the "frozen UI" state mentioned by user
+    Logger.d('PlayerPage: didChangeMetrics called', tag: 'PlayerPage');
+    // When window metrics change (resize/fullscreen), the GPU texture context
+    // may become invalidated on Windows. The PlayerController handles this via
+    // textureKey, but we still need to trigger a rebuild to pick up the changes.
     if (mounted) {
-      // Schedule a frame to ensure the new size is respected by the engine
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() {});
+        if (mounted) {
+          Logger.d(
+            'PlayerPage: postFrameCallback triggered rebuild',
+            tag: 'PlayerPage',
+          );
+          setState(() {});
+        }
       });
     }
     super.didChangeMetrics();
@@ -209,6 +217,10 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    Logger.d(
+      'PlayerPage: build called. isFullscreen: ${_controller.state.isFullscreen}',
+      tag: 'PlayerPage',
+    );
     return PopScope(
       canPop: false,
       onPopInvoked: (didPop) async {
@@ -237,6 +249,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
               builder: (context, _) {
                 final state = _controller.state;
 
+                // Video Layer
                 if (!state.isInitialized) {
                   return const Center(child: CircularProgressIndicator());
                 }
@@ -244,15 +257,13 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                 return Stack(
                   fit: StackFit.expand,
                   children: [
-                    // Video Layer
+                    // Video Layer - simple approach, let media_kit handle resizing
                     if (!state.hasError)
-                      RepaintBoundary(
-                        child: Video(
-                          controller: _controller.videoController,
-                          fit: state.videoFit,
-                          fill: Colors.black,
-                          controls: NoVideoControls,
-                        ),
+                      Video(
+                        controller: _controller.videoController,
+                        fit: state.videoFit,
+                        fill: Colors.black,
+                        controls: NoVideoControls,
                       )
                     else
                       _buildErrorWidget(state.errorMessage),

@@ -365,8 +365,9 @@ class UaserialsParser {
       final bcText = bc.text.toLowerCase();
       if (bcText.contains('фільм')) type = ContentType.movie;
       if (bcText.contains('серіал')) type = ContentType.series;
-      if (bcText.contains('мультфільм'))
+      if (bcText.contains('мультфільм')) {
         type = ContentType.movie; // Single films
+      }
       if (bcText.contains('мультсеріал')) type = ContentType.series;
     } else {
       // Fallback to URL-based guess if breadcrumbs missing
@@ -411,9 +412,9 @@ class UaserialsParser {
         }
 
         // Fix relative protocol
-        if (src.startsWith('//'))
+        if (src.startsWith('//')) {
           src = 'https:$src';
-        else if (src.startsWith('/'))
+        } else if (src.startsWith('/'))
           src = '$baseUrl$src';
 
         srcs.add(src);

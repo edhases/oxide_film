@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/services.dart';
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 
@@ -257,6 +256,7 @@ class _HomePageState extends State<HomePage> {
     return RefreshIndicator(
       onRefresh: _loadContent,
       child: CustomScrollView(
+        cacheExtent: 1000.0,
         controller: _scrollController,
         slivers: [
           // App bar

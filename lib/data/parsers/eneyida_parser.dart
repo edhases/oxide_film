@@ -130,9 +130,7 @@ class EneyidaParser {
     // Title
     var titleEl = soup.find('h1', class_: 'full_title');
     // Fallback: any h1
-    if (titleEl == null) {
-      titleEl = soup.find('h1');
-    }
+    titleEl ??= soup.find('h1');
 
     var title = titleEl?.text.trim() ?? '';
 
@@ -425,8 +423,9 @@ class EneyidaParser {
   static String _cleanUrl(String url) {
     var clean = url.trim();
     if (clean.startsWith('//')) clean = 'https:$clean';
-    if (clean.contains('eneyida.tv/eneyida.tv/'))
+    if (clean.contains('eneyida.tv/eneyida.tv/')) {
       clean = clean.replaceAll('eneyida.tv/eneyida.tv/', 'eneyida.tv/');
+    }
 
     if (!clean.startsWith('http')) {
       if (clean.startsWith('/')) {
@@ -459,8 +458,9 @@ class EneyidaParser {
     final uri = Uri.tryParse(url);
     if (uri != null && uri.path.isNotEmpty) {
       var path = uri.path;
-      if (path.contains('eneyida.tv/'))
+      if (path.contains('eneyida.tv/')) {
         path = path.replaceAll('eneyida.tv/', '');
+      }
       if (path.endsWith('.html')) path = path.substring(0, path.length - 5);
       if (path.startsWith('/')) path = path.substring(1);
       return path;
@@ -469,14 +469,18 @@ class EneyidaParser {
   }
 
   static ContentType _detectContentType(String url) {
-    if (url.contains('/films/') || url.contains('films/'))
+    if (url.contains('/films/') || url.contains('films/')) {
       return ContentType.movie;
-    if (url.contains('/series/') || url.contains('series/'))
+    }
+    if (url.contains('/series/') || url.contains('series/')) {
       return ContentType.series;
-    if (url.contains('/cartoon/') || url.contains('cartoon/'))
+    }
+    if (url.contains('/cartoon/') || url.contains('cartoon/')) {
       return ContentType.cartoon;
-    if (url.contains('/anime/') || url.contains('anime/'))
+    }
+    if (url.contains('/anime/') || url.contains('anime/')) {
       return ContentType.anime;
+    }
     return ContentType.unknown;
   }
 
@@ -496,14 +500,18 @@ class EneyidaParser {
       for (final link in links) {
         final href = link.attributes['href'] ?? '';
         final text = link.text.toLowerCase();
-        if (href.contains('/films/') || text.contains('фільм'))
+        if (href.contains('/films/') || text.contains('фільм')) {
           return ContentType.movie;
-        if (href.contains('/series/') || text.contains('серіал'))
+        }
+        if (href.contains('/series/') || text.contains('серіал')) {
           return ContentType.series;
-        if (href.contains('/cartoon/') || text.contains('мультфільм'))
+        }
+        if (href.contains('/cartoon/') || text.contains('мультфільм')) {
           return ContentType.cartoon;
-        if (href.contains('/anime/') || text.contains('аніме'))
+        }
+        if (href.contains('/anime/') || text.contains('аніме')) {
           return ContentType.anime;
+        }
       }
     }
 

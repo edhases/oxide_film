@@ -8,8 +8,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/l10n/app_strings.dart';
 import '../../../data/providers/provider_registry.dart';
 import '../../../data/services/settings_service.dart';
-import '../../../data/services/sync_service.dart';
 import '../../../data/services/auth_service.dart';
+import '../../../data/services/data_transfer_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/custom_titlebar.dart';
 import '../../widgets/settings_widgets.dart';
@@ -25,8 +25,8 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   final _registry = GetIt.instance<ProviderRegistry>();
   final _settings = GetIt.instance<SettingsService>();
-  final _syncService = GetIt.instance<SyncService>();
   final _authService = GetIt.instance<AuthService>();
+  final _dataTransferService = GetIt.instance<DataTransferService>();
 
   AppStrings get _s => AppStrings.of(context);
 
@@ -799,78 +799,43 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  void _showExportDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.surfaceColor,
-        title: Text(_s.export),
-        content: FutureBuilder<Map<String, int>>(
-          future: _syncService.getDataStats(),
-          builder: (context, snapshot) {
-            final stats = snapshot.data ?? {'favorites': 0, 'history': 0};
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(_s.willExport),
-                const SizedBox(height: 8),
-                Text('• ${_s.favoritesCount(stats['favorites'] ?? 0)}'),
-                Text('• ${_s.historyCount(stats['history'] ?? 0)}'),
-                Text('• ${_s.settingsLabel}'),
-                const SizedBox(height: 16),
-                Text(
-                  _s.exportWillSaveAsJson,
-                  style: const TextStyle(color: Colors.grey),
-                ),
-              ],
-            );
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(_s.cancel),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              final path = await _syncService.exportData();
-              if (path != null && mounted) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text(_s.exportSuccess(path))));
-              }
-            },
-            child: Text(_s.exportButton),
-          ),
-        ],
-      ),
-    );
+  Future<void> _showExportDialog() async {
+    try {
+      await _dataTransferService.exportData();
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Резервну копію збережено')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Помилка експорту: $e')));
+      }
+    }
   }
 
   Future<void> _importData() async {
-    final result = await _syncService.importData();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result
-                ? _s.importSuccess
-                : _s.importError(_syncService.lastError ?? ''),
-          ),
-        ),
-      );
+    try {
+      await _dataTransferService.importData();
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Дані успішно відновлено')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Помилка імпорту: $e')));
+      }
     }
   }
 
   Future<void> _shareData() async {
-    await _syncService.exportAndShare();
+    await _showExportDialog();
   }
-
-  // ============================================================================
-  // NEW DIALOGS
-  // ============================================================================
 
   String _getDeviceTypeDisplayName(String type) {
     switch (type) {
@@ -963,76 +928,25 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   void _showNextEpisodeDelayDialog() {
-    final delays = [0, 3, 5, 10, 15, 30];
     showModalBottomSheet(
       context: context,
       backgroundColor: AppTheme.surfaceColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              margin: const EdgeInsets.only(top: 12),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppTheme.textMuted.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                _s.nextEpisodeDelay,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            ...delays.map((delay) {
-              final isSelected = delay == _settings.state.nextEpisodeDelay;
-              return ListTile(
-                leading: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? AppTheme.primaryColor.withValues(alpha: 0.15)
-                        : AppTheme.textMuted.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.timer,
-                    color: isSelected
-                        ? AppTheme.primaryColor
-                        : AppTheme.textSecondary,
-                  ),
-                ),
-                title: Text(
-                  delay == 0 ? 'Вимкнено' : '$delay сек',
-                  style: TextStyle(
-                    fontWeight: isSelected
-                        ? FontWeight.bold
-                        : FontWeight.normal,
-                    color: isSelected ? AppTheme.primaryColor : null,
-                  ),
-                ),
-                trailing: isSelected
-                    ? Icon(Icons.check_circle, color: AppTheme.primaryColor)
-                    : null,
-                onTap: () {
-                  _settings.setNextEpisodeDelay(delay);
-                  Navigator.pop(context);
-                },
-              );
-            }),
-            const SizedBox(height: 16),
-          ],
+      builder: (context) => SelectionSheet<int>(
+        title: _s.nextEpisodeDelay,
+        items: const [0, 5, 10, 15, 30],
+        selectedItem: _settings.state.nextEpisodeDelay,
+        itemBuilder: (item) => SelectionItem(
+          icon: Icons.timer,
+          title: '$item сек',
+          isSelected: item == _settings.state.nextEpisodeDelay,
         ),
+        onSelected: (item) {
+          _settings.setNextEpisodeDelay(item);
+          Navigator.pop(context);
+        },
       ),
     );
   }

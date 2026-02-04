@@ -77,6 +77,7 @@ class _SearchPageState extends State<SearchPage> {
   @override
   void dispose() {
     _debounceTimer?.cancel();
+    _searchSubscription?.cancel();
     _searchController.dispose();
     _focusNode.removeListener(_onFocusChanged);
     _focusNode.dispose();
@@ -149,9 +150,15 @@ class _SearchPageState extends State<SearchPage> {
     }
   }
 
+  StreamSubscription? _searchSubscription;
+
   Future<void> _performSearch() async {
     final query = _searchController.text.trim();
     if (query.isEmpty) return;
+
+    // Cancel previous search
+    await _searchSubscription?.cancel();
+    _searchSubscription = null;
 
     setState(() {
       _isLoading = true;
@@ -159,6 +166,11 @@ class _SearchPageState extends State<SearchPage> {
       _hasSearched = true;
       _showSuggestions = false;
       _suggestedQuery = null;
+      // Don't clear results immediately if we want to show loading indicator over old results?
+      // Or clear them? Standard is clear or show skeleton.
+      _results = [];
+      _aggregatedResult = null;
+      _searchResult = null;
     });
 
     // Add to recent searches (will be handled by SmartSearchService)
@@ -171,41 +183,70 @@ class _SearchPageState extends State<SearchPage> {
 
     try {
       // Use SmartSearchService for intelligent multi-provider search
-      final result = await _smartSearchService.search(query);
+      final stream = _smartSearchService.search(query);
 
-      if (mounted) {
-        // Get filtered results based on selected provider
-        var items = result.rankedItems;
+      _searchSubscription = stream.listen(
+        (result) async {
+          if (!mounted) return;
 
-        // Filter by provider if selected
-        if (_selectedProviderId != null) {
-          items = items
-              .where((i) => i.providerId == _selectedProviderId)
-              .toList();
-        }
+          // Get filtered results based on selected provider
+          var items = result.rankedItems;
 
-        // Apply deduplication if enabled
-        if (_deduplicateResults && _selectedProviderId == null) {
-          items = _searchService.deduplicateResults(items);
-        }
+          // Filter by provider if selected
+          if (_selectedProviderId != null) {
+            items = items
+                .where((i) => i.providerId == _selectedProviderId)
+                .toList();
+          }
 
-        // Check if we should suggest a correction
-        String? suggestion;
-        if (items.isEmpty) {
-          suggestion = await _smartSearchService.suggestCorrection(query);
-        }
+          // Apply deduplication if enabled
+          if (_deduplicateResults && _selectedProviderId == null) {
+            // SmartSearchService now handles basic dedup, but this UI toggle forces aggressive dedup?
+            // Or maybe we reused SearchService logic.
+            // _searchService.deduplicateResults is still available.
+            items = _searchService.deduplicateResults(items);
+          }
 
-        setState(() {
-          _searchResult = result;
-          _aggregatedResult = result.aggregatedResult;
-          _results = items;
-          _isLoading = false;
-          _suggestedQuery = suggestion;
-        });
+          // Check if we should suggest a correction
+          String? suggestion;
+          if (items.isEmpty && result.aggregatedResult.isComplete) {
+            suggestion = await _smartSearchService.suggestCorrection(query);
+          }
 
-        // Reload recent searches after search
-        _loadRecentSearches();
-      }
+          setState(() {
+            _searchResult = result;
+            _aggregatedResult = result.aggregatedResult;
+            _results = items;
+            // Only stop loading if complete? Or keep loading true until done?
+            // "Loading" usually means "Waiting for first result" or "In progress".
+            // If we have results, we can show them.
+            // But if we hide loading indicator, user might think search is finished.
+            // Better to keep _isLoading = true until stream is done?
+            // BUT if stream is progressive, we want to show data.
+            // Let's use !isComplete for loading state?
+            _isLoading = !result.aggregatedResult.isComplete;
+            _suggestedQuery = suggestion;
+          });
+
+          // Reload recent searches after search (once we have some results)
+          if (result.fromCache || result.aggregatedResult.isComplete) {
+            _loadRecentSearches();
+          }
+        },
+        onError: (e) {
+          if (mounted) {
+            setState(() {
+              _error = e.toString();
+              _isLoading = false;
+            });
+          }
+        },
+        onDone: () {
+          if (mounted) {
+            setState(() => _isLoading = false);
+          }
+        },
+      );
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -729,6 +770,7 @@ class _SearchPageState extends State<SearchPage> {
     }
 
     return GridView.builder(
+      cacheExtent: 1000.0,
       padding: EdgeInsets.all(_ui.gridSpacing.padding),
       gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: _getMaxCrossAxisExtent(),

@@ -1,4 +1,4 @@
-import '../../data/database/app_database.dart' hide WatchHistory, Favorites;
+import 'dart:async';
 import '../../data/database/dao/favorites_dao.dart';
 import '../../data/database/dao/history_dao.dart';
 import '../../data/database/dao/media_items_dao.dart';
@@ -43,30 +43,17 @@ class UnifiedContentRepositoryImpl implements UnifiedContentRepository {
   }
 
   @override
-  Future<List<MediaItem>> search(
+  Stream<List<MediaItem>> search(
     String query, {
     ContentType? type,
     int page = 1,
-  }) async {
-    final results = <MediaItem>[];
-
-    // Create list of futures for enabled providers
-    final futures = _providers.where((p) => p.isEnabled).map((provider) async {
-      try {
-        final items = await provider.search(query, type: type, page: page);
-        return items.map((item) => _ensureGlobalId(item, provider.id)).toList();
-      } catch (e) {
-        Logger.w('Search failed for ${provider.name}', tag: _tag, error: e);
-        return <MediaItem>[];
-      }
-    });
-
-    final resultsList = await Future.wait(futures);
-    for (final list in resultsList) {
-      results.addAll(list);
-    }
-
-    return results;
+  }) {
+    final providers = _providers.where((p) => p.isEnabled).toList();
+    return _streamProviders(
+      providers,
+      (p) => p.search(query, type: type, page: page),
+      'Search',
+    );
   }
 
   @override
@@ -289,126 +276,163 @@ class UnifiedContentRepositoryImpl implements UnifiedContentRepository {
   }
 
   @override
-  Future<List<MediaItem>> getPopular({
+  Stream<List<MediaItem>> getPopular({
     ContentType? type,
     int page = 1,
     String? providerId,
-  }) async {
+  }) {
     if (providerId != null) {
       final provider = _getProviderById(providerId);
       if (provider != null) {
-        try {
-          final items = await provider.getPopular(type: type, page: page);
-          return items.map((i) => _ensureGlobalId(i, provider.id)).toList();
-        } catch (e) {
-          Logger.w('Get popular failed for $providerId', tag: _tag, error: e);
-          return [];
-        }
-      }
-      return [];
-    }
-
-    // Aggregate from all (or first enabled?)
-    // For "Popular", usually we pick one primary or mix.
-    // Let's mix from all enabled.
-    final futures = _providers.where((p) => p.isEnabled).map((provider) async {
-      try {
-        final items = await provider.getPopular(type: type, page: page);
-        return items.map((i) => _ensureGlobalId(i, provider.id)).toList();
-      } catch (e) {
-        Logger.w(
-          'Get popular failed for ${provider.name}',
-          tag: _tag,
-          error: e,
+        return Stream.fromFuture(
+          provider
+              .getPopular(type: type, page: page)
+              .then(
+                (items) =>
+                    items.map((i) => _ensureGlobalId(i, provider.id)).toList(),
+              )
+              .catchError((e) {
+                Logger.w(
+                  'Get popular failed for $providerId',
+                  tag: _tag,
+                  error: e,
+                );
+                return <MediaItem>[];
+              }),
         );
-        return <MediaItem>[];
       }
-    });
-
-    final resultsList = await Future.wait(futures);
-    final results = <MediaItem>[];
-    for (final list in resultsList) {
-      results.addAll(list);
+      return Stream.value([]);
     }
-    results.shuffle(); // Shuffle for variety? Or keep usage specific?
-    // Usually user wants consistent order.
-    // For now, let's just append.
-    return results;
+
+    final providers = _providers.where((p) => p.isEnabled).toList();
+    return _streamProviders(
+      providers,
+      (p) => p.getPopular(type: type, page: page),
+      'Get Popular',
+    );
   }
 
   @override
-  Future<List<MediaItem>> getNew({
+  Stream<List<MediaItem>> getNew({
     ContentType? type,
     int page = 1,
     String? providerId,
-  }) async {
-    // Similar to getPopular
+  }) {
     if (providerId != null) {
       final provider = _getProviderById(providerId);
       if (provider != null) {
-        try {
-          final items = await provider.getNew(type: type, page: page);
-          return items.map((i) => _ensureGlobalId(i, provider.id)).toList();
-        } catch (e) {
-          Logger.w('Get new failed for $providerId', tag: _tag, error: e);
-          return [];
-        }
+        return Stream.fromFuture(
+          provider
+              .getNew(type: type, page: page)
+              .then(
+                (items) =>
+                    items.map((i) => _ensureGlobalId(i, provider.id)).toList(),
+              )
+              .catchError((e) {
+                Logger.w('Get new failed for $providerId', tag: _tag, error: e);
+                return <MediaItem>[];
+              }),
+        );
       }
-      return [];
+      return Stream.value([]);
     }
 
-    final futures = _providers.where((p) => p.isEnabled).map((provider) async {
-      try {
-        final items = await provider.getNew(type: type, page: page);
-        return items.map((i) => _ensureGlobalId(i, provider.id)).toList();
-      } catch (e) {
-        Logger.w('Get new failed for ${provider.name}', tag: _tag, error: e);
-        return <MediaItem>[];
-      }
-    });
-
-    final resultsList = await Future.wait(futures);
-    final results = <MediaItem>[];
-    for (final list in resultsList) {
-      results.addAll(list);
-    }
-    return results;
+    final providers = _providers.where((p) => p.isEnabled).toList();
+    return _streamProviders(
+      providers,
+      (p) => p.getNew(type: type, page: page),
+      'Get New',
+    );
   }
 
   @override
-  Future<List<MediaItem>> getByCategory(
+  Stream<List<MediaItem>> getByCategory(
     String category, {
     ContentType? type,
     int page = 1,
     String? providerId,
-  }) async {
-    // Logic for category
+  }) {
     if (providerId != null) {
       final provider = _getProviderById(providerId);
       if (provider != null) {
-        try {
-          final items = await provider.getByCategory(
-            category,
-            type: type,
-            page: page,
-          );
-          return items.map((i) => _ensureGlobalId(i, provider.id)).toList();
-        } catch (e) {
-          Logger.w('Get category failed for $providerId', tag: _tag, error: e);
-          return [];
-        }
+        return Stream.fromFuture(
+          provider
+              .getByCategory(category, type: type, page: page)
+              .then(
+                (items) =>
+                    items.map((i) => _ensureGlobalId(i, provider.id)).toList(),
+              )
+              .catchError((e) {
+                Logger.w(
+                  'Get category failed for $providerId',
+                  tag: _tag,
+                  error: e,
+                );
+                return <MediaItem>[];
+              }),
+        );
       }
+      return Stream.value([]);
     }
-    // If no provider specified?
-    return [];
+
+    // Default to all enabled providers if no specific ID?
+    // Original implementation returned [] if providerId was null, but let's support multi-provider category if applicable
+    final providers = _providers.where((p) => p.isEnabled).toList();
+    return _streamProviders(
+      providers,
+      (p) => p.getByCategory(category, type: type, page: page),
+      'Get Category',
+    );
   }
 
   MediaItem _ensureGlobalId(MediaItem item, String providerId) {
     if (item.id.startsWith('$providerId:')) return item;
-    // Do not double prefix?
-    // Providers might already return prefixed IDs?
-    // Usually providers return local IDs.
-    // We should enforce global IDs.
     return item.copyWith(id: '$providerId:${item.id}');
+  }
+
+  /// Helper to stream results from multiple providers in parallel
+  Stream<List<MediaItem>> _streamProviders(
+    List<ContentProvider> providers,
+    Future<List<MediaItem>> Function(ContentProvider) fetcher,
+    String operationName,
+  ) {
+    final controller = StreamController<List<MediaItem>>();
+    final accumulated = <MediaItem>[];
+    int completed = 0;
+
+    if (providers.isEmpty) {
+      controller.close();
+      return controller.stream;
+    }
+
+    for (final provider in providers) {
+      fetcher(provider)
+          .then((items) {
+            if (items.isNotEmpty) {
+              final globalItems = items
+                  .map((i) => _ensureGlobalId(i, provider.id))
+                  .toList();
+              accumulated.addAll(globalItems);
+              if (!controller.isClosed) {
+                controller.add(List.from(accumulated));
+              }
+            }
+          })
+          .catchError((e) {
+            Logger.w(
+              '$operationName failed for ${provider.name}',
+              tag: _tag,
+              error: e,
+            );
+          })
+          .whenComplete(() {
+            completed++;
+            if (completed == providers.length) {
+              if (!controller.isClosed) controller.close();
+            }
+          });
+    }
+
+    return controller.stream;
   }
 }

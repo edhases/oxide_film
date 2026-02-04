@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:fuzzywuzzy/fuzzywuzzy.dart';
 
 import '../../../core/utils/logger.dart';
@@ -51,98 +52,166 @@ class SmartSearchService {
   /// 3. Merges and deduplicates results
   /// 4. Ranks by relevance
   /// 5. Saves to history
-  Future<SmartSearchResult> search(
+  Stream<SmartSearchResult> search(
     String query, {
     ContentType? type,
     int page = 1,
-  }) async {
+  }) {
     final normalized = _transliteration.normalizeQuery(query);
     if (normalized.isEmpty) {
-      return SmartSearchResult.empty(query);
+      return Stream.value(SmartSearchResult.empty(query));
     }
 
-    final stopwatch = Stopwatch()..start();
-
-    // Check memory cache
+    // Check memory cache first (emit immediate value)
     final cacheKey = '$normalized:$type:$page';
     if (_isCacheValid(cacheKey)) {
-      Logger.d('Cache hit for "$normalized"', tag: _tag);
-      final cached = _memoryCache[cacheKey]!;
-      return SmartSearchResult(
-        originalQuery: query,
-        normalizedQuery: normalized,
-        searchVariants: [normalized],
-        aggregatedResult: cached,
-        rankedItems: _rankResults(cached.allItems, normalized),
-        totalDuration: stopwatch.elapsed,
-        fromCache: true,
-      );
+      // If we have full cache, we can just emit it?
+      // But maybe we want to refresh in background?
+      // For now, if cache hit, emit it as single value stream.
+      // Or we can emit it and THEN search fresh if valid-but-stale?
+      // Existing logic used cache as final.
+      return Stream.fromFuture(() async {
+        Logger.d('Cache hit for "$normalized"', tag: _tag);
+        final cached = _memoryCache[cacheKey]!;
+        final ranked = await compute(_processResultsCompute, {
+          'items': cached.allItems,
+          'query': normalized,
+          'fuzzyThreshold': _fuzzyThreshold,
+          'dedupThreshold': _deduplicationThreshold,
+        });
+        return SmartSearchResult(
+          originalQuery: query,
+          normalizedQuery: normalized,
+          searchVariants: [normalized],
+          aggregatedResult: cached,
+          rankedItems: ranked,
+          totalDuration: Duration.zero,
+          fromCache: true,
+        );
+      }());
     }
 
-    // Generate search variants
+    final controller = StreamController<SmartSearchResult>();
+    final stopwatch = Stopwatch()..start();
+
+    // Generate variants
     final variants = _transliteration.generateSearchVariants(query);
     Logger.d('Search variants for "$query": $variants', tag: _tag);
 
-    // Search all variants
-    final allResults = <MediaItem>[];
-    AggregatedSearchResult? primaryResult;
+    // Track state per variant
+    final variantResults = <String, AggregatedSearchResult>{
+      for (var v in variants)
+        v: AggregatedSearchResult(
+          query: v,
+          providerResults: const [],
+          totalDuration: Duration.zero,
+        ),
+    };
 
-    for (final variant in variants) {
+    // Throttling Logic
+    Timer? throttleTimer;
+    bool isDirty = false;
+    int completedStreams = 0;
+
+    Future<void> processAndEmit({bool closeAfter = false}) async {
+      isDirty = false;
+
+      // Combine all results
+      final allProviderResults = variantResults.values
+          .expand((r) => r.providerResults)
+          .toList();
+
+      final combinedAggregated = AggregatedSearchResult(
+        query: query,
+        providerResults: allProviderResults,
+        totalDuration: stopwatch.elapsed,
+        isComplete: completedStreams == variants.length,
+      );
+
+      final allItems = combinedAggregated.allItems;
+
+      // Run heavy compute in isolate
       try {
-        final result = await _searchService.search(
-          variant,
-          type: type,
-          page: page,
-        );
+        final ranked = await compute(_processResultsCompute, {
+          'items': allItems,
+          'query': normalized,
+          'fuzzyThreshold': _fuzzyThreshold,
+          'dedupThreshold': _deduplicationThreshold,
+        });
 
-        if (primaryResult == null ||
-            result.totalCount > primaryResult.totalCount) {
-          primaryResult = result;
+        if (!controller.isClosed) {
+          final result = SmartSearchResult(
+            originalQuery: query,
+            normalizedQuery: normalized,
+            searchVariants: variants,
+            aggregatedResult: combinedAggregated,
+            rankedItems: ranked,
+            totalDuration: stopwatch.elapsed,
+            fromCache: false,
+          );
+
+          if (completedStreams == variants.length) {
+            _memoryCache[cacheKey] = combinedAggregated;
+            _cacheTimestamps[cacheKey] = DateTime.now();
+
+            Logger.i(
+              'Smart search completed: ${ranked.length} results in ${stopwatch.elapsedMilliseconds}ms',
+              tag: _tag,
+            );
+            await _saveToHistory(query, normalized, ranked.length);
+          }
+
+          controller.add(result);
         }
-
-        allResults.addAll(result.allItems);
       } catch (e) {
-        Logger.w('Search failed for variant "$variant": $e', tag: _tag);
+        Logger.e('Error processing search results', tag: _tag, error: e);
+      } finally {
+        if (closeAfter && !controller.isClosed) {
+          controller.close();
+          stopwatch.stop();
+        }
       }
     }
 
-    // Deduplicate results
-    final deduped = _deduplicateResults(allResults);
-
-    // Rank results
-    final ranked = _rankResults(deduped, normalized);
-
-    // Cache the result
-    if (primaryResult != null) {
-      _memoryCache[cacheKey] = primaryResult;
-      _cacheTimestamps[cacheKey] = DateTime.now();
+    void onUpdate() {
+      if (throttleTimer?.isActive ?? false) {
+        isDirty = true;
+      } else {
+        processAndEmit();
+        throttleTimer = Timer(const Duration(milliseconds: 100), () {
+          if (isDirty) processAndEmit();
+          throttleTimer = null;
+        });
+      }
     }
 
-    // Save to history
-    await _saveToHistory(query, normalized, ranked.length);
+    // Launch streams
+    for (final variant in variants) {
+      _searchService
+          .searchStream(variant, type: type, page: page)
+          .listen(
+            (event) {
+              variantResults[variant] = event;
+              onUpdate();
+            },
+            onError: (e) {
+              Logger.w(
+                'Search error for variant $variant',
+                tag: _tag,
+                error: e,
+              );
+            },
+            onDone: () {
+              completedStreams++;
+              if (completedStreams == variants.length) {
+                throttleTimer?.cancel(); // Cancel pending
+                processAndEmit(closeAfter: true); // Final emit
+              }
+            },
+          );
+    }
 
-    stopwatch.stop();
-
-    Logger.i(
-      'Smart search "$query": ${ranked.length} results in ${stopwatch.elapsedMilliseconds}ms',
-      tag: _tag,
-    );
-
-    return SmartSearchResult(
-      originalQuery: query,
-      normalizedQuery: normalized,
-      searchVariants: variants,
-      aggregatedResult:
-          primaryResult ??
-          AggregatedSearchResult(
-            query: query,
-            providerResults: [],
-            totalDuration: stopwatch.elapsed,
-          ),
-      rankedItems: ranked,
-      totalDuration: stopwatch.elapsed,
-      fromCache: false,
-    );
+    return controller.stream;
   }
 
   /// Get quick suggestions from history and memory cache
@@ -309,86 +378,74 @@ class SmartSearchService {
     }
   }
 
-  /// Deduplicate results based on title similarity
-  List<MediaItem> _deduplicateResults(List<MediaItem> items) {
-    if (items.length <= 1) return items;
+  /// Process results in isolate (deduplication + ranking)
+  static List<MediaItem> _processResultsCompute(Map<String, dynamic> args) {
+    final items = args['items'] as List<MediaItem>;
+    final query = args['query'] as String;
+    final fuzzyThreshold = args['fuzzyThreshold'] as int;
+    final dedupThreshold = args['dedupThreshold'] as int;
 
+    // 1. Deduplicate
     final unique = <MediaItem>[];
     final seenTitles = <String>[];
 
     for (final item in items) {
       final normalizedTitle = item.title.toLowerCase().trim();
-
-      // Check if we've seen a very similar title
       bool isDuplicate = false;
       for (final seen in seenTitles) {
         final similarity = ratio(normalizedTitle, seen);
-        if (similarity >= _deduplicationThreshold) {
+        if (similarity >= dedupThreshold) {
           isDuplicate = true;
           break;
         }
       }
-
       if (!isDuplicate) {
         unique.add(item);
         seenTitles.add(normalizedTitle);
       }
     }
 
-    return unique;
-  }
-
-  /// Rank results by relevance to query
-  List<MediaItem> _rankResults(List<MediaItem> items, String query) {
-    if (items.isEmpty) return items;
-
-    final scored = items.map((item) {
-      final score = _calculateRelevanceScore(item, query);
+    // 2. Rank
+    final scored = unique.map((item) {
+      final score = _calculateRelevanceScoreStatic(item, query, fuzzyThreshold);
       return _ScoredItem(item, score);
     }).toList();
 
-    // Sort by score descending
     scored.sort((a, b) => b.score.compareTo(a.score));
-
     return scored.map((s) => s.item).toList();
   }
 
-  double _calculateRelevanceScore(MediaItem item, String query) {
+  static double _calculateRelevanceScoreStatic(
+    MediaItem item,
+    String query,
+    int fuzzyThreshold,
+  ) {
     var score = 0.0;
     final normalizedTitle = item.title.toLowerCase().trim();
     final normalizedQuery = query.toLowerCase().trim();
 
-    // Exact match
     if (normalizedTitle == normalizedQuery) {
       score += 100;
-    }
-    // Starts with query
-    else if (normalizedTitle.startsWith(normalizedQuery)) {
+    } else if (normalizedTitle.startsWith(normalizedQuery)) {
       score += 50;
-    }
-    // Contains query
-    else if (normalizedTitle.contains(normalizedQuery)) {
+    } else if (normalizedTitle.contains(normalizedQuery)) {
       score += 25;
     }
 
-    // Fuzzy similarity bonus
     final similarity = ratio(normalizedTitle, normalizedQuery);
-    score += similarity * 0.3; // 0-30 points
+    score += similarity * 0.3;
 
-    // Rating bonus
     if (item.rating != null) {
-      score += item.rating! * 2; // 0-20 points
+      score += item.rating! * 2;
     }
 
-    // Year recency bonus (newer = better, for popular searches)
     if (item.year != null) {
       final yearsOld = DateTime.now().year - item.year!;
       if (yearsOld < 5) {
-        score += (5 - yearsOld) * 3; // 0-15 points for recent content
+        score += (5 - yearsOld) * 3;
       }
     }
 
-    // Has poster bonus
     if (item.posterUrl != null && item.posterUrl!.isNotEmpty) {
       score += 10;
     }

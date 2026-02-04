@@ -11,6 +11,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/custom_titlebar.dart';
 import '../../widgets/common/skeleton.dart';
 import '../../widgets/tv/focusable_card.dart';
+import '../../widgets/rating_badge.dart';
 
 /// Media details page with improved layout
 class DetailsPage extends StatefulWidget {
@@ -758,18 +759,14 @@ class _DetailsPageState extends State<DetailsPage> {
 
     // Rating
     if (_details!.item.rating != null && _details!.item.rating! >= 0) {
-      final rawRating = _details!.item.rating!;
-      // Normalize: if > 10, treat as percentage
-      final rating = rawRating > 10
-          ? (rawRating / 10).clamp(0.0, 10.0)
-          : rawRating;
-      final color = rating >= 7.0
-          ? AppTheme.successColor
-          : rating >= 5.0
-          ? Colors.orange
-          : AppTheme.errorColor;
       items.add(
-        _buildInfoChip(Icons.star, rating.toStringAsFixed(1), color: color),
+        RatingBadge(
+          rating: _details!.item.rating,
+          source: _details!.item.ratingSource,
+          color: _getTypeColor(_details!.item.type) == AppTheme.textSecondary
+              ? null
+              : null, // Let RatingBadge decide color based on score
+        ),
       );
     }
 

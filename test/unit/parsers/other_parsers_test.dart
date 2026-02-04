@@ -68,7 +68,7 @@ void main() {
     test('decodeStreamUrl should handle HDRezka encoding', () {
       // Testing simple base64 first to verify the cleaner logic
       const encoded =
-          '#h' +
+          '#h'
           'aHR0cHM6Ly9leGFtcGxlLmNvbS92aWRlby5tcDQ='; // "https://example.com/video.mp4"
       final decoded = HDRezkaParser.decodeStreamUrl(encoded);
       expect(decoded, 'https://example.com/video.mp4');

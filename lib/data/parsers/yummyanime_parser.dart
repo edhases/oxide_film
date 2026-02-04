@@ -280,14 +280,35 @@ class YummyAnimeParser {
   static List<Map<String, String>> extractEpisodeItems(String html) {
     final soup = BeautifulSoup(html);
     final items = <Map<String, String>>[];
-    final episodeItems = soup.findAll('li', class_: 'episode-item');
 
+    // 1. Try standard episode list
+    final episodeItems = soup.findAll('li', class_: 'episode-item');
     for (final item in episodeItems) {
       items.add({
         'episode': item.attributes['data-episode'] ?? '',
         'id': item.attributes['data-id'] ?? '',
       });
     }
+
+    // 2. If no episodes, look for xfplayer (single player/movie mode)
+    if (items.isEmpty) {
+      final players = soup.findAll('div', class_: 'xfplayer');
+      for (final player in players) {
+        final params = player.attributes['data-params'];
+        if (params != null) {
+          // Parse query string style params: mod=kodik-player&url=1...
+          final uri = Uri.tryParse('?$params');
+          if (uri != null) {
+            items.add({
+              'episode': '1', // Default to 1
+              'id': uri.queryParameters['id'] ?? '',
+              'player_params': params, // Pass full params for repo
+            });
+          }
+        }
+      }
+    }
+
     return items;
   }
 
@@ -309,9 +330,9 @@ class YummyAnimeParser {
           // Repository will handle if it's an embed (needs fetching) or direct.
           // We tag it based on naive check.
           var type = StreamType.direct;
-          if (url.contains('.m3u8'))
+          if (url.contains('.m3u8')) {
             type = StreamType.hls;
-          else if (url.contains('ashdi') ||
+          } else if (url.contains('ashdi') ||
               url.contains('kodik') ||
               url.contains('aniboom')) {
             // These are players, let's treat them as direct but repository will inspect content

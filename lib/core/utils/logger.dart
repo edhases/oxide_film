@@ -7,10 +7,10 @@ class Logger {
   static const String _tag = 'OxideFilm';
 
   /// Enable console logs for CLI debugging (only works in debug mode)
-  static bool useConsoleLogs = false;
+  static bool useConsoleLogs = true;
 
   /// Check if logging should output to console
-  static bool get _shouldLogToConsole => !kReleaseMode && useConsoleLogs;
+  static bool get _shouldLogToConsole => useConsoleLogs;
 
   static void d(String message, {String? tag}) {
     if (_shouldLogToConsole) print('[DEBUG] [$tag] $message');

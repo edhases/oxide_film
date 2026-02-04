@@ -23,6 +23,7 @@ import '../../data/services/auth_service.dart';
 import '../../data/services/search_service.dart';
 import '../../data/services/url_resolver_service.dart';
 import '../../data/services/smart_search/smart_search_service.dart';
+import '../../data/services/data_transfer_service.dart';
 import '../../data/database/dao/search_history_dao.dart';
 import '../../data/database/dao/history_dao.dart';
 import '../../data/database/dao/favorites_dao.dart';
@@ -71,6 +72,10 @@ Future<void> configureDependencies() async {
   );
   getIt.registerLazySingleton<StatsService>(() => StatsService(database));
   getIt.registerLazySingleton<WatchPartyService>(() => WatchPartyService());
+  getIt.registerLazySingleton<DataTransferService>(
+    () =>
+        DataTransferService(getIt<HistoryService>(), getIt<FavoritesService>()),
+  );
 
   // External API services
   getIt.registerLazySingleton<TMDbService>(

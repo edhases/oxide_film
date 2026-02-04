@@ -7,6 +7,7 @@ import '../../data/services/settings_service.dart';
 import '../../domain/entities/entities.dart';
 import '../theme/app_theme.dart';
 import 'common/skeleton.dart';
+import 'rating_badge.dart';
 
 /// Media item card for grids and lists
 class MediaCard extends StatefulWidget {
@@ -250,62 +251,18 @@ class _MediaCardState extends State<MediaCard> {
     );
   }
 
-  /// Normalize rating to 0-10 scale
-  double _normalizeRating(double rating) {
-    // Negative ratings are invalid
-    if (rating < 0) return 0;
-    // Ratings above 10 are likely percentages (0-100 scale)
-    if (rating > 10) return (rating / 10).clamp(0, 10);
-    return rating;
-  }
-
   Widget _buildRatingBadge() {
     final rawRating = widget.item.rating!;
     // Skip display for invalid ratings
     if (rawRating < 0) return const SizedBox.shrink();
 
-    final rating = _normalizeRating(rawRating);
-    final color = rating >= 7.0
-        ? AppTheme.successColor
-        : rating >= 5.0
-        ? Colors.orange
-        : AppTheme.errorColor;
-
-    final source = widget.item.ratingSource;
-
     return Positioned(
       top: 8,
       right: 8,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (source != null) ...[
-              Text(
-                source.toUpperCase(),
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 8,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(width: 3),
-            ],
-            Text(
-              rating.toStringAsFixed(1),
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
+      child: RatingBadge(
+        rating: rawRating,
+        source: widget.item.ratingSource,
+        compact: false,
       ),
     );
   }

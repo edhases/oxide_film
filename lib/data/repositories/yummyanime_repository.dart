@@ -32,25 +32,33 @@ class YummyAnimeRepository {
   };
 
   Future<List<MediaItem>> search(String query, {int page = 1}) async {
-    // Try JSON API first
+    // YummyAnime now uses POST for search
     try {
-      final response = await _client.dio.get<String>(
-        '$baseUrl/api/search',
-        queryParameters: {'q': query},
+      // ApiClient.post returns Map<String, dynamic> by default/implementation?
+      // In ApiClient.dart: Future<Map<String, dynamic>> post(...)
+      // But YummyAnime returns HTML.
+      // We need ApiClient to handle raw string response for POST or use dio directly.
+
+      final response = await _client.dio.post(
+        '$baseUrl/index.php?do=search',
+        data: FormData.fromMap({
+          'do': 'search',
+          'subaction': 'search',
+          'story': query,
+        }),
         options: Options(
-          headers: {..._browserHeaders, 'X-Requested-With': 'XMLHttpRequest'},
+          headers: _browserHeaders,
+          responseType: ResponseType.plain, // Force string
         ),
       );
 
-      if (response.data != null && response.data!.trim().startsWith('{')) {
-        final json = jsonDecode(response.data!);
-        return compute(YummyAnimeParser.parseSearchJson, json);
-      }
+      final html = response.data.toString();
+      return compute(YummyAnimeParser.parseSearchResults, html);
     } catch (e) {
-      Logger.w('JSON Search failed, falling back to HTML', tag: _tag);
+      Logger.w('POST Search failed, trying legacy GET', tag: _tag);
     }
 
-    // Fallback to HTML
+    // Fallback to legacy GET (likely broken but harmless to keep)
     try {
       final html = await _client.get(
         '$baseUrl/search?q=${Uri.encodeComponent(query)}',
@@ -159,19 +167,84 @@ class YummyAnimeRepository {
         html,
       );
       String? dataId;
+      String? playerParams;
 
       // Find matching episode
-      for (final item in episodeItems) {
-        if (item['episode'] == episodeNum.toString()) {
-          dataId = item['id'];
-          break;
+      // If we only found a single player (no proper episodes list), we use that if episode is 1
+      if (episodeItems.length == 1 &&
+          episodeItems.first['player_params'] != null) {
+        if (episodeNum == 1) {
+          playerParams = episodeItems.first['player_params'];
+          dataId = episodeItems.first['id'];
+        }
+      } else {
+        for (final item in episodeItems) {
+          if (item['episode'] == episodeNum.toString()) {
+            dataId = item['id'];
+            playerParams =
+                item['player_params']; // Might be null for standard list items
+            break;
+          }
+        }
+      }
+
+      // If we have player_params, use controller.php to get the iframe
+      if (playerParams != null) {
+        try {
+          // Parse params to map
+          final paramsMap = Uri.splitQueryString(playerParams);
+
+          final response = await _client.getJson(
+            '$baseUrl/engine/ajax/controller.php',
+            queryParameters: paramsMap,
+            headers: {
+              ..._browserHeaders,
+              'X-Requested-With': 'XMLHttpRequest',
+              'Referer': url,
+            },
+          );
+
+          if (response['success'] == true && response['data'] != null) {
+            final iframeUrl = response['data'].toString();
+            // This is usually a Kodik or Ashdi URL.
+            // We return it as a direct source, but typed as HLS/Embed so PlayerPage can extract it.
+            // Actually, better to mark it as StreamType.youtubeEmbed or similar if it needs extraction?
+            // Standard StreamType.direct with a known provider URL usually triggers extractor.
+            // Or better, let's process it if it's Kodik.
+
+            if (iframeUrl.contains('kodik')) {
+              sources.add(
+                StreamSource(
+                  url: iframeUrl,
+                  quality: StreamQuality.unknown, // Kodik handles quality
+                  type: StreamType
+                      .direct, // Needs extraction but marked as direct for now
+                  sourceName: 'Kodik',
+                ),
+              );
+            } else {
+              sources.add(
+                StreamSource(
+                  url: iframeUrl,
+                  quality: StreamQuality.unknown,
+                  type: StreamType.direct,
+                ),
+              );
+            }
+          }
+        } catch (e) {
+          Logger.w(
+            'Failed to fetch player from controller',
+            tag: _tag,
+            error: e,
+          );
         }
       }
 
       Map<String, dynamic>? episodeData;
 
-      if (dataId != null) {
-        // Fetch via API
+      if (dataId != null && playerParams == null) {
+        // Fetch via API (Legacy/Standard flow)
         try {
           final response = await _client.dio.get<String>(
             '$baseUrl/api/episode/$dataId',
@@ -191,7 +264,7 @@ class YummyAnimeRepository {
       }
 
       // Fallback API call
-      if (episodeData == null) {
+      if (episodeData == null && playerParams == null) {
         try {
           final response = await _client.dio.get<String>(
             '$baseUrl/api/anime/$id/episode/$episodeNum',

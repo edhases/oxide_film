@@ -23,6 +23,7 @@ class PlayerState {
   final String? errorMessage;
   final Duration position;
   final Duration duration;
+  final double volume;
   final double playbackSpeed;
   final BoxFit videoFit;
   final bool isFullscreen;
@@ -40,6 +41,7 @@ class PlayerState {
     this.errorMessage,
     this.position = Duration.zero,
     this.duration = Duration.zero,
+    this.volume = 100.0,
     this.playbackSpeed = 1.0,
     this.videoFit = BoxFit.contain,
     this.isFullscreen = false,
@@ -58,6 +60,7 @@ class PlayerState {
     String? errorMessage,
     Duration? position,
     Duration? duration,
+    double? volume,
     double? playbackSpeed,
     BoxFit? videoFit,
     bool? isFullscreen,
@@ -76,6 +79,7 @@ class PlayerState {
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
       position: position ?? this.position,
       duration: duration ?? this.duration,
+      volume: volume ?? this.volume,
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
       videoFit: videoFit ?? this.videoFit,
       isFullscreen: isFullscreen ?? this.isFullscreen,
@@ -105,6 +109,9 @@ class PlayerController extends ChangeNotifier {
   final SettingsService _settingsService;
   final WatchPartyService _watchPartyService;
 
+  // Optional player factory for testing (returns a media_kit Player)
+  final Player Function()? _playerFactory;
+
   // Media info
   final String initialUrl;
   final String? title;
@@ -119,6 +126,10 @@ class PlayerController extends ChangeNotifier {
   final List<StreamSubscription> _subscriptions = [];
   Timer? _saveProgressTimer;
   bool _isDisposed = false;
+
+  // Test-only flag: when false avoid creating VideoController and subscribing to
+  // Player.stream which can depend on native platform assets.
+  final bool _setupPlayerStreams;
 
   // Observable state
   PlayerState _state = const PlayerState();
@@ -142,19 +153,26 @@ class PlayerController extends ChangeNotifier {
   // Speed options
   static const List<double> speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 
+  /// [setupPlayerStreams] can be set to false in tests to avoid creating
+  /// a real [VideoController] and subscribing to [Player.stream] which may
+  /// depend on native platform components. Defaults to true.
   PlayerController({
     required this.initialUrl,
     required HistoryService historyService,
     required SettingsService settingsService,
     required WatchPartyService watchPartyService,
+    Player Function()? playerFactory,
     this.title,
     this.mediaId,
     this.providerId,
     this.posterUrl,
     this.streams,
+    bool setupPlayerStreams = true,
   }) : _historyService = historyService,
        _settingsService = settingsService,
-       _watchPartyService = watchPartyService {
+       _watchPartyService = watchPartyService,
+       _playerFactory = playerFactory,
+       _setupPlayerStreams = setupPlayerStreams {
     _initCurrentStreamInfo();
   }
 
@@ -215,24 +233,43 @@ class PlayerController extends ChangeNotifier {
 
   /// Initialize player and start playback
   Future<void> initialize() async {
-    _player = Player();
-    _videoController = VideoController(_player);
+    _player = _playerFactory != null ? _playerFactory() : Player();
 
-    _setupPlayerListeners();
-    _setupWatchPartySync();
-    _startProgressSaving();
+    if (_setupPlayerStreams) {
+      _videoController = VideoController(_player);
+      Logger.d(
+        'VideoController created: ${_videoController.hashCode}',
+        tag: _tag,
+      );
 
-    // Enable wakelock
-    WakelockPlus.enable();
+      _setupPlayerListeners();
+      _setupWatchPartySync();
+      _startProgressSaving();
+    } else {
+      // In test mode we skip creating VideoController and subscribing to streams.
+      // Tests may still call player methods on the provided player instance.
+    }
 
-    // Auto fullscreen on Android
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      _state = _state.copyWith(isFullscreen: true);
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
+    // Enable wakelock and handle fullscreen only when player streams are
+    // initialized (skip during unit tests where streams/platform channels are
+    // not available).
+    if (_setupPlayerStreams) {
+      WakelockPlus.enable();
+
+      // Auto fullscreen on Android & iOS
+      if (!kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.android ||
+              defaultTargetPlatform == TargetPlatform.iOS)) {
+        _state = _state.copyWith(isFullscreen: true);
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]);
+      }
+    } else {
+      // In test mode we avoid interacting with platform channels (wakelock,
+      // fullscreen, etc.).
     }
 
     // Open media
@@ -260,6 +297,13 @@ class PlayerController extends ChangeNotifier {
         if (_isDisposed) return;
         _state = _state.copyWith(isPlaying: playing);
         notifyListeners();
+
+        // Toggle WakeLock based on playback state
+        if (playing) {
+          WakelockPlus.enable();
+        } else {
+          WakelockPlus.disable();
+        }
 
         // Watch Party sync
         if (_watchPartyService.state == WatchPartyState.connected) {
@@ -344,6 +388,14 @@ class PlayerController extends ChangeNotifier {
       _player.stream.track.listen((track) {
         if (_isDisposed) return;
         _state = _state.copyWith(selectedVideoTrack: track.video);
+        notifyListeners();
+      }),
+    );
+
+    _subscriptions.add(
+      _player.stream.volume.listen((volume) {
+        if (_isDisposed) return;
+        _state = _state.copyWith(volume: volume);
         notifyListeners();
       }),
     );
@@ -470,7 +522,9 @@ class PlayerController extends ChangeNotifier {
       _onQualityReduced = callback;
 
   void playOrPause() {
-    final wasPlaying = _player.state.playing;
+    // Prefer controller's own state when deciding play/pause to avoid
+    // depending on native Player.state during unit tests.
+    final wasPlaying = _state.isPlaying;
     _player.playOrPause();
 
     if (_watchPartyService.state == WatchPartyState.connected) {
@@ -510,6 +564,10 @@ class PlayerController extends ChangeNotifier {
     }
   }
 
+  void setVolume(double volume) {
+    _player.setVolume(volume);
+  }
+
   void cycleFit() {
     final currentIndex = fits.indexOf(_state.videoFit);
     final nextIndex = (currentIndex + 1) % fits.length;
@@ -520,58 +578,132 @@ class PlayerController extends ChangeNotifier {
   bool _isTogglingFullscreen = false;
 
   Future<void> toggleFullscreen() async {
-    if (_isTogglingFullscreen) return;
-    _isTogglingFullscreen = true;
-
-    try {
-      Logger.d(
-        'Toggle fullscreen: ${_state.isFullscreen ? "Exit" : "Enter"}',
+    if (_isTogglingFullscreen) {
+      Logger.w(
+        'Toggle fullscreen ignored: operation already in progress',
         tag: _tag,
       );
+      return;
+    }
+    _isTogglingFullscreen = true;
+    Logger.d('Starting toggleFullscreen', tag: _tag);
 
-      // 1. Update state immediately to reflect intent
-      _state = _state.copyWith(isFullscreen: !_state.isFullscreen);
-      notifyListeners();
+    final newFullscreenState = !_state.isFullscreen;
+    final isDesktop =
+        !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.linux ||
+            defaultTargetPlatform == TargetPlatform.macOS);
 
-      // 2. Perform platform-specific switch
-      if (!kIsWeb &&
-          (defaultTargetPlatform == TargetPlatform.windows ||
-              defaultTargetPlatform == TargetPlatform.linux ||
-              defaultTargetPlatform == TargetPlatform.macOS)) {
+    try {
+      // === DESKTOP: Robust texture refresh for fullscreen transitions ===
+      // The GPU texture can become stale during DirectX/ANGLE context changes.
+      // We force texture recreation by cycling through setSize values.
+      if (isDesktop) {
+        // Step 1: Update state and change window
+        _state = _state.copyWith(isFullscreen: newFullscreenState);
+        notifyListeners();
+
         try {
-          // Add timeout to prevent indefinite hanging
-          await windowManager
-              .setFullScreen(_state.isFullscreen)
-              .timeout(const Duration(milliseconds: 1000));
+          Logger.d(
+            'Calling windowManager.setFullScreen($newFullscreenState)',
+            tag: _tag,
+          );
+          await windowManager.setFullScreen(newFullscreenState);
         } catch (e) {
           Logger.e('Failed to toggle window fullscreen', tag: _tag, error: e);
-          // Revert state on failure
-          _state = _state.copyWith(isFullscreen: !_state.isFullscreen);
+          _state = _state.copyWith(isFullscreen: !newFullscreenState);
           notifyListeners();
+          return;
+        }
+
+        // Step 2: Wait longer for window manager AND DirectX/ANGLE to fully settle
+        // 500ms gives more time for GPU context to stabilize
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        // Get actual window size after transition
+        final windowSize = await windowManager.getSize();
+        final width = windowSize.width.toInt();
+        final height = windowSize.height.toInt();
+        Logger.d(
+          'Window settled, size: ${width}x$height, forcing texture refresh',
+          tag: _tag,
+        );
+
+        // Step 3: Force texture recreation via setSize cycle
+        try {
+          // Destroy old texture by setting minimal size
+          await _videoController.setSize(width: 1, height: 1);
+          await Future.delayed(const Duration(milliseconds: 150));
+
+          // Create new texture with actual window dimensions
+          // Using explicit size instead of null ensures correct dimensions
+          await _videoController.setSize(width: width, height: height);
+          await Future.delayed(const Duration(milliseconds: 150));
+
+          // Step 4: Force frame redraw via micro-seek as additional guarantee
+          final currentPos = _state.position;
+          await _player.seek(currentPos);
+
+          Logger.d('Texture refresh completed', tag: _tag);
+        } catch (e) {
+          Logger.w('Texture refresh failed: $e', tag: _tag);
+          // Last resort: just seek to force some kind of update
+          try {
+            final currentPos = _state.position;
+            await _player.seek(currentPos);
+          } catch (_) {}
         }
       }
 
-      // Mobile handling...
-      if (_state.isFullscreen) {
-        await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-        await SystemChrome.setPreferredOrientations([
-          DeviceOrientation.landscapeLeft,
-          DeviceOrientation.landscapeRight,
-        ]);
-      } else {
-        await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-        await SystemChrome.setPreferredOrientations([
-          DeviceOrientation.portraitUp,
-          DeviceOrientation.portraitDown,
-          DeviceOrientation.landscapeLeft,
-          DeviceOrientation.landscapeRight,
-        ]);
+      // === MOBILE: Standard handling (no issues on mobile) ===
+      if (!kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.android ||
+              defaultTargetPlatform == TargetPlatform.iOS)) {
+        _state = _state.copyWith(isFullscreen: newFullscreenState);
+        notifyListeners();
+
+        Logger.d('Applying mobile fullscreen settings', tag: _tag);
+        if (newFullscreenState) {
+          await SystemChrome.setEnabledSystemUIMode(
+            SystemUiMode.immersiveSticky,
+          );
+          await SystemChrome.setPreferredOrientations([
+            DeviceOrientation.landscapeLeft,
+            DeviceOrientation.landscapeRight,
+          ]);
+        } else {
+          await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+          await SystemChrome.setPreferredOrientations([
+            DeviceOrientation.portraitUp,
+            DeviceOrientation.portraitDown,
+            DeviceOrientation.landscapeLeft,
+            DeviceOrientation.landscapeRight,
+          ]);
+        }
       }
+    } catch (e, stack) {
+      Logger.e(
+        'Unexpected error in toggleFullscreen',
+        tag: _tag,
+        error: e,
+        stackTrace: stack,
+      );
     } finally {
-      // Debounce slightly to allow window manager to settle
-      await Future.delayed(const Duration(milliseconds: 500));
       _isTogglingFullscreen = false;
+      Logger.d('toggleFullscreen operation completed', tag: _tag);
     }
+  }
+
+  /// Force a frame refresh by doing a micro-seek.
+  /// Call this if video freezes but audio continues.
+  Future<void> forceTextureRefresh() async {
+    if (!_setupPlayerStreams) return;
+    Logger.d('Forcing frame refresh via seek', tag: _tag);
+
+    final currentPos = _state.position;
+    await _player.seek(currentPos);
+    Logger.d('Frame refresh completed', tag: _tag);
   }
 
   Future<void> switchStream(StreamSource stream) async {
@@ -683,6 +815,12 @@ class PlayerController extends ChangeNotifier {
     return voiceovers.length > 1;
   }
 
+  /// For tests: set available video tracks and currently selected track
+  @visibleForTesting
+  void setVideoTracksForTest(List<VideoTrack> tracks, VideoTrack selected) {
+    _state = _state.copyWith(videoTracks: tracks, selectedVideoTrack: selected);
+  }
+
   String buildSubtitleText(String? fallbackSubtitle) {
     final parts = <String>[];
     if (_state.currentQuality != null) {
@@ -739,8 +877,10 @@ class PlayerController extends ChangeNotifier {
       Logger.w('Error disposing player: $e', tag: _tag);
     }
 
-    // Restore orientation on Android
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    // Restore orientation on Android & iOS
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS)) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,

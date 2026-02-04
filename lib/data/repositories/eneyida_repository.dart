@@ -212,8 +212,9 @@ class EneyidaRepository {
 
   String _cleanId(String id) {
     var clean = id;
-    if (clean.contains('eneyida.tv/'))
+    if (clean.contains('eneyida.tv/')) {
       clean = clean.replaceAll('eneyida.tv/', '');
+    }
     if (clean.startsWith('/')) clean = clean.substring(1);
     return clean;
   }
