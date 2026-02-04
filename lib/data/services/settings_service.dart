@@ -433,6 +433,31 @@ class SettingsService extends ChangeNotifier {
     await _settingsDao.setSetting('update_notify', value.toString());
   }
 
+  // ============================================================================
+  // SEPARATE PROVIDER SEARCH SETTINGS (HDRezka, YouTube)
+  // ============================================================================
+
+  /// Check if search is enabled for a separate provider (default: false)
+  /// Separate providers (HDRezka, YouTube) are excluded from global search by default
+  bool isSearchEnabledForProvider(String providerId) {
+    final key = 'search_enabled_$providerId';
+    // For separate providers, default is false (not included in global search)
+    return _state.providerStates[key] ?? false;
+  }
+
+  /// Enable/disable a provider in global search
+  Future<void> setSearchEnabledForProvider(
+    String providerId,
+    bool value,
+  ) async {
+    final key = 'search_enabled_$providerId';
+    await _settingsDao.setProviderEnabled(key, value);
+    final newStates = Map<String, bool>.from(_state.providerStates);
+    newStates[key] = value;
+    _state = _state.copyWith(providerStates: newStates);
+    notifyListeners();
+  }
+
   /// Reset all settings to defaults
   Future<void> resetAllSettings() async {
     await _settingsDao.clearAllSettings();

@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:oxide_film/data/providers/provider_registry.dart';
 import 'package:oxide_film/core/network/api_client.dart';
 import 'package:oxide_film/data/providers/uakino_provider.dart';
-import 'package:oxide_film/data/providers/filmix_provider.dart';
 import 'package:oxide_film/data/providers/yummyanime_provider.dart';
 import 'package:oxide_film/domain/entities/entities.dart';
 
@@ -19,7 +18,7 @@ void main() {
   group('ProviderRegistry', () {
     test('should register providers', () {
       registry.register(UakinoProvider(client));
-      registry.register(FilmixProvider(client));
+      registry.register(YummyAnimeProvider(client));
 
       expect(registry.all.length, 2);
     });
@@ -35,7 +34,7 @@ void main() {
 
     test('getById should return correct provider', () {
       registry.register(UakinoProvider(client));
-      registry.register(FilmixProvider(client));
+      registry.register(YummyAnimeProvider(client));
 
       final result = registry.getById('uakino');
 
@@ -53,19 +52,18 @@ void main() {
 
     test('getByContentType should return matching providers', () {
       registry.register(UakinoProvider(client)); // all types
-      registry.register(FilmixProvider(client)); // all types
       registry.register(YummyAnimeProvider(client)); // anime only
 
       final movieProviders = registry.getByContentType(ContentType.movie);
       final animeProviders = registry.getByContentType(ContentType.anime);
 
-      expect(movieProviders.length, 2); // uakino + filmix
-      expect(animeProviders.length, 3); // uakino + filmix + yummyanime
+      expect(movieProviders.length, 1); // uakino
+      expect(animeProviders.length, 2); // uakino + yummyanime
     });
 
     test('unregister should remove provider', () {
       registry.register(UakinoProvider(client));
-      registry.register(FilmixProvider(client));
+      registry.register(YummyAnimeProvider(client));
 
       registry.unregister('uakino');
 
@@ -75,7 +73,7 @@ void main() {
 
     test('clear should remove all providers', () {
       registry.register(UakinoProvider(client));
-      registry.register(FilmixProvider(client));
+      registry.register(YummyAnimeProvider(client));
 
       registry.clear();
 

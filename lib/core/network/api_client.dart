@@ -1,13 +1,16 @@
 import 'dart:io' show Platform;
 
+import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio/dio.dart';
+import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:dio_smart_retry/dio_smart_retry.dart';
 import '../config/app_config.dart';
 import '../error/exceptions.dart';
 
-/// HTTP client wrapper with retry logic and error handling
+/// HTTP client wrapper with retry logic, cookies, and error handling
 class ApiClient {
   late final Dio _dio;
+  final CookieJar _cookieJar = CookieJar();
 
   ApiClient() {
     _dio = Dio(
@@ -22,6 +25,9 @@ class ApiClient {
         },
       ),
     );
+
+    // Add cookie manager for session persistence (PHPSESSID etc.)
+    _dio.interceptors.add(CookieManager(_cookieJar));
 
     // Add retry interceptor
     _dio.interceptors.add(

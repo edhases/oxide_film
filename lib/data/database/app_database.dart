@@ -148,18 +148,58 @@ class Downloads extends Table {
   ];
 }
 
+/// Search history table for autocomplete and typo learning
+class SearchHistoryTable extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// Original query as typed by user
+  TextColumn get query => text()();
+
+  /// Normalized query for comparison (lowercase, trimmed)
+  TextColumn get normalizedQuery => text()();
+
+  /// Number of results found for this query
+  IntColumn get resultCount => integer().withDefault(const Constant(0))();
+
+  /// Whether search returned any results
+  BoolColumn get wasSuccessful => boolean().withDefault(const Constant(true))();
+
+  /// Number of times this query was searched
+  IntColumn get searchCount => integer().withDefault(const Constant(1))();
+
+  /// When query was first searched
+  DateTimeColumn get firstSearchedAt =>
+      dateTime().withDefault(currentDateAndTime)();
+
+  /// When query was last searched
+  DateTimeColumn get lastSearchedAt =>
+      dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+    {normalizedQuery},
+  ];
+}
+
 // ============================================================================
 // DATABASE
 // ============================================================================
 
 @DriftDatabase(
-  tables: [AppSettings, EnabledProviders, Favorites, WatchHistory, Downloads],
+  tables: [
+    AppSettings,
+    EnabledProviders,
+    Favorites,
+    WatchHistory,
+    Downloads,
+    SearchHistoryTable,
+  ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 5;
 
   static QueryExecutor _openConnection() {
     return driftDatabase(
@@ -233,6 +273,25 @@ class AppDatabase extends _$AppDatabase {
           await customStatement('DROP TABLE downloads');
           await customStatement(
             'ALTER TABLE downloads_new RENAME TO downloads',
+          );
+        }
+        // Migration: add SearchHistoryTable
+        if (from < 4) {
+          await m.createTable(searchHistoryTable);
+        }
+        // Migration: remove all filmix provider data (provider removed)
+        if (from < 5) {
+          await customStatement(
+            "DELETE FROM favorites WHERE provider_id = 'filmix'",
+          );
+          await customStatement(
+            "DELETE FROM watch_history WHERE provider_id = 'filmix'",
+          );
+          await customStatement(
+            "DELETE FROM downloads WHERE provider_id = 'filmix'",
+          );
+          await customStatement(
+            "DELETE FROM enabled_providers WHERE provider_id = 'filmix'",
           );
         }
       },

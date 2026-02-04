@@ -93,7 +93,7 @@ void main() {
       final sources = PlayerJsParser.parseFromHtml(html);
 
       expect(sources, isNotEmpty);
-      expect(sources.first.type, StreamType.mp4);
+      expect(sources.first.type, StreamType.direct);
     });
 
     test('should handle empty HTML gracefully', () {

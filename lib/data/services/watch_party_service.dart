@@ -766,7 +766,7 @@ class WatchPartyService extends ChangeNotifier {
     _backendType = type;
 
     if (_backendFactory != null) {
-      _backend = _backendFactory!(type);
+      _backend = _backendFactory(type);
     } else if (type == WatchPartyBackendType.supabase) {
       _backend = _SupabaseBackend();
     } else {

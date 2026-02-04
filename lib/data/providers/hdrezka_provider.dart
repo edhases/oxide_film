@@ -11,7 +11,9 @@ import '../../domain/repositories/content_provider.dart';
 
 /// HDRezka content provider
 ///
-/// Popular Russian/Ukrainian streaming site with multiple mirrors
+/// Popular Russian/Ukrainian streaming site with multiple mirrors.
+/// This provider is shown in a separate category, not on the home page.
+/// Streams are "fixed" - quality and voiceover cannot be changed after playback starts.
 class HdrezkaProvider implements ContentProvider {
   static const String _tag = 'HDRezka';
 
@@ -19,11 +21,18 @@ class HdrezkaProvider implements ContentProvider {
   // Disabled by default - streams don't work properly, keep for metadata only
   bool _isEnabled = false;
 
+  /// Whether to show this provider on the home page (false for HDRezka)
+  static const bool showOnHome = false;
+
+  /// Whether streams from this provider are "fixed" (can't change quality/voiceover after start)
+  static const bool hasFixedStreams = true;
+
   /// Current mirror URL (can be changed if blocked)
-  String _mirror = 'https://rezka.ag';
+  String _mirror = 'https://hdrezka-home.tv';
 
   /// List of known working mirrors
   static const List<String> _mirrors = [
+    'https://hdrezka-home.tv',
     'https://rezka.ag',
     'https://hdrezka.ag',
     'https://hdrezka.me',
@@ -106,65 +115,130 @@ class HdrezkaProvider implements ContentProvider {
     int? season,
     int? episode,
   }) async {
-    Logger.i('getStreams called: id=$id, s=$season, e=$episode', tag: _tag);
+    Logger.d(' getStreams called: id=$id, s=$season, e=$episode');
     try {
       final url = '$baseUrl/$id.html';
-      Logger.d('Fetching: $url', tag: _tag);
+      Logger.d(' Fetching: $url');
       final html = await _client.get(url);
-      Logger.d('HTML length: ${html.length}', tag: _tag);
+      Logger.d(' HTML length: ${html.length}');
       final soup = BeautifulSoup(html);
       final sources = <StreamSource>[];
 
-      // Extract data-id for AJAX requests
-      // Try multiple selectors
-      final playerDiv =
-          soup.find('div', attrs: {'id': 'cdnplayer'}) ??
-          soup.find('div', class_: 'b-player') ??
-          soup.find('div', class_: 'b-content__inline_item') ??
-          soup.find('div', attrs: {'id': 'player'});
+      // Extract CSRF token for AJAX requests (session protection)
+      String? csrfToken;
+      // Try to find in meta tag
+      final metaCsrf = soup.find('meta', attrs: {'name': 'csrf-token'});
+      csrfToken = metaCsrf?.attributes['content'];
 
-      var dataId = playerDiv?.attributes['data-id'];
-      var translatorId = playerDiv?.attributes['data-translator_id'] ?? '0';
-      Logger.d('Initial dataId=$dataId, translatorId=$translatorId', tag: _tag);
-
-      // Fallback 1: Find any element with data-id
-      if (dataId == null) {
-        Logger.d('Trying fallback: searching for any data-id', tag: _tag);
-        final fallback = soup.find('*', attrs: {'data-id': true});
-        if (fallback != null) {
-          dataId = fallback.attributes['data-id'];
-          translatorId =
-              fallback.attributes['data-translator_id'] ?? translatorId;
-          Logger.i('Fallback 1 found data-id: $dataId', tag: _tag);
-        }
-      }
-
-      // Fallback 2: Extract numeric ID from URL
-      if (dataId == null) {
-        Logger.d('Trying fallback: extracting from URL', tag: _tag);
-        final urlMatch = RegExp(r'/(\d+)-').firstMatch(id);
-        if (urlMatch != null) {
-          dataId = urlMatch.group(1);
-          Logger.i('Fallback 2 found data-id from URL: $dataId', tag: _tag);
-        }
-      }
-
-      // Fallback 3: Search in scripts for data-id pattern
-      if (dataId == null) {
-        Logger.d('Trying fallback: searching in scripts', tag: _tag);
+      // Try to find in scripts (HDRezka often embeds it)
+      if (csrfToken == null) {
         for (final script in soup.findAll('script')) {
           final content = script.text;
-          final match = RegExp(r'data-id="?(\d+)"?').firstMatch(content);
-          if (match != null) {
-            dataId = match.group(1);
-            Logger.i('Fallback 3 found data-id in script: $dataId', tag: _tag);
+          // Look for patterns like: b_token = "...", csrf_token = "..."
+          final tokenMatch = RegExp(
+            r'''(?:b_token|csrf_token|_token)\s*[:=]\s*["']([^"']+)["']''',
+          ).firstMatch(content);
+          if (tokenMatch != null) {
+            csrfToken = tokenMatch.group(1);
             break;
           }
         }
       }
+      Logger.d(' CSRF token: ${csrfToken ?? "not found"}');
 
-      if (dataId == null) {
-        Logger.e('ERROR: data-id is null after all fallbacks!', tag: _tag);
+      // Extract data-id and translator_id for AJAX requests
+      var dataId = '';
+      var translatorId = '';
+
+      // Method 1: Look for sof.tv.initCDNMoviesEvents or similar init calls in scripts
+      for (final script in soup.findAll('script')) {
+        final content = script.text;
+
+        // Pattern: initCDNMoviesEvents(12345, 238, ...)
+        final initMatch = RegExp(
+          r'initCDN(?:Movies|Series)Events\s*\(\s*(\d+)\s*,\s*(\d+)',
+        ).firstMatch(content);
+        if (initMatch != null) {
+          dataId = initMatch.group(1) ?? '';
+          translatorId = initMatch.group(2) ?? '';
+          Logger.d(
+            '[HDRezka] Found in initCDN: dataId=$dataId, translatorId=$translatorId',
+          );
+          break;
+        }
+
+        // Pattern: sof.tv.initCDNSeriesEvents(...)
+        final sofMatch = RegExp(
+          r'sof\.tv\.initCDN\w+Events\s*\(\s*(\d+)\s*,\s*(\d+)',
+        ).firstMatch(content);
+        if (sofMatch != null) {
+          dataId = sofMatch.group(1) ?? '';
+          translatorId = sofMatch.group(2) ?? '';
+          Logger.d(
+            '[HDRezka] Found in sof.tv: dataId=$dataId, translatorId=$translatorId',
+          );
+          break;
+        }
+      }
+
+      // Method 2: Try div selectors if not found in scripts
+      if (dataId.isEmpty) {
+        final playerDiv =
+            soup.find('div', attrs: {'id': 'cdnplayer'}) ??
+            soup.find('div', class_: 'b-player') ??
+            soup.find('div', class_: 'b-content__inline_item') ??
+            soup.find('div', attrs: {'id': 'player'});
+
+        dataId = playerDiv?.attributes['data-id'] ?? '';
+        translatorId =
+            playerDiv?.attributes['data-translator_id'] ?? translatorId;
+        Logger.d(
+          '[HDRezka] From playerDiv: dataId=$dataId, translatorId=$translatorId',
+        );
+      }
+
+      // Method 3: Find first translator from list
+      if (translatorId.isEmpty || translatorId == '0') {
+        final firstTranslator = soup.find('li', class_: 'b-translator__item');
+        if (firstTranslator != null) {
+          translatorId = firstTranslator.attributes['data-translator_id'] ?? '';
+          Logger.d(' Found first translator: $translatorId');
+        }
+      }
+
+      // Method 4: Find any element with data-id
+      if (dataId.isEmpty) {
+        Logger.d(' Trying fallback: searching for any data-id');
+        final fallback = soup.find('*', attrs: {'data-id': true});
+        if (fallback != null) {
+          dataId = fallback.attributes['data-id'] ?? '';
+          if (translatorId.isEmpty) {
+            translatorId = fallback.attributes['data-translator_id'] ?? '';
+          }
+          Logger.d(' Fallback found data-id: $dataId');
+        }
+      }
+
+      // Method 5: Extract numeric ID from URL
+      if (dataId.isEmpty) {
+        Logger.d(' Trying fallback: extracting from URL');
+        final urlMatch = RegExp(r'/(\d+)-').firstMatch(id);
+        if (urlMatch != null) {
+          dataId = urlMatch.group(1) ?? '';
+          Logger.d(' Fallback from URL: $dataId');
+        }
+      }
+
+      // Default translator_id if still empty
+      if (translatorId.isEmpty) {
+        translatorId = '238'; // Common default for Russian voiceover
+        Logger.d(' Using default translatorId: $translatorId');
+      }
+
+      Logger.d(' Final: dataId=$dataId, translatorId=$translatorId');
+
+      if (dataId.isEmpty) {
+        Logger.d(' ERROR: data-id is empty after all fallbacks!');
         return sources;
       }
 
@@ -173,26 +247,31 @@ class HdrezkaProvider implements ContentProvider {
       final translatorsList = soup.find('ul', id: 'translators-list');
 
       if (translatorsList != null) {
+        Logger.d(' Found translators-list');
         for (final li in translatorsList.findAll('li')) {
           final tid = li.attributes['data-translator_id'];
           final tname = li.text.trim();
           if (tid != null) {
             translators[tid] = tname;
-            Logger.d('Found translator: $tid -> $tname', tag: _tag);
+            Logger.d(' Found translator: $tid -> $tname');
           }
         }
+      } else {
+        Logger.d(' No translators-list found in HTML');
       }
 
       if (translators.isEmpty) {
         translators[translatorId] = 'Оригінал';
-        Logger.d('No translators found, using default', tag: _tag);
+        Logger.d(
+          '[HDRezka] No translators found, using default with id=$translatorId',
+        );
       }
 
-      Logger.d('Total translators: ${translators.length}', tag: _tag);
+      Logger.d(' Total translators: ${translators.length}');
 
       // For series, get seasons/episodes structure first
       if (season != null && episode != null) {
-        Logger.d('Getting episode streams...', tag: _tag);
+        Logger.d(' Getting episode streams...');
         await _getEpisodeStreams(
           dataId,
           translatorId,
@@ -200,21 +279,28 @@ class HdrezkaProvider implements ContentProvider {
           episode,
           translators[translatorId] ?? 'Оригінал',
           sources,
+          csrfToken: csrfToken,
         );
       } else {
         // For movies, get streams directly
         Logger.d(
-          'Getting movie streams for ${translators.length} translators...',
-          tag: _tag,
+          '[HDRezka] Getting movie streams for ${translators.length} translators...',
         );
         for (final entry in translators.entries) {
-          await _getMovieStreams(dataId, entry.key, entry.value, sources);
+          await _getMovieStreams(
+            dataId,
+            entry.key,
+            entry.value,
+            sources,
+            csrfToken: csrfToken,
+          );
         }
       }
 
-      Logger.i('Total streams found: ${sources.length}', tag: _tag);
+      Logger.d(' Total streams found: ${sources.length}');
       return sources;
     } catch (e, stack) {
+      Logger.d(' Get streams failed: $e');
       Logger.e('Get streams failed', tag: _tag, error: e, stackTrace: stack);
       return [];
     }
@@ -224,52 +310,66 @@ class HdrezkaProvider implements ContentProvider {
     String dataId,
     String translatorId,
     String voiceover,
-    List<StreamSource> sources,
-  ) async {
+    List<StreamSource> sources, {
+    String? csrfToken,
+  }) async {
     try {
       Logger.d(
-        '_getMovieStreams: dataId=$dataId, translatorId=$translatorId',
-        tag: _tag,
+        '[HDRezka] _getMovieStreams: dataId=$dataId, translatorId=$translatorId, csrf=${csrfToken != null}',
       );
+
+      // Build request data
+      final requestData = <String, dynamic>{
+        'id': dataId,
+        'translator_id': translatorId,
+        'action': 'get_movie',
+      };
+
+      // Add CSRF token if available (different field names used by HDRezka)
+      if (csrfToken != null) {
+        requestData['_token'] = csrfToken;
+      }
+
       final response = await _client.dio.post<String>(
         '$baseUrl/ajax/get_cdn_series/',
-        data: {
-          'id': dataId,
-          'translator_id': translatorId,
-          'action': 'get_movie',
-        },
+        data: requestData,
         options: Options(
-          headers: {'X-Requested-With': 'XMLHttpRequest', 'Referer': baseUrl},
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Referer': '$baseUrl/',
+            'Origin': baseUrl,
+            'Accept': 'application/json, text/javascript, */*; q=0.01',
+            if (csrfToken != null) 'X-CSRF-TOKEN': csrfToken,
+          },
           contentType: Headers.formUrlEncodedContentType,
         ),
       );
 
-      Logger.d('AJAX response status: ${response.statusCode}', tag: _tag);
+      Logger.d(' AJAX response status: ${response.statusCode}');
+      final responseData = response.data ?? '{}';
       Logger.d(
-        'AJAX response length: ${response.data?.length ?? 0}',
-        tag: _tag,
+        '[HDRezka] AJAX response (first 500): ${responseData.substring(0, responseData.length.clamp(0, 500))}',
       );
 
       final json = jsonDecode(response.data ?? '{}');
       Logger.d(
-        'AJAX success: ${json['success']}, has url: ${json['url'] != null}',
-        tag: _tag,
+        '[HDRezka] AJAX success: ${json['success']}, has url: ${json['url'] != null}',
       );
 
       if (json['success'] == true && json['url'] != null) {
         final urlData = json['url'] as String;
         Logger.d(
-          'URL data (first 100): ${urlData.substring(0, urlData.length.clamp(0, 100))}',
-          tag: _tag,
+          '[HDRezka] URL data (first 100): ${urlData.substring(0, urlData.length.clamp(0, 100))}',
         );
         _parseStreamUrls(urlData, voiceover, sources);
       } else {
-        Logger.w('AJAX returned success=false or no url', tag: _tag);
+        Logger.d(' AJAX returned success=false or no url');
         if (json['message'] != null) {
-          Logger.w('AJAX message: ${json['message']}', tag: _tag);
+          Logger.d(' AJAX message: ${json['message']}');
         }
       }
     } catch (e, stack) {
+      Logger.d(' Failed to get movie streams for $voiceover: $e');
       Logger.e(
         'Failed to get movie streams for $voiceover',
         tag: _tag,
@@ -285,20 +385,33 @@ class HdrezkaProvider implements ContentProvider {
     int season,
     int episode,
     String voiceover,
-    List<StreamSource> sources,
-  ) async {
+    List<StreamSource> sources, {
+    String? csrfToken,
+  }) async {
     try {
+      final requestData = <String, dynamic>{
+        'id': dataId,
+        'translator_id': translatorId,
+        'season': season.toString(),
+        'episode': episode.toString(),
+        'action': 'get_stream',
+      };
+
+      if (csrfToken != null) {
+        requestData['_token'] = csrfToken;
+      }
+
       final response = await _client.dio.post<String>(
         '$baseUrl/ajax/get_cdn_series/',
-        data: {
-          'id': dataId,
-          'translator_id': translatorId,
-          'season': season.toString(),
-          'episode': episode.toString(),
-          'action': 'get_stream',
-        },
+        data: requestData,
         options: Options(
-          headers: {'X-Requested-With': 'XMLHttpRequest', 'Referer': baseUrl},
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Referer': '$baseUrl/',
+            'Origin': baseUrl,
+            'Accept': 'application/json, text/javascript, */*; q=0.01',
+            if (csrfToken != null) 'X-CSRF-TOKEN': csrfToken,
+          },
           contentType: Headers.formUrlEncodedContentType,
         ),
       );
@@ -320,13 +433,11 @@ class HdrezkaProvider implements ContentProvider {
     // HDRezka returns URLs in format: [720p]url,[1080p]url,...
     // URLs are often encoded, need to decode
     final decoded = _decodeStreamUrl(urlData);
-    Logger.d(
-      'Decoded stream data: ${decoded.substring(0, decoded.length.clamp(0, 200))}...',
-      tag: _tag,
-    );
 
-    final pattern = RegExp(r'\[(\d+)p?\]([^\[,]+)');
-    for (final match in pattern.allMatches(decoded)) {
+    final pattern = RegExp(r'\[(\d+)p?\s*[^\]]*\]([^\[]+)');
+    final matches = pattern.allMatches(decoded).toList();
+
+    for (final match in matches) {
       final quality = match.group(1);
       var url = match.group(2)?.trim() ?? '';
 
@@ -337,6 +448,11 @@ class HdrezkaProvider implements ContentProvider {
 
       // Clean up the URL - remove everything after .mp4 if it's a segment URL
       url = _cleanStreamUrl(url);
+
+      // Skip URLs with invalid characters (decoding errors)
+      if (url.contains('<') || url.contains('>')) {
+        continue;
+      }
 
       if (url.isNotEmpty &&
           !url.contains('undefined') &&
@@ -349,28 +465,55 @@ class HdrezkaProvider implements ContentProvider {
             type: url.contains('.m3u8') ? StreamType.hls : StreamType.direct,
           ),
         );
-        Logger.d('Added stream: $quality - $voiceover', tag: _tag);
       }
     }
   }
 
   /// Clean stream URL - remove segment suffixes for direct playback
   String _cleanStreamUrl(String url) {
-    // If URL contains segment patterns, extract base video URL
-    // Example: https://stream.voidboost.cc/.../video.mp4:hls:manifest.m3u8
-    // Should become: https://stream.voidboost.cc/.../video.mp4
+    return normalizeStreamUrl(url);
+  }
 
-    if (url.contains('.mp4:') || url.contains('.mp4/')) {
-      final mp4Index = url.indexOf('.mp4');
-      if (mp4Index > 0) {
-        return url.substring(0, mp4Index + 4);
-      }
+  /// Normalize HDRezka stream URL for direct playback.
+  ///
+  /// HDRezka returns segmented HLS URLs like:
+  /// `https://cdn.../video.mp4:hls:seg-33-v1-a1.ts`
+  /// or
+  /// `https://cdn.../hash:timestamp:token/8/0/5/2/3/3/bc8qh.mp4`
+  ///
+  /// This method extracts a clean playable URL.
+  static String normalizeStreamUrl(String url) {
+    // Remove everything after " or " first
+    if (url.contains(' or ')) {
+      url = url.split(' or ').first;
     }
 
-    // Remove trailing garbage
-    url = url.replaceAll(RegExp(r'[\s\r\n]+$'), '');
+    // Handle :hls:manifest.m3u8 or :hls:seg-X patterns
+    // Example: ...bc8qh.mp4:hls:manifest.m3u8 -> ...bc8qh.mp4
+    final hlsPattern = RegExp(r':hls:.*$');
+    if (hlsPattern.hasMatch(url)) {
+      url = url.replaceAll(hlsPattern, '');
+    }
 
-    return url;
+    // Clean the segment path pattern /8/0/5/2/3/3/filename.mp4
+    // This appears in CDN URLs - we want to keep it as it's part of the valid URL
+    // But we need to make sure .mp4 is the end
+
+    // If URL ends with .mp4 followed by anything, truncate at .mp4
+    final mp4EndPattern = RegExp(r'(\.mp4).*$');
+    if (mp4EndPattern.hasMatch(url) && !url.endsWith('.mp4')) {
+      url = url.replaceAllMapped(mp4EndPattern, (m) => m.group(1)!);
+    }
+
+    // Remove trailing garbage characters
+    url = url.replaceAll(RegExp(r'[\s\r\n,]+$'), '');
+
+    // Remove any non-URL-safe characters that might have slipped through decoding
+    // Valid URL characters: alphanumeric, - _ . ~ : / ? # [ ] @ ! $ & ' ( ) * + , ; = %
+    // CDN URLs often have : in path for timestamps/tokens which is valid
+    url = url.replaceAll(RegExp(r'[<>{}|\\^`\x00-\x1F\x7F-\xFF]'), '');
+
+    return url.trim();
   }
 
   /// Validate stream URL
@@ -378,40 +521,80 @@ class HdrezkaProvider implements ContentProvider {
     if (!url.startsWith('http')) return false;
     if (url.contains('undefined')) return false;
     if (url.length < 20) return false;
+    // Must end with video extension
+    if (!url.endsWith('.mp4') &&
+        !url.endsWith('.m3u8') &&
+        !url.endsWith('.ts')) {
+      return false;
+    }
+    // Check for garbage characters that indicate decoding issues
+    if (url.contains('##') ||
+        url.contains('@@') ||
+        url.contains('^^') ||
+        url.contains('!!') ||
+        url.contains('<') ||
+        url.contains('>')) {
+      return false;
+    }
     return true;
   }
 
   String _decodeStreamUrl(String encoded) {
-    // HDRezka uses a specific encoding
+    // HDRezka uses a specific encoding with trash strings inserted
     try {
       if (encoded.isEmpty) return encoded;
 
-      // Try direct trash removal first (common pattern)
       var decoded = encoded;
 
-      // HDRezka encoding: #0 + base64 with custom alphabet or substitutions
+      // HDRezka encoding: #X + base64 where X is version marker (h, 0, etc)
       if (encoded.startsWith('#')) {
-        // Remove # prefix and version marker
+        // Remove # prefix and version marker (2 chars total: # + version)
         var base64Part = encoded;
-        if (encoded.startsWith('#0')) {
+        if (encoded.length > 2 &&
+            (encoded.startsWith('#h') ||
+                encoded.startsWith('#0') ||
+                encoded.startsWith('#1') ||
+                encoded.startsWith('#2'))) {
           base64Part = encoded.substring(2);
-        } else if (encoded.startsWith('#')) {
+        } else {
           base64Part = encoded.substring(1);
         }
 
-        // Remove trash strings that HDRezka appends
-        final trashStrings = [
-          '//_//JCQhIUAkXiY=',
-          '//QEBAQEAhIyM=',
-          '//Xl5eIyo=',
-          '//_//JCQkISE=',
-          '//IyMhQEBA',
-          '//QCMjQEA=',
+        // HDRezka inserts specific trash strings that decode to garbage like $$!!@$^&
+        // These trash strings are known base64 values inserted at //_// or // markers
+        // We need to remove ONLY the trash strings, not real data
+
+        // Known trash strings (these are constant and decode to garbage symbols)
+        final knownTrash = [
+          '//_//JCQhIUAkXiY=', // $$!!@$^&
+          '//_//QEBAQEAhIyM=', // @@@@@!##
+          '//_//Xl5eIyo=', // ^^^#*
+          '//_//JCQkISE=', // $$$!!
+          '//IyMhQEBA', // ##!@@@
+          '//QCMjQEA=', // @##@@
+          '//_//JCQhIUAkJEBeIUAjJCRA', // longer variant
+          '//_//QEBAQEAhIyMhXl5e', // another variant
+          '//_//Xl5eIUAjIyEhIyM=', // another variant
         ];
 
-        for (final trash in trashStrings) {
+        for (final trash in knownTrash) {
           base64Part = base64Part.replaceAll(trash, '');
         }
+
+        // Also remove any remaining // markers followed by short base64 ending with =
+        // But ONLY if the base64 part is short (less than 30 chars) - these are trash
+        base64Part = base64Part.replaceAll(
+          RegExp(r'//[A-Za-z0-9+/]{1,25}='),
+          '',
+        );
+
+        // Clean any remaining //
+        base64Part = base64Part.replaceAll('//', '');
+
+        // Remove underscore that might remain
+        base64Part = base64Part.replaceAll('_', '');
+
+        Logger.d(' After trash removal length: ${base64Part.length}');
 
         // Standard base64 decode
         try {
@@ -420,16 +603,21 @@ class HdrezkaProvider implements ContentProvider {
             base64Part += '=';
           }
           decoded = utf8.decode(base64.decode(base64Part));
+          Logger.d(' Decoded successfully! Length: ${decoded.length}');
+          Logger.d(
+            '[HDRezka] Decoded first 200: ${decoded.substring(0, decoded.length.clamp(0, 200))}',
+          );
         } catch (e) {
-          // Try URL-safe base64
+          Logger.d(' Base64 decode error: $e');
+          // Try latin1 decoding instead of utf8 - but this may produce garbage chars
           try {
-            base64Part = base64Part.replaceAll('-', '+').replaceAll('_', '/');
-            while (base64Part.length % 4 != 0) {
-              base64Part += '=';
-            }
-            decoded = utf8.decode(base64.decode(base64Part));
-          } catch (_) {
-            Logger.w('Base64 decode failed', tag: _tag);
+            decoded = latin1.decode(base64.decode(base64Part));
+            // Remove non-printable and non-URL-safe characters that latin1 might produce
+            decoded = decoded.replaceAll(RegExp(r'[^\x20-\x7E]'), '');
+            Logger.d(' Latin1 decode success! Length: ${decoded.length}');
+          } catch (e2) {
+            Logger.d(' Latin1 decode also failed: $e2');
+            decoded = encoded;
           }
         }
       }

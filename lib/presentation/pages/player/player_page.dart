@@ -170,13 +170,17 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
 
   void _initCurrentStreamInfo() {
     if (widget.streams != null && widget.streams!.isNotEmpty) {
-      // 1. Try to find stream matching widget.url (initial)
+      // 1. Try to find stream matching widget.url (initial - user's choice)
       var current = widget.streams!.firstWhere(
         (s) => s.url == _currentUrl,
         orElse: () => widget.streams!.first,
       );
 
+      // Save the user-selected voiceover to preserve it
+      final selectedVoiceover = current.voiceover;
+
       // 2. Check if we should override with Default Quality setting
+      // BUT only within the SAME voiceover to preserve user's choice
       final defaultQuality = _settingsService.state.defaultQuality;
 
       StreamQuality? targetQuality;
@@ -199,8 +203,9 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       }
 
       if (targetQuality != null) {
+        // Find preferred quality ONLY within the same voiceover
         final preferredStream = widget.streams!.firstWhere(
-          (s) => s.quality == targetQuality,
+          (s) => s.quality == targetQuality && s.voiceover == selectedVoiceover,
           orElse: () => current,
         );
 
@@ -257,10 +262,18 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     _controller = VideoController(_player);
 
     // Listen to player state
+    // Track playing state to avoid unnecessary rebuilds
+    bool lastPlayingState = false;
+
     _subscriptions.add(
       _player.stream.playing.listen((playing) {
         if (!mounted || _isDisposing) return;
-        setState(() {});
+
+        // Only update if state actually changed
+        if (lastPlayingState != playing) {
+          lastPlayingState = playing;
+          setState(() {});
+        }
 
         // Watch Party: Host broadcasts state
         if (_watchPartyService.state == WatchPartyState.connected) {
@@ -288,7 +301,18 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     _subscriptions.add(
       _player.stream.position.listen((position) {
         if (!mounted || _isDisposing) return;
-        setState(() => _position = position);
+
+        // Optimize: only update UI if position changed by at least 250ms
+        // This prevents excessive rebuilds that cause lag
+        final diff = (position - _position).abs();
+        if (diff >= const Duration(milliseconds: 250) ||
+            _position == Duration.zero) {
+          setState(() => _position = position);
+        } else {
+          // Still update the internal value for accuracy
+          _position = position;
+        }
+
         // Update local position in watch party service for both host and client
         // This allows proper drift calculation on the client side
         if (_watchPartyService.state == WatchPartyState.connected) {
@@ -306,14 +330,20 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     _subscriptions.add(
       _player.stream.duration.listen((duration) {
         if (!mounted || _isDisposing) return;
-        setState(() => _duration = duration);
+        // Only update if duration actually changed
+        if (_duration != duration) {
+          setState(() => _duration = duration);
+        }
       }),
     );
 
     _subscriptions.add(
       _player.stream.buffering.listen((buffering) {
         if (!mounted || _isDisposing) return;
-        setState(() => _isBuffering = buffering);
+        // Only update if buffering state changed
+        if (_isBuffering != buffering) {
+          setState(() => _isBuffering = buffering);
+        }
         // Report buffering to watch party for adaptive quality
         if (_watchPartyService.state == WatchPartyState.connected) {
           _watchPartyService.reportBuffering(buffering);
@@ -543,15 +573,23 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     _focusNode.dispose();
     _player.dispose();
 
-    // Restore orientation on Android
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-        DeviceOrientation.portraitDown,
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
+    // Restore orientation and exit fullscreen
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+
+    // Desktop: exit fullscreen if still in it
+    if (_isFullscreen &&
+        !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.linux ||
+            defaultTargetPlatform == TargetPlatform.macOS)) {
+      // Fire and forget - can't await in dispose
+      windowManager.setFullScreen(false).catchError((_) {});
     }
 
     super.dispose();
@@ -577,13 +615,15 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                // Video
+                // Video - wrapped in RepaintBoundary to isolate repaints
                 if (_isInitialized && !_hasError)
-                  Video(
-                    controller: _controller,
-                    fit: _videoFit,
-                    fill: Colors.black,
-                    controls: NoVideoControls,
+                  RepaintBoundary(
+                    child: Video(
+                      controller: _controller,
+                      fit: _videoFit,
+                      fill: Colors.black,
+                      controls: NoVideoControls,
+                    ),
                   )
                 else if (_hasError)
                   _buildErrorWidget()
@@ -1174,7 +1214,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
             ),
             ..._buildQualityMenuItems().map(
               (item) => ListTile(
-                title: (item.child as Row).children.last as Widget,
+                title: (item.child as Row).children.last,
                 leading: (item.child as Row).children.first,
                 onTap: () {
                   Navigator.pop(context);
@@ -1210,7 +1250,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
             ),
             ..._buildVoiceoverMenuItems().map(
               (item) => ListTile(
-                title: (item.child as Row).children.last as Widget,
+                title: (item.child as Row).children.last,
                 leading: (item.child as Row).children.first,
                 onTap: () {
                   Navigator.pop(context);
@@ -1453,26 +1493,34 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   }
 
   Future<void> _toggleFullscreen() async {
+    if (_isDisposing) return;
+
+    final newFullscreen = !_isFullscreen;
     Logger.d(
-      'Toggle fullscreen: ${_isFullscreen ? "Exit" : "Enter"}',
+      'Toggle fullscreen: ${newFullscreen ? "Enter" : "Exit"}',
       tag: 'Player',
     );
-    setState(() => _isFullscreen = !_isFullscreen);
 
-    // Desktop: use window_manager
+    // Desktop: use window_manager FIRST, then update state
     if (!kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.windows ||
             defaultTargetPlatform == TargetPlatform.linux ||
             defaultTargetPlatform == TargetPlatform.macOS)) {
       try {
-        await windowManager.setFullScreen(_isFullscreen);
+        await windowManager.setFullScreen(newFullscreen);
+        // Small delay to let window resize complete
+        await Future<void>.delayed(const Duration(milliseconds: 100));
       } catch (e) {
         Logger.e('Failed to toggle window fullscreen', tag: 'Player', error: e);
+        return; // Don't update state if failed
       }
     }
 
+    if (!mounted || _isDisposing) return;
+    setState(() => _isFullscreen = newFullscreen);
+
     // Mobile/General: use SystemChrome
-    if (_isFullscreen) {
+    if (newFullscreen) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.landscapeLeft,
@@ -1534,13 +1582,26 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   }
 
   List<PopupMenuItem<dynamic>> _buildQualityMenuItems() {
-    // 1. If we have native HLS video tracks, use them
+    // 1. If we have native HLS video tracks (more than just auto), use them
     if (_videoTracks.length > 1) {
       // Sort tracks by resolution (descending)
       final sortedTracks = List<VideoTrack>.from(_videoTracks)
         ..sort((a, b) => (b.h ?? 0).compareTo(a.h ?? 0));
 
-      return sortedTracks.map((track) {
+      // Filter out duplicate "auto" tracks
+      final seenLabels = <String>{};
+      final uniqueTracks = <VideoTrack>[];
+      for (final track in sortedTracks) {
+        final isAuto =
+            track.id == 'auto' || (track.w == null && track.h == null);
+        final label = isAuto ? 'Авто' : '${track.h}p';
+        if (!seenLabels.contains(label)) {
+          seenLabels.add(label);
+          uniqueTracks.add(track);
+        }
+      }
+
+      return uniqueTracks.map((track) {
         final isSelected = track == _selectedVideoTrack;
         final isAuto =
             track.id == 'auto' || (track.w == null && track.h == null);
@@ -1576,8 +1637,16 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     if (widget.streams == null) return [];
 
     // Group by quality, prefer current voiceover
+    // Skip unknown quality if there are other qualities available
     final qualities = <StreamQuality, StreamSource>{};
+    final hasKnownQuality = widget.streams!.any(
+      (s) => s.quality != StreamQuality.unknown,
+    );
+
     for (final stream in widget.streams!) {
+      // Skip unknown if we have known qualities (avoid "Авто" when not needed)
+      if (stream.quality == StreamQuality.unknown && hasKnownQuality) continue;
+
       if (!qualities.containsKey(stream.quality)) {
         qualities[stream.quality] = stream;
       }

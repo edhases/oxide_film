@@ -512,18 +512,90 @@ class _SettingsPageState extends State<SettingsPage> {
       return [const EmptyProviders()];
     }
 
-    return providers.map((provider) {
-      final isEnabled = _settings.isProviderEnabled(provider.id);
-      return ProviderTile(
-        name: provider.name,
-        url: provider.baseUrl,
-        iconUrl: provider.iconUrl,
-        isEnabled: isEnabled,
-        onChanged: (value) {
-          _settings.setProviderEnabled(provider.id, value);
-        },
-      );
-    }).toList();
+    // Separate home providers from dedicated providers
+    final homeProviders = providers
+        .where((p) => ProviderRegistry.showOnHome(p))
+        .toList();
+
+    final separateProviders = providers
+        .where((p) => !ProviderRegistry.showOnHome(p))
+        .toList();
+
+    return [
+      // Home providers section
+      if (homeProviders.isNotEmpty) ...[
+        Padding(
+          padding: const EdgeInsets.only(left: 16, top: 8, bottom: 4),
+          child: Text(
+            'Основні провайдери',
+            style: TextStyle(
+              color: AppTheme.textMuted,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        ...homeProviders.map((provider) {
+          final isEnabled = _settings.isProviderEnabled(provider.id);
+          return ProviderTile(
+            name: provider.name,
+            url: provider.baseUrl,
+            iconUrl: provider.iconUrl,
+            isEnabled: isEnabled,
+            onChanged: (value) {
+              _settings.setProviderEnabled(provider.id, value);
+            },
+          );
+        }),
+      ],
+
+      // Separate providers section (HDRezka, YouTube)
+      if (separateProviders.isNotEmpty) ...[
+        const Divider(height: 24),
+        Padding(
+          padding: const EdgeInsets.only(left: 16, top: 8, bottom: 4),
+          child: Text(
+            'Окремі провайдери',
+            style: TextStyle(
+              color: AppTheme.textMuted,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Text(
+            'Ці провайдери мають власні розділи в каталозі та за замовчуванням вимкнені в загальному пошуку',
+            style: TextStyle(
+              color: AppTheme.textMuted.withOpacity(0.7),
+              fontSize: 11,
+            ),
+          ),
+        ),
+        ...separateProviders.map((provider) {
+          final isEnabled = _settings.isProviderEnabled(provider.id);
+          final isSearchEnabled = _settings.isSearchEnabledForProvider(
+            provider.id,
+          );
+          return _SeparateProviderTile(
+            name: provider.name,
+            url: provider.baseUrl,
+            iconUrl: provider.iconUrl,
+            providerId: provider.id,
+            isEnabled: isEnabled,
+            isSearchEnabled: isSearchEnabled,
+            hasFixedStreams: ProviderRegistry.hasFixedStreams(provider),
+            onEnabledChanged: (value) {
+              _settings.setProviderEnabled(provider.id, value);
+            },
+            onSearchEnabledChanged: (value) {
+              _settings.setSearchEnabledForProvider(provider.id, value);
+            },
+          );
+        }),
+      ],
+    ];
   }
 
   // ============================================================================
@@ -1120,6 +1192,147 @@ class _SettingsPageState extends State<SettingsPage> {
               style: TextStyle(color: AppTheme.errorColor),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Tile for separate providers (HDRezka, YouTube) with additional settings
+class _SeparateProviderTile extends StatelessWidget {
+  final String name;
+  final String url;
+  final String? iconUrl;
+  final String providerId;
+  final bool isEnabled;
+  final bool isSearchEnabled;
+  final bool hasFixedStreams;
+  final ValueChanged<bool> onEnabledChanged;
+  final ValueChanged<bool> onSearchEnabledChanged;
+
+  const _SeparateProviderTile({
+    required this.name,
+    required this.url,
+    this.iconUrl,
+    required this.providerId,
+    required this.isEnabled,
+    required this.isSearchEnabled,
+    required this.hasFixedStreams,
+    required this.onEnabledChanged,
+    required this.onSearchEnabledChanged,
+  });
+
+  Color get _providerColor {
+    switch (providerId) {
+      case 'hdrezka':
+        return Colors.orange;
+      case 'youtube':
+        return Colors.red;
+      default:
+        return AppTheme.primaryColor;
+    }
+  }
+
+  IconData get _providerIcon {
+    switch (providerId) {
+      case 'hdrezka':
+        return Icons.play_circle_filled;
+      case 'youtube':
+        return Icons.play_arrow;
+      default:
+        return Icons.video_library;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isEnabled
+              ? _providerColor.withOpacity(0.3)
+              : AppTheme.borderColor,
+        ),
+      ),
+      child: Column(
+        children: [
+          // Main toggle
+          ListTile(
+            leading: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: _providerColor.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(_providerIcon, color: _providerColor, size: 22),
+            ),
+            title: Text(
+              name,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: isEnabled ? _providerColor : AppTheme.textMuted,
+              ),
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  url,
+                  style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                ),
+                if (hasFixedStreams)
+                  Text(
+                    '⚠️ Якість/дубляж фіксуються при запуску',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.orange.shade700,
+                    ),
+                  ),
+              ],
+            ),
+            trailing: Switch(
+              value: isEnabled,
+              onChanged: onEnabledChanged,
+              activeThumbColor: _providerColor,
+            ),
+          ),
+
+          // Search toggle (only if provider is enabled)
+          if (isEnabled)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppTheme.backgroundColor.withOpacity(0.5),
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(12),
+                  bottomRight: Radius.circular(12),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.search, size: 18, color: AppTheme.textMuted),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Включити в загальний пошук',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                  ),
+                  Switch(
+                    value: isSearchEnabled,
+                    onChanged: onSearchEnabledChanged,
+                    activeThumbColor: _providerColor,
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );

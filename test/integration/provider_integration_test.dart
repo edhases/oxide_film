@@ -4,13 +4,12 @@
 /// using real network calls (when not mocked).
 ///
 /// Run with: flutter test test/integration/
+library;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:dio/dio.dart';
 
 import 'package:oxide_film/core/network/api_client.dart';
 import 'package:oxide_film/data/providers/uakino_provider.dart';
-import 'package:oxide_film/data/providers/filmix_provider.dart';
 import 'package:oxide_film/domain/entities/entities.dart';
 
 /// Note: These tests make real network requests.
@@ -97,52 +96,6 @@ void main() {
         expect(streams, isNotEmpty);
         expect(streams.every((s) => s.url.isNotEmpty), isTrue);
         expect(streams.every((s) => s.url.startsWith('http')), isTrue);
-      },
-      skip: 'Integration test - requires network',
-    );
-  });
-
-  group('Integration: FilmixProvider', () {
-    late FilmixProvider provider;
-    late ApiClient client;
-
-    setUp(() {
-      client = ApiClient();
-      provider = FilmixProvider(client);
-    });
-
-    test(
-      'getPopular should return content',
-      () async {
-        final content = await provider.getPopular(
-          type: ContentType.movie,
-          page: 1,
-        );
-
-        expect(content, isNotEmpty);
-      },
-      skip: 'Integration test - requires network',
-    );
-
-    test(
-      'pagination should work correctly',
-      () async {
-        final page1 = await provider.getPopular(
-          type: ContentType.movie,
-          page: 1,
-        );
-        final page2 = await provider.getPopular(
-          type: ContentType.movie,
-          page: 2,
-        );
-
-        expect(page1, isNotEmpty);
-        expect(page2, isNotEmpty);
-
-        // Pages should have different content
-        final page1Ids = page1.map((m) => m.id).toSet();
-        final page2Ids = page2.map((m) => m.id).toSet();
-        expect(page1Ids.intersection(page2Ids), isEmpty);
       },
       skip: 'Integration test - requires network',
     );

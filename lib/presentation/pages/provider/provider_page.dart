@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/utils/logger.dart';
 import '../../../data/providers/provider_registry.dart';
+import '../../../data/providers/hdrezka_provider.dart';
+import '../../../data/providers/youtube_provider.dart';
 import '../../../data/services/settings_service.dart';
 import '../../../domain/entities/entities.dart';
 import '../../../domain/repositories/content_provider.dart';
@@ -13,24 +15,26 @@ import '../../widgets/media_card.dart';
 import '../../widgets/custom_titlebar.dart';
 import '../../widgets/filter_sheet.dart';
 
-const _tag = 'CategoryPage';
+const _tag = 'ProviderPage';
 
-/// Category/Browse page for viewing content by type
-class CategoryPage extends StatefulWidget {
-  final ContentType? initialType;
+/// Dedicated page for a single provider (HDRezka, YouTube)
+class ProviderPage extends StatefulWidget {
+  final String providerId;
 
-  const CategoryPage({super.key, this.initialType});
+  const ProviderPage({super.key, required this.providerId});
 
   @override
-  State<CategoryPage> createState() => _CategoryPageState();
+  State<ProviderPage> createState() => _ProviderPageState();
 }
 
-class _CategoryPageState extends State<CategoryPage>
+class _ProviderPageState extends State<ProviderPage>
     with SingleTickerProviderStateMixin {
   final _registry = GetIt.instance<ProviderRegistry>();
   final _settings = GetIt.instance<SettingsService>();
   final _scrollController = ScrollController();
   late TabController _tabController;
+
+  ContentProvider? _provider;
 
   final _tabs = [
     ContentType.movie,
@@ -51,6 +55,8 @@ class _CategoryPageState extends State<CategoryPage>
   void initState() {
     super.initState();
 
+    _provider = _registry.getById(widget.providerId);
+
     // Initialize state for each type
     for (final type in _tabs) {
       _contentByType[type] = [];
@@ -60,22 +66,14 @@ class _CategoryPageState extends State<CategoryPage>
       _pageByType[type] = 1;
     }
 
-    // Find initial tab index
-    final initialIndex = widget.initialType != null
-        ? _tabs.indexOf(widget.initialType!)
-        : 0;
-
-    _tabController = TabController(
-      length: _tabs.length,
-      vsync: this,
-      initialIndex: initialIndex.clamp(0, _tabs.length - 1),
-    );
-
+    _tabController = TabController(length: _tabs.length, vsync: this);
     _tabController.addListener(_onTabChanged);
     _scrollController.addListener(_onScroll);
 
     // Load initial content
-    _loadContent(_tabs[_tabController.index]);
+    if (_provider != null) {
+      _loadContent(_tabs[_tabController.index]);
+    }
   }
 
   @override
@@ -103,7 +101,7 @@ class _CategoryPageState extends State<CategoryPage>
   }
 
   Future<void> _loadContent(ContentType type) async {
-    if (_loadingByType[type]!) return;
+    if (_loadingByType[type]! || _provider == null) return;
 
     setState(() {
       _loadingByType[type] = true;
@@ -111,58 +109,28 @@ class _CategoryPageState extends State<CategoryPage>
     });
 
     try {
-      // Get only home providers (excludes HDRezka/YouTube which have dedicated buttons)
-      final providers = _registry.getHomeProvidersByContentType(type);
-      Logger.d(
-        'Loading $type content from ${providers.length} home providers: '
-        '${providers.map((p) => p.name).join(", ")}',
-        tag: _tag,
-      );
-      final allItems = <MediaItem>[];
       final filter = _filterByType[type]!;
       final selectedGenre = filter.genres.isNotEmpty
           ? filter.genres.first
           : null;
 
-      for (final provider in providers) {
-        try {
-          List<MediaItem> items;
-          if (selectedGenre != null) {
-            // Use getByCategory if genre is selected
-            Logger.d(
-              'Fetching $type by category "$selectedGenre" from ${provider.name}',
-              tag: _tag,
-            );
-            items = await provider.getByCategory(
-              selectedGenre,
-              type: type,
-              page: 1,
-            );
-          } else {
-            Logger.d('Fetching popular $type from ${provider.name}', tag: _tag);
-            items = await provider.getPopular(type: type, page: 1);
-          }
-          Logger.d(
-            'Got ${items.length} items from ${provider.name}',
-            tag: _tag,
-          );
-          allItems.addAll(items);
-        } catch (e, stack) {
-          Logger.e(
-            'Failed to load $type from ${provider.name}',
-            tag: _tag,
-            error: e,
-            stackTrace: stack,
-          );
-        }
+      Logger.d('Loading $type content from ${_provider!.name}', tag: _tag);
+
+      List<MediaItem> items;
+      if (selectedGenre != null) {
+        items = await _provider!.getByCategory(
+          selectedGenre,
+          type: type,
+          page: 1,
+        );
+      } else {
+        items = await _provider!.getPopular(type: type, page: 1);
       }
 
+      Logger.d('Got ${items.length} items from ${_provider!.name}', tag: _tag);
+
       if (mounted) {
-        final filtered = filter.apply(allItems);
-        Logger.d(
-          'Total: ${allItems.length} items, after filter: ${filtered.length}',
-          tag: _tag,
-        );
+        final filtered = filter.apply(items);
         setState(() {
           _contentByType[type] = filtered;
           _loadingByType[type] = false;
@@ -182,7 +150,7 @@ class _CategoryPageState extends State<CategoryPage>
 
   Future<void> _loadMoreContent() async {
     final type = _tabs[_tabController.index];
-    if (_loadingByType[type]!) return;
+    if (_loadingByType[type]! || _provider == null) return;
 
     final nextPage = _pageByType[type]! + 1;
     final filter = _filterByType[type]!;
@@ -192,50 +160,25 @@ class _CategoryPageState extends State<CategoryPage>
     setState(() => _loadingByType[type] = true);
 
     try {
-      // Get only home providers for pagination
-      final providers = _registry.getHomeProvidersByContentType(type);
-      final newItems = <MediaItem>[];
-
-      for (final provider in providers) {
-        try {
-          List<MediaItem> items;
-          if (selectedGenre != null) {
-            items = await provider.getByCategory(
-              selectedGenre,
-              type: type,
-              page: nextPage,
-            );
-          } else {
-            items = await provider.getPopular(type: type, page: nextPage);
-          }
-          Logger.d(
-            'Got ${items.length} more items from ${provider.name}',
-            tag: _tag,
-          );
-          newItems.addAll(items);
-        } catch (e, stack) {
-          Logger.e(
-            'Failed to load more $type from ${provider.name}',
-            tag: _tag,
-            error: e,
-            stackTrace: stack,
-          );
-        }
+      List<MediaItem> items;
+      if (selectedGenre != null) {
+        items = await _provider!.getByCategory(
+          selectedGenre,
+          type: type,
+          page: nextPage,
+        );
+      } else {
+        items = await _provider!.getPopular(type: type, page: nextPage);
       }
 
-      if (mounted && newItems.isNotEmpty) {
-        final filtered = filter.apply(newItems);
-        Logger.d(
-          'Added ${filtered.length} items for page $nextPage',
-          tag: _tag,
-        );
+      if (mounted && items.isNotEmpty) {
+        final filtered = filter.apply(items);
         setState(() {
           _contentByType[type] = [..._contentByType[type]!, ...filtered];
           _pageByType[type] = nextPage;
           _loadingByType[type] = false;
         });
       } else {
-        Logger.d('No more items for page $nextPage', tag: _tag);
         setState(() => _loadingByType[type] = false);
       }
     } catch (e) {
@@ -250,7 +193,7 @@ class _CategoryPageState extends State<CategoryPage>
     final newFilter = await FilterSheet.show(
       context,
       initialFilter: currentFilter,
-      showTypeFilter: false, // Type is already selected via tab
+      showTypeFilter: false,
     );
 
     if (newFilter != null && mounted) {
@@ -268,13 +211,55 @@ class _CategoryPageState extends State<CategoryPage>
           defaultTargetPlatform == TargetPlatform.linux ||
           defaultTargetPlatform == TargetPlatform.macOS);
 
+  Color get _providerColor {
+    switch (widget.providerId) {
+      case 'hdrezka':
+        return Colors.orange;
+      case 'youtube':
+        return Colors.red;
+      default:
+        return AppTheme.primaryColor;
+    }
+  }
+
+  IconData get _providerIcon {
+    switch (widget.providerId) {
+      case 'hdrezka':
+        return Icons.play_circle_filled;
+      case 'youtube':
+        return Icons.play_arrow;
+      default:
+        return Icons.video_library;
+    }
+  }
+
+  /// Check if provider has fixed streams (can't change quality/voiceover after start)
+  bool get _hasFixedStreams {
+    if (_provider is HdrezkaProvider) return HdrezkaProvider.hasFixedStreams;
+    return false;
+  }
+
+  /// Check if provider requires search (no catalog available)
+  bool get _requiresSearch {
+    if (_provider is YouTubeProvider) return YouTubeProvider.requiresSearch;
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_provider == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Провайдер не знайдено')),
+        body: const Center(child: Text('Провайдер не знайдено')),
+      );
+    }
+
     return Scaffold(
       body: Column(
         children: [
           if (_isDesktop) const CustomTitleBar(),
           _buildAppBar(),
+          if (_hasFixedStreams) _buildFixedStreamsWarning(),
           _buildTabBar(),
           Expanded(child: _buildTabContent()),
         ],
@@ -302,16 +287,18 @@ class _CategoryPageState extends State<CategoryPage>
             tooltip: 'Назад',
           ),
           const SizedBox(width: 8),
-          const Icon(Icons.category),
+          Icon(_providerIcon, color: _providerColor),
           const SizedBox(width: 8),
-          const Text(
-            'Каталог',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          Text(
+            _provider!.name.toUpperCase(),
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: _providerColor,
+              letterSpacing: 1,
+            ),
           ),
           const Spacer(),
-          // Separate provider buttons (HDRezka, YouTube)
-          ..._buildSeparateProviderButtons(),
-          const SizedBox(width: 8),
           FilterButton(
             filter: currentFilter,
             onTap: () => _showFilterSheet(currentType),
@@ -343,24 +330,24 @@ class _CategoryPageState extends State<CategoryPage>
     );
   }
 
-  /// Build buttons for separate providers (HDRezka, YouTube)
-  List<Widget> _buildSeparateProviderButtons() {
-    final separateProviders = _registry.separateProviders;
-    if (separateProviders.isEmpty) return [];
-
-    return separateProviders.map((provider) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 2),
-        child: _SeparateProviderButton(
-          provider: provider,
-          onTap: () => _openSeparateProvider(provider),
-        ),
-      );
-    }).toList();
-  }
-
-  void _openSeparateProvider(ContentProvider provider) {
-    context.push('/provider/${provider.id}');
+  Widget _buildFixedStreamsWarning() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: Colors.orange.withOpacity(0.15),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline, size: 16, color: Colors.orange.shade700),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Якість та дубляж фіксуються при запуску відео і не можуть бути змінені під час перегляду',
+              style: TextStyle(fontSize: 12, color: Colors.orange.shade700),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildTabBar() {
@@ -386,9 +373,9 @@ class _CategoryPageState extends State<CategoryPage>
             ),
           );
         }).toList(),
-        isScrollable: true, // Always scrollable to prevent overflow
-        indicatorColor: AppTheme.primaryColor,
-        labelColor: AppTheme.primaryColor,
+        isScrollable: true,
+        indicatorColor: _providerColor,
+        labelColor: _providerColor,
         unselectedLabelColor: AppTheme.textMuted,
         tabAlignment: TabAlignment.start,
       ),
@@ -451,6 +438,39 @@ class _CategoryPageState extends State<CategoryPage>
     }
 
     if (items.isEmpty) {
+      // For providers that require search, show search hint
+      if (_requiresSearch) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.search, size: 64, color: _providerColor),
+              const SizedBox(height: 16),
+              Text(
+                'Використовуйте пошук',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'YouTube не дозволяє перегляд каталогу.\nВикористовуйте глобальний пошук для знаходження відео.',
+                style: Theme.of(context).textTheme.bodyMedium,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: () => context.go('/search'),
+                icon: const Icon(Icons.search),
+                label: const Text('Перейти до пошуку'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _providerColor,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -545,73 +565,6 @@ class _CategoryPageState extends State<CategoryPage>
         return _isDesktop ? 180 : 140;
       case PosterSize.large:
         return _isDesktop ? 250 : 180;
-    }
-  }
-}
-
-/// Button for separate providers (HDRezka, YouTube)
-class _SeparateProviderButton extends StatelessWidget {
-  final ContentProvider provider;
-  final VoidCallback onTap;
-
-  const _SeparateProviderButton({required this.provider, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final color = _getProviderColor(provider.id);
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.15),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: color.withOpacity(0.3)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(_getProviderIcon(provider.id), size: 18, color: color),
-              const SizedBox(width: 6),
-              Text(
-                provider.name.toUpperCase(),
-                style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  IconData _getProviderIcon(String providerId) {
-    switch (providerId) {
-      case 'hdrezka':
-        return Icons.play_circle_filled;
-      case 'youtube':
-        return Icons.play_arrow;
-      default:
-        return Icons.video_library;
-    }
-  }
-
-  Color _getProviderColor(String providerId) {
-    switch (providerId) {
-      case 'hdrezka':
-        return Colors.orange;
-      case 'youtube':
-        return Colors.red;
-      default:
-        return AppTheme.primaryColor;
     }
   }
 }

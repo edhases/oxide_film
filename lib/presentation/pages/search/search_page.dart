@@ -9,6 +9,7 @@ import '../../../data/providers/provider_registry.dart';
 import '../../../data/services/history_service.dart';
 import '../../../data/services/settings_service.dart';
 import '../../../data/services/search_service.dart';
+import '../../../data/services/smart_search/smart_search_service.dart';
 import '../../../domain/entities/entities.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/media_card.dart';
@@ -27,14 +28,16 @@ class SearchPage extends StatefulWidget {
 class _SearchPageState extends State<SearchPage> {
   final _registry = GetIt.instance<ProviderRegistry>();
   final _searchService = GetIt.instance<SearchService>();
+  final _smartSearchService = GetIt.instance<SmartSearchService>();
   final _historyService = GetIt.instance<HistoryService>();
   final _settings = GetIt.instance<SettingsService>();
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
 
   List<MediaItem> _results = [];
-  List<MediaItem> _suggestions = [];
-  AggregatedSearchResult? _searchResult;
+  List<SearchSuggestion> _suggestions = [];
+  SmartSearchResult? _searchResult;
+  AggregatedSearchResult? _aggregatedResult;
   bool _isLoading = false;
   bool _isLoadingSuggestions = false;
   String? _error;
@@ -48,8 +51,11 @@ class _SearchPageState extends State<SearchPage> {
   // Deduplication toggle
   bool _deduplicateResults = false;
 
-  // Recent searches
+  // Recent searches from smart search
   List<String> _recentSearches = [];
+
+  // Spell correction suggestion
+  String? _suggestedQuery;
 
   UISettings get _ui => _settings.uiSettings;
 
@@ -81,11 +87,20 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   Future<void> _loadRecentSearches() async {
-    // Get recent searches from history titles
-    final history = _historyService.history.take(10).toList();
-    setState(() {
-      _recentSearches = history.map((h) => h.title).toSet().take(5).toList();
-    });
+    // Get recent searches from SmartSearchService (from database)
+    final recentQueries = await _smartSearchService.getRecentSearches(limit: 5);
+
+    // Fallback to history titles if no search history yet
+    if (recentQueries.isEmpty) {
+      final history = _historyService.history.take(10).toList();
+      setState(() {
+        _recentSearches = history.map((h) => h.title).toSet().take(5).toList();
+      });
+    } else {
+      setState(() {
+        _recentSearches = recentQueries;
+      });
+    }
   }
 
   void _onSearchChanged(String query) {
@@ -111,11 +126,10 @@ class _SearchPageState extends State<SearchPage> {
     setState(() => _isLoadingSuggestions = true);
 
     try {
-      // Use SearchService for parallel multi-provider suggestions
-      final suggestions = await _searchService.getSuggestions(
+      // Use SmartSearchService for smart suggestions with fuzzy matching
+      final suggestions = await _smartSearchService.getSuggestions(
         query,
-        maxPerProvider: 3,
-        maxTotal: 10,
+        limit: 10,
       );
 
       if (mounted && _searchController.text == query) {
@@ -141,9 +155,10 @@ class _SearchPageState extends State<SearchPage> {
       _error = null;
       _hasSearched = true;
       _showSuggestions = false;
+      _suggestedQuery = null;
     });
 
-    // Add to recent searches
+    // Add to recent searches (will be handled by SmartSearchService)
     if (!_recentSearches.contains(query)) {
       _recentSearches.insert(0, query);
       if (_recentSearches.length > 5) {
@@ -152,26 +167,41 @@ class _SearchPageState extends State<SearchPage> {
     }
 
     try {
-      // Use SearchService for parallel multi-provider search
-      final result = await _searchService.search(
-        query,
-        onlyProviderId: _selectedProviderId,
-      );
+      // Use SmartSearchService for intelligent multi-provider search
+      final result = await _smartSearchService.search(query);
 
       if (mounted) {
         // Get filtered results based on selected provider
-        var items = result.getItemsForProvider(_selectedProviderId);
+        var items = result.rankedItems;
+
+        // Filter by provider if selected
+        if (_selectedProviderId != null) {
+          items = items
+              .where((i) => i.providerId == _selectedProviderId)
+              .toList();
+        }
 
         // Apply deduplication if enabled
         if (_deduplicateResults && _selectedProviderId == null) {
           items = _searchService.deduplicateResults(items);
         }
 
+        // Check if we should suggest a correction
+        String? suggestion;
+        if (items.isEmpty) {
+          suggestion = await _smartSearchService.suggestCorrection(query);
+        }
+
         setState(() {
           _searchResult = result;
+          _aggregatedResult = result.aggregatedResult;
           _results = items;
           _isLoading = false;
+          _suggestedQuery = suggestion;
         });
+
+        // Reload recent searches after search
+        _loadRecentSearches();
       }
     } catch (e) {
       if (mounted) {
@@ -240,7 +270,7 @@ class _SearchPageState extends State<SearchPage> {
 
                 // Individual provider chips
                 ...providers.map((provider) {
-                  final result = _searchResult?.providerResults
+                  final result = _aggregatedResult?.providerResults
                       .where((r) => r.providerId == provider.id)
                       .firstOrNull;
                   final count = result?.items.length ?? 0;
@@ -268,7 +298,7 @@ class _SearchPageState extends State<SearchPage> {
                       setState(() {
                         _deduplicateResults = value;
                         if (_searchResult != null) {
-                          var items = _searchResult!.getItemsForProvider(null);
+                          var items = _searchResult!.rankedItems;
                           if (value) {
                             items = _searchService.deduplicateResults(items);
                           }
@@ -350,7 +380,10 @@ class _SearchPageState extends State<SearchPage> {
     setState(() {
       _selectedProviderId = providerId;
       if (_searchResult != null) {
-        var items = _searchResult!.getItemsForProvider(providerId);
+        var items = _searchResult!.rankedItems;
+        if (providerId != null) {
+          items = items.where((i) => i.providerId == providerId).toList();
+        }
         if (_deduplicateResults && providerId == null) {
           items = _searchService.deduplicateResults(items);
         }
@@ -365,13 +398,17 @@ class _SearchPageState extends State<SearchPage> {
     final sr = _searchResult!;
     final duration = sr.totalDuration.inMilliseconds;
     final total = sr.totalCount;
-    final success = sr.successCount;
+    final aggr = sr.aggregatedResult;
+    final success = aggr.successCount;
     final providers = _registry.enabled.length;
 
-    if (sr.failureCount > 0) {
-      return '$total результатів з $success/$providers джерел за ${duration}мс';
+    // Show cache indicator
+    final cacheText = sr.fromCache ? ' (кеш)' : '';
+
+    if (aggr.failureCount > 0) {
+      return '$total результатів з $success/$providers джерел за $durationмс$cacheText';
     }
-    return '$total результатів з $providers джерел за ${duration}мс';
+    return '$total результатів з $providers джерел за $durationмс$cacheText';
   }
 
   Widget _buildSearchBar() {
@@ -382,7 +419,13 @@ class _SearchPageState extends State<SearchPage> {
         children: [
           IconButton(
             icon: const Icon(Icons.arrow_back),
-            onPressed: () => context.pop(),
+            onPressed: () {
+              if (context.canPop()) {
+                context.pop();
+              } else {
+                context.go('/');
+              }
+            },
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -483,30 +526,61 @@ class _SearchPageState extends State<SearchPage> {
                 ),
               ),
             ),
-            ..._suggestions.map(
-              (item) => ListTile(
-                leading: item.posterUrl != null
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: Image.network(
-                          item.posterUrl!,
-                          width: 40,
-                          height: 56,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              const Icon(Icons.movie, size: 40),
-                        ),
-                      )
-                    : const Icon(Icons.movie, size: 40),
-                title: Text(item.title),
-                subtitle: Text(
-                  '${item.type.displayName}${item.year != null ? ' • ${item.year}' : ''}',
-                  style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
-                ),
-                dense: true,
-                onTap: () => _selectSuggestion(item),
-              ),
-            ),
+            ..._suggestions.map((suggestion) {
+              // Get icon based on suggestion type
+              final icon = switch (suggestion.type) {
+                SuggestionType.history => Icons.history,
+                SuggestionType.cached => Icons.cached,
+                SuggestionType.live => Icons.search,
+              };
+
+              final mediaItem = suggestion.mediaItem;
+
+              if (mediaItem != null) {
+                // Show media item with poster
+                return ListTile(
+                  leading: mediaItem.posterUrl != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: Image.network(
+                            mediaItem.posterUrl!,
+                            width: 40,
+                            height: 56,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                const Icon(Icons.movie, size: 40),
+                          ),
+                        )
+                      : const Icon(Icons.movie, size: 40),
+                  title: Text(mediaItem.title),
+                  subtitle: Text(
+                    '${mediaItem.type.displayName}${mediaItem.year != null ? ' • ${mediaItem.year}' : ''}',
+                    style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                  ),
+                  dense: true,
+                  onTap: () => _selectSuggestion(mediaItem),
+                );
+              } else {
+                // Show text-only suggestion
+                return ListTile(
+                  leading: Icon(icon),
+                  title: Text(suggestion.text),
+                  trailing:
+                      suggestion.searchCount != null &&
+                          suggestion.searchCount! > 1
+                      ? Text(
+                          '${suggestion.searchCount}x',
+                          style: TextStyle(
+                            color: AppTheme.textMuted,
+                            fontSize: 12,
+                          ),
+                        )
+                      : null,
+                  dense: true,
+                  onTap: () => _useRecentSearch(suggestion.text),
+                );
+              }
+            }),
           ],
         ],
       ),
@@ -568,6 +642,51 @@ class _SearchPageState extends State<SearchPage> {
               'Спробуйте інший запит',
               style: TextStyle(color: AppTheme.textMuted),
             ),
+            // Show spell correction suggestion
+            if (_suggestedQuery != null) ...[
+              const SizedBox(height: 16),
+              InkWell(
+                onTap: () {
+                  _searchController.text = _suggestedQuery!;
+                  _performSearch();
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.lightbulb_outline,
+                        color: AppTheme.primaryColor,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Можливо, ви мали на увазі: ',
+                        style: TextStyle(color: AppTheme.textMuted),
+                      ),
+                      Text(
+                        _suggestedQuery!,
+                        style: TextStyle(
+                          color: AppTheme.primaryColor,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       );

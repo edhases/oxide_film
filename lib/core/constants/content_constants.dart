@@ -179,20 +179,6 @@ class ProviderGenreMappings {
     'Детектив': 'detektyvy',
   };
 
-  /// Filmix-specific genre slugs
-  static const Map<String, String> filmix = {
-    'Бойовик': 'action',
-    'Комедія': 'comedy',
-    'Драма': 'drama',
-    'Жахи': 'horror',
-    'Трилер': 'thriller',
-    'Фантастика': 'fiction',
-    'Фентезі': 'fantasy',
-    'Мелодрама': 'melodrama',
-    'Пригоди': 'adventures',
-    'Детектив': 'detective',
-  };
-
   /// Get provider-specific slug for a genre
   static String getSlugForProvider(
     String providerId,
@@ -202,7 +188,6 @@ class ProviderGenreMappings {
     final mapping = switch (providerId) {
       'hdrezka' => hdrezka,
       'uakino' => uakino,
-      'filmix' => filmix,
       _ => ContentGenres.toSlug,
     };
     return mapping[genre] ?? fallback ?? ContentGenres.getSlug(genre);

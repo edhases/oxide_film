@@ -5,6 +5,8 @@ import '../../domain/repositories/content_provider.dart';
 import '../../core/utils/logger.dart';
 import '../services/settings_service.dart';
 import '../services/url_resolver_service.dart';
+import 'hdrezka_provider.dart';
+import 'youtube_provider.dart';
 
 /// Registry for managing content providers
 ///
@@ -22,6 +24,23 @@ class ProviderRegistry {
 
   /// Whether URL resolution has been performed
   bool _urlsResolved = false;
+
+  /// Provider IDs that should NOT appear on the home page or in general categories
+  /// These providers have their own dedicated buttons/sections
+  static const Set<String> separateProviderIds = {'hdrezka', 'youtube'};
+
+  /// Check if a provider should be shown on the home page
+  static bool showOnHome(ContentProvider provider) {
+    if (provider is HdrezkaProvider) return HdrezkaProvider.showOnHome;
+    if (provider is YouTubeProvider) return YouTubeProvider.showOnHome;
+    return !separateProviderIds.contains(provider.id);
+  }
+
+  /// Check if a provider has fixed streams (can't change quality/voiceover after start)
+  static bool hasFixedStreams(ContentProvider provider) {
+    if (provider is HdrezkaProvider) return HdrezkaProvider.hasFixedStreams;
+    return false;
+  }
 
   /// Get settings service (lazy to avoid circular dependency)
   SettingsService? get _settings {
@@ -81,6 +100,21 @@ class ProviderRegistry {
   /// Get providers that support a specific content type
   List<ContentProvider> getByContentType(ContentType type) {
     return enabled.where((p) => p.supportedTypes.contains(type)).toList();
+  }
+
+  /// Get providers that should be shown on home page for a content type
+  List<ContentProvider> getHomeProvidersByContentType(ContentType type) {
+    return getByContentType(type).where((p) => showOnHome(p)).toList();
+  }
+
+  /// Get providers that have their own dedicated buttons/sections (not on home)
+  List<ContentProvider> get separateProviders {
+    return enabled.where((p) => separateProviderIds.contains(p.id)).toList();
+  }
+
+  /// Get providers for home page only (excludes separate providers like HDRezka/YouTube)
+  List<ContentProvider> get homeProviders {
+    return enabled.where((p) => showOnHome(p)).toList();
   }
 
   /// Get resolved URL for a provider (or default if not resolved)

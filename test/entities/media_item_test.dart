@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:oxide_film/domain/entities/entities.dart';
-import 'package:oxide_film/domain/entities/content_filter.dart';
 
 void main() {
   group('ContentFilter', () {

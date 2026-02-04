@@ -455,14 +455,18 @@ class EneyidaProvider with ResolvedUrlMixin implements ContentProvider {
   }
 
   static ContentType _detectContentTypeStatic(String url) {
-    if (url.contains('/films/') || url.contains('films/'))
+    if (url.contains('/films/') || url.contains('films/')) {
       return ContentType.movie;
-    if (url.contains('/series/') || url.contains('series/'))
+    }
+    if (url.contains('/series/') || url.contains('series/')) {
       return ContentType.series;
-    if (url.contains('/cartoon/') || url.contains('cartoon/'))
+    }
+    if (url.contains('/cartoon/') || url.contains('cartoon/')) {
       return ContentType.cartoon;
-    if (url.contains('/anime/') || url.contains('anime/'))
+    }
+    if (url.contains('/anime/') || url.contains('anime/')) {
       return ContentType.anime;
+    }
     return ContentType.unknown;
   }
 
@@ -484,14 +488,18 @@ class EneyidaProvider with ResolvedUrlMixin implements ContentProvider {
       for (final link in links) {
         final href = link.attributes['href'] ?? '';
         final text = link.text.toLowerCase();
-        if (href.contains('/films/') || text.contains('фільм'))
+        if (href.contains('/films/') || text.contains('фільм')) {
           return ContentType.movie;
-        if (href.contains('/series/') || text.contains('серіал'))
+        }
+        if (href.contains('/series/') || text.contains('серіал')) {
           return ContentType.series;
-        if (href.contains('/cartoon/') || text.contains('мультфільм'))
+        }
+        if (href.contains('/cartoon/') || text.contains('мультфільм')) {
           return ContentType.cartoon;
-        if (href.contains('/anime/') || text.contains('аніме'))
+        }
+        if (href.contains('/anime/') || text.contains('аніме')) {
           return ContentType.anime;
+        }
       }
     }
 

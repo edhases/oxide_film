@@ -129,7 +129,7 @@ class SearchService {
     }
 
     Logger.i(
-      'Searching "${query}" across ${providers.length} providers',
+      'Searching "$query" across ${providers.length} providers',
       tag: _tag,
     );
 
@@ -182,7 +182,7 @@ class SearchService {
     }
 
     Logger.i(
-      'Stream searching "${query}" across ${providers.length} providers',
+      'Stream searching "$query" across ${providers.length} providers',
       tag: _tag,
     );
 
@@ -223,7 +223,7 @@ class SearchService {
     final providers = _registry.enabled;
     if (providers.isEmpty) return [];
 
-    Logger.d('Getting suggestions for "${query}"', tag: _tag);
+    Logger.d('Getting suggestions for "$query"', tag: _tag);
 
     // Search all providers in parallel with short timeout
     final futures = providers.map(

@@ -1216,26 +1216,22 @@ class UakinoProvider with ResolvedUrlMixin implements ContentProvider {
       final fullText = soup.text;
 
       // Year
-      if (year == null) {
-        final yearMatch = RegExp(r'Рік:\s*(\d{4})').firstMatch(fullText);
-        if (yearMatch != null) {
-          year = int.tryParse(yearMatch.group(1) ?? '');
-        }
+      final yearMatch = RegExp(r'Рік:\s*(\d{4})').firstMatch(fullText);
+      if (yearMatch != null) {
+        year = int.tryParse(yearMatch.group(1) ?? '');
       }
 
       // Country
-      if (countries == null) {
-        final countryMatch = RegExp(
-          r'Країна:\s*([^<\n\r]+)',
-        ).firstMatch(fullText);
-        if (countryMatch != null) {
-          countries = countryMatch
-              .group(1)!
-              .split(',')
-              .map((s) => s.trim())
-              .where((s) => s.isNotEmpty)
-              .toList();
-        }
+      final countryMatch = RegExp(
+        r'Країна:\s*([^<\n\r]+)',
+      ).firstMatch(fullText);
+      if (countryMatch != null) {
+        countries = countryMatch
+            .group(1)!
+            .split(',')
+            .map((s) => s.trim())
+            .where((s) => s.isNotEmpty)
+            .toList();
       }
     }
 

@@ -4,8 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../network/api_client.dart';
 import '../../data/providers/provider_registry.dart';
 import '../../data/providers/uakino_provider.dart';
-// import '../../data/providers/hdrezka_provider.dart';
-// import '../../data/providers/filmix_provider.dart';
+import '../../data/providers/hdrezka_provider.dart';
+import '../../data/providers/youtube_provider.dart';
 import '../../data/providers/eneyida_provider.dart';
 import '../../data/providers/yummyanime_provider.dart';
 import '../../data/providers/uaflix_provider.dart';
@@ -22,6 +22,8 @@ import '../../data/services/watch_party_service.dart';
 import '../../data/services/auth_service.dart';
 import '../../data/services/search_service.dart';
 import '../../data/services/url_resolver_service.dart';
+import '../../data/services/smart_search/smart_search_service.dart';
+import '../../data/database/dao/search_history_dao.dart';
 // External API services
 import '../../data/services/tmdb_service.dart';
 import '../../data/services/jikan_service.dart';
@@ -87,6 +89,18 @@ Future<void> configureDependencies() async {
     () => SearchService(getIt<ProviderRegistry>()),
   );
 
+  // Smart search service (depends on SearchService and database)
+  getIt.registerLazySingleton<SearchHistoryDao>(
+    () => SearchHistoryDao(database),
+  );
+  getIt.registerLazySingleton<SmartSearchService>(
+    () => SmartSearchService(
+      getIt<SearchService>(),
+      getIt<ProviderRegistry>(),
+      getIt<SearchHistoryDao>(),
+    ),
+  );
+
   // Episode update service (depends on registry)
   getIt.registerLazySingleton<EpisodeUpdateService>(
     () => EpisodeUpdateService(database, getIt<ProviderRegistry>()),
@@ -97,16 +111,18 @@ void _registerProviders() {
   final registry = getIt<ProviderRegistry>();
   final apiClient = getIt<ApiClient>();
 
-  // Ukrainian providers
+  // Ukrainian providers (shown on home page)
   registry.register(UakinoProvider(apiClient));
   registry.register(EneyidaProvider(apiClient));
   registry.register(UaflixProvider(apiClient));
   registry.register(UaserialsProvider(apiClient));
 
-  // Multi-language providers (disabled - not Ukrainian)
-  // registry.register(HdrezkaProvider(apiClient));
-  // registry.register(FilmixProvider(apiClient)); // Russian content
-
-  // Anime providers
+  // Anime providers (shown on home page)
   registry.register(YummyAnimeProvider(apiClient));
+
+  // Separate providers (NOT shown on home page - have dedicated buttons)
+  // HDRezka: Multi-language, fixed streams (can't change quality/voiceover after start)
+  registry.register(HdrezkaProvider(apiClient));
+  // YouTube: Embed-only (ToS compliant, no direct stream extraction)
+  registry.register(YouTubeProvider(apiClient));
 }

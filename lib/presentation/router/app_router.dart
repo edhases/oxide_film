@@ -10,6 +10,7 @@ import '../pages/player/player_page.dart';
 import '../pages/favorites/favorites_page.dart';
 import '../pages/history/history_page.dart';
 import '../pages/category/category_page.dart';
+import '../pages/provider/provider_page.dart';
 import '../pages/downloads/downloads_page.dart';
 import '../pages/stats/stats_page.dart';
 import '../pages/watch_party/watch_party_page.dart';
@@ -60,6 +61,16 @@ class AppRouter {
             );
           }
           return CategoryPage(initialType: type);
+        },
+      ),
+
+      // Single provider page (HDRezka, YouTube)
+      GoRoute(
+        path: '/provider/:providerId',
+        name: 'provider',
+        builder: (context, state) {
+          final providerId = state.pathParameters['providerId']!;
+          return ProviderPage(providerId: providerId);
         },
       ),
 

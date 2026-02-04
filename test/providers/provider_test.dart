@@ -4,9 +4,9 @@ import 'package:oxide_film/core/network/api_client.dart';
 import 'package:oxide_film/data/providers/uakino_provider.dart';
 import 'package:oxide_film/data/providers/eneyida_provider.dart';
 import 'package:oxide_film/data/providers/hdrezka_provider.dart';
-import 'package:oxide_film/data/providers/filmix_provider.dart';
 import 'package:oxide_film/data/providers/yummyanime_provider.dart';
 import 'package:oxide_film/domain/entities/entities.dart';
+import 'package:oxide_film/domain/repositories/content_provider.dart';
 
 void main() {
   group('UakinoProvider', () {
@@ -70,7 +70,7 @@ void main() {
     test('should have correct metadata', () {
       expect(provider.id, 'hdrezka');
       expect(provider.name, 'HDRezka');
-      expect(provider.baseUrl, 'https://hdrezka.ag');
+      expect(provider.baseUrl, 'https://hdrezka-home.tv');
     });
 
     test('setMirror should update baseUrl', () {
@@ -94,31 +94,6 @@ void main() {
     });
   });
 
-  group('FilmixProvider', () {
-    late ApiClient client;
-    late FilmixProvider provider;
-
-    setUp(() {
-      client = ApiClient();
-      provider = FilmixProvider(client);
-    });
-
-    test('should have correct metadata', () {
-      expect(provider.id, 'filmix');
-      expect(provider.name, 'Filmix');
-      expect(provider.baseUrl, 'https://filmix.ac');
-    });
-
-    test('setMirror should update baseUrl', () {
-      provider.setMirror('https://filmix.me/');
-      expect(provider.baseUrl, 'https://filmix.me');
-    });
-
-    test('should support all content types', () {
-      expect(provider.supportedTypes.length, 4);
-    });
-  });
-
   group('YummyAnimeProvider', () {
     late ApiClient client;
     late YummyAnimeProvider provider;
@@ -135,7 +110,7 @@ void main() {
     test('should have correct metadata', () {
       expect(provider.id, 'yummyanime');
       expect(provider.name, 'YummyAnime');
-      expect(provider.baseUrl, 'https://yummyanime.tv');
+      expect(provider.baseUrl, 'https://yummyanime.club');
     });
 
     test('should only support anime', () {
@@ -148,11 +123,10 @@ void main() {
     test('all providers should implement ContentProvider', () {
       final client = ApiClient();
 
-      final providers = [
+      final List<ContentProvider> providers = [
         UakinoProvider(client),
         EneyidaProvider(client),
         HdrezkaProvider(client),
-        FilmixProvider(client),
         YummyAnimeProvider(client),
       ];
 

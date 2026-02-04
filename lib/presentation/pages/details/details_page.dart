@@ -775,7 +775,7 @@ class _DetailsPageState extends State<DetailsPage> {
       final dur = _details!.duration!;
       final hours = dur.inHours;
       final minutes = dur.inMinutes.remainder(60);
-      final durText = hours > 0 ? '${hours}г ${minutes}хв' : '${minutes}хв';
+      final durText = hours > 0 ? '$hoursг $minutesхв' : '$minutesхв';
       items.add(_buildInfoChip(Icons.access_time, durText));
     }
 

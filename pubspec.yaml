@@ -26,6 +26,8 @@ dependencies:
   # Network
   dio: ^5.8.0
   dio_smart_retry: ^7.0.1
+  dio_cookie_manager: ^3.1.1
+  cookie_jar: ^4.0.8
   connectivity_plus: ^6.1.2
 
   # HTML Parsing & Scraping
@@ -70,9 +72,18 @@ dependencies:
   tmdb_api: ^2.1.7
   wakelock_plus: ^1.4.0
   
+  # Fuzzy string matching for smart search
+  fuzzywuzzy: ^1.2.0
+  
   # Realtime sync for Watch Party
   supabase_flutter: ^2.8.0
   peerdart: ^0.5.6
+  
+  # YouTube embed player (ToS-compliant, no stream extraction)
+  youtube_player_iframe: ^5.1.2
+  
+  # YouTube stream extraction for desktop platforms
+  youtube_explode_dart: ^2.3.5
 
 dev_dependencies:
   flutter_test:

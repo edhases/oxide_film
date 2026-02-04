@@ -2,7 +2,7 @@ import '../entities/entities.dart';
 
 /// Abstract interface for content providers (sources)
 ///
-/// Each provider (HDRezka, Filmix, UAKino, etc.) must implement this interface
+/// Each provider (HDRezka, UAKino, YouTube, etc.) must implement this interface
 abstract class ContentProvider {
   /// Unique identifier for this provider
   String get id;

@@ -164,18 +164,11 @@ class RemoteConfig {
   factory RemoteConfig.defaults() {
     return const RemoteConfig(
       providerMirrors: {
-        'filmix': ['https://filmix.ac', 'https://filmix.co'],
         'hdrezka': ['https://hdrezka.ag', 'https://rezka.ag'],
         'uakino': ['https://uakino.club', 'https://uakino.me'],
         'eneyida': ['https://eneyida.tv'],
       },
       cssSelectors: {
-        'filmix': {
-          'card': 'article.shortstory',
-          'cardAlt': 'div.short-item',
-          'cardImage': 'a.short-img',
-          'cardTitle': 'a.short-title',
-        },
         'hdrezka': {
           'card': 'div.b-content__inline_item',
           'cardImage': 'img',
