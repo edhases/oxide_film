@@ -7,6 +7,7 @@ import 'package:window_manager/window_manager.dart';
 import 'core/config/secrets.dart';
 import 'core/di/injection.dart';
 import 'core/utils/logger.dart';
+import 'data/providers/provider_registry.dart';
 import 'presentation/app.dart';
 
 void main() async {
@@ -28,6 +29,9 @@ void main() async {
 
   // Initialize dependency injection
   await configureDependencies();
+
+  // Resolve provider URLs in background (detects domain changes)
+  _resolveProviderUrls();
 
   // Desktop window configuration
   if (!kIsWeb &&
@@ -53,4 +57,25 @@ void main() async {
   }
 
   runApp(const OxideFilmApp());
+}
+
+/// Resolve provider URLs in background
+///
+/// This detects domain changes (e.g., uaflix.net -> uafix.net)
+/// by following HTTP redirects and caching results.
+void _resolveProviderUrls() {
+  try {
+    final registry = getIt<ProviderRegistry>();
+    // Run in background, don't block app startup
+    registry
+        .resolveProviderUrls()
+        .then((_) {
+          Logger.d('Provider URLs resolved', tag: 'Main');
+        })
+        .catchError((e) {
+          Logger.w('URL resolution failed: $e', tag: 'Main');
+        });
+  } catch (e) {
+    Logger.w('Failed to start URL resolution: $e', tag: 'Main');
+  }
 }

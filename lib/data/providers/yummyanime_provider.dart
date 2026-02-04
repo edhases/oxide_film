@@ -7,11 +7,12 @@ import '../../core/network/api_client.dart';
 import '../../core/utils/logger.dart';
 import '../../domain/entities/entities.dart';
 import '../../domain/repositories/content_provider.dart';
+import '../mixins/resolved_url_mixin.dart';
 
 /// YummyAnime content provider
 ///
 /// Ukrainian anime streaming site
-class YummyAnimeProvider implements ContentProvider {
+class YummyAnimeProvider with ResolvedUrlMixin implements ContentProvider {
   static const String _tag = 'YummyAnime';
 
   final ApiClient _client;
@@ -26,7 +27,7 @@ class YummyAnimeProvider implements ContentProvider {
   String get name => 'YummyAnime';
 
   @override
-  String? get iconUrl => '$baseUrl/favicon.ico';
+  String? get iconUrl => '$effectiveBaseUrl/favicon.ico';
 
   String _mirror = 'https://yummyanime.club';
 

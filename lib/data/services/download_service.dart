@@ -11,22 +11,6 @@ import '../database/app_database.dart';
 import '../database/dao/downloads_dao.dart';
 import '../../domain/entities/entities.dart';
 
-/// Download status enum
-enum DownloadStatus {
-  pending,
-  downloading,
-  paused,
-  completed,
-  failed;
-
-  static DownloadStatus fromString(String value) {
-    return DownloadStatus.values.firstWhere(
-      (s) => s.name == value,
-      orElse: () => DownloadStatus.pending,
-    );
-  }
-}
-
 /// Download task info
 class DownloadTask {
   final Download download;
@@ -197,7 +181,7 @@ class DownloadService extends ChangeNotifier {
     final completer = Completer<void>();
 
     try {
-      await _dao.updateStatus(id, 'downloading');
+      await _dao.updateStatus(id, DownloadStatus.downloading);
 
       // Get download record for task tracking
       final download = await _dao.getAll().then(
@@ -236,7 +220,7 @@ class DownloadService extends ChangeNotifier {
       );
 
       // Download completed successfully
-      await _dao.updateStatus(id, 'completed');
+      await _dao.updateStatus(id, DownloadStatus.completed);
       _activeTasks.remove(id);
       completer.complete();
       Logger.i('Download completed: $localPath', tag: _tag);
@@ -250,7 +234,7 @@ class DownloadService extends ChangeNotifier {
       }
 
       Logger.e('Download task failed', tag: _tag, error: e);
-      await _dao.updateStatus(id, 'failed');
+      await _dao.updateStatus(id, DownloadStatus.failed);
       completer.completeError(e);
 
       // Clean up partial file
@@ -263,7 +247,7 @@ class DownloadService extends ChangeNotifier {
     } catch (e) {
       _activeTasks.remove(id);
       Logger.e('Download task failed', tag: _tag, error: e);
-      await _dao.updateStatus(id, 'failed');
+      await _dao.updateStatus(id, DownloadStatus.failed);
       completer.completeError(e);
     }
   }
@@ -275,7 +259,7 @@ class DownloadService extends ChangeNotifier {
       task.cancelToken.cancel('Paused by user');
       _activeTasks.remove(id);
     }
-    await _dao.updateStatus(id, 'paused');
+    await _dao.updateStatus(id, DownloadStatus.paused);
   }
 
   /// Resume download
@@ -366,7 +350,7 @@ class DownloadService extends ChangeNotifier {
             d.season == season &&
             d.episode == episode,
       );
-      return DownloadStatus.fromString(download.status);
+      return download.status;
     } catch (_) {
       return null;
     }

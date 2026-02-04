@@ -96,26 +96,39 @@ class PlayerJsParser {
       // Check if it's a JSON array
       if (fileValue.trim().startsWith('[') && fileValue.contains('{')) {
         try {
-          final List<dynamic> jsonSources = json.decode(fileValue);
-          for (final source in jsonSources) {
-            if (source is Map<String, dynamic>) {
-              final file = source['file'] as String?;
-              final title = source['title'] as String?;
-              if (file != null) {
-                sources.add(
-                  _createStreamSource(
-                    file,
-                    voiceover: title,
-                    qualityLabel: defaultQuality,
-                  ),
-                );
+          final dynamic jsonData = json.decode(fileValue);
+          if (jsonData is List) {
+            for (final source in jsonData) {
+              try {
+                if (source is Map<String, dynamic>) {
+                  final file = source['file'] as String?;
+                  final title = source['title'] as String?;
+                  if (file != null && _isValidUrl(file)) {
+                    sources.add(
+                      _createStreamSource(
+                        file,
+                        voiceover: title,
+                        qualityLabel: defaultQuality,
+                      ),
+                    );
+                  }
+                }
+              } catch (e) {
+                // Log but continue parsing other items
+                Logger.w('Failed to parse single JSON source: $e', tag: _tag);
               }
             }
+            if (sources.isNotEmpty) return sources;
           }
-          if (sources.isNotEmpty) return sources;
-        } catch (e) {
-          Logger.d('JSON parsing failed, trying other patterns', tag: _tag);
+        } on FormatException catch (e) {
+          Logger.d(
+            'JSON parsing failed: ${e.message}, trying other patterns',
+            tag: _tag,
+          );
           // Not valid JSON, continue with other parsing
+        } catch (e) {
+          Logger.w('Unexpected JSON parse error: $e', tag: _tag);
+          // Continue with other parsing methods
         }
       }
 
@@ -203,11 +216,36 @@ class PlayerJsParser {
   }
 
   /// Validate if string is a proper URL
+  /// Enhanced validation beyond just checking scheme presence
   static bool _isValidUrl(String url) {
     if (url.isEmpty) return false;
     try {
-      final uri = Uri.parse(url.trim());
-      return uri.hasScheme && (uri.scheme == 'http' || uri.scheme == 'https');
+      final trimmed = url.trim();
+      final uri = Uri.parse(trimmed);
+
+      // Must have http or https scheme
+      if (uri.scheme != 'http' && uri.scheme != 'https') return false;
+
+      // Must have a host
+      if (uri.host.isEmpty) return false;
+
+      // Host must contain at least one dot (basic domain validation)
+      // or be localhost/IP
+      if (!uri.host.contains('.') &&
+          uri.host != 'localhost' &&
+          !RegExp(r'^\d{1,3}(\.\d{1,3}){3}$').hasMatch(uri.host)) {
+        return false;
+      }
+
+      // Check for common injection patterns
+      if (trimmed.contains('<script') ||
+          trimmed.contains('javascript:') ||
+          trimmed.contains('data:')) {
+        Logger.w('Rejected URL with potential injection: $trimmed', tag: _tag);
+        return false;
+      }
+
+      return true;
     } catch (_) {
       return false;
     }

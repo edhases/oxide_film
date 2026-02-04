@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../../data/providers/provider_registry.dart';
 import '../../../data/services/history_service.dart';
 import '../../../data/services/settings_service.dart';
+import '../../../data/services/search_service.dart';
 import '../../../domain/entities/entities.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/media_card.dart';
@@ -25,6 +26,7 @@ class SearchPage extends StatefulWidget {
 
 class _SearchPageState extends State<SearchPage> {
   final _registry = GetIt.instance<ProviderRegistry>();
+  final _searchService = GetIt.instance<SearchService>();
   final _historyService = GetIt.instance<HistoryService>();
   final _settings = GetIt.instance<SettingsService>();
   final _searchController = TextEditingController();
@@ -32,12 +34,19 @@ class _SearchPageState extends State<SearchPage> {
 
   List<MediaItem> _results = [];
   List<MediaItem> _suggestions = [];
+  AggregatedSearchResult? _searchResult;
   bool _isLoading = false;
   bool _isLoadingSuggestions = false;
   String? _error;
   bool _hasSearched = false;
   bool _showSuggestions = false;
   Timer? _debounceTimer;
+
+  // Provider filter
+  String? _selectedProviderId;
+
+  // Deduplication toggle
+  bool _deduplicateResults = false;
 
   // Recent searches
   List<String> _recentSearches = [];
@@ -102,22 +111,16 @@ class _SearchPageState extends State<SearchPage> {
     setState(() => _isLoadingSuggestions = true);
 
     try {
-      final providers = _registry.enabled;
-      final allSuggestions = <MediaItem>[];
-
-      // Only use first provider for faster suggestions
-      if (providers.isNotEmpty) {
-        try {
-          final results = await providers.first.search(query);
-          allSuggestions.addAll(results.take(5));
-        } catch (e) {
-          debugPrint('Suggestions failed: $e');
-        }
-      }
+      // Use SearchService for parallel multi-provider suggestions
+      final suggestions = await _searchService.getSuggestions(
+        query,
+        maxPerProvider: 3,
+        maxTotal: 10,
+      );
 
       if (mounted && _searchController.text == query) {
         setState(() {
-          _suggestions = allSuggestions;
+          _suggestions = suggestions;
           _showSuggestions = true;
           _isLoadingSuggestions = false;
         });
@@ -149,21 +152,24 @@ class _SearchPageState extends State<SearchPage> {
     }
 
     try {
-      final providers = _registry.enabled;
-      final allResults = <MediaItem>[];
-
-      for (final provider in providers) {
-        try {
-          final results = await provider.search(query);
-          allResults.addAll(results);
-        } catch (e) {
-          debugPrint('Search failed for ${provider.name}: $e');
-        }
-      }
+      // Use SearchService for parallel multi-provider search
+      final result = await _searchService.search(
+        query,
+        onlyProviderId: _selectedProviderId,
+      );
 
       if (mounted) {
+        // Get filtered results based on selected provider
+        var items = result.getItemsForProvider(_selectedProviderId);
+
+        // Apply deduplication if enabled
+        if (_deduplicateResults && _selectedProviderId == null) {
+          items = _searchService.deduplicateResults(items);
+        }
+
         setState(() {
-          _results = allResults;
+          _searchResult = result;
+          _results = items;
           _isLoading = false;
         });
       }
@@ -200,11 +206,172 @@ class _SearchPageState extends State<SearchPage> {
         children: [
           if (isDesktop) const CustomTitleBar(),
           _buildSearchBar(),
+          if (_hasSearched && !_showSuggestions) _buildProviderFilter(),
           if (_showSuggestions) _buildSuggestions(),
           Expanded(child: _buildResults()),
         ],
       ),
     );
+  }
+
+  /// Build provider filter chips
+  Widget _buildProviderFilter() {
+    final providers = _registry.enabled;
+    if (providers.length <= 1) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: AppTheme.darkSurface,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                // "All providers" chip
+                _buildFilterChip(
+                  label: 'Усі джерела',
+                  isSelected: _selectedProviderId == null,
+                  count: _searchResult?.totalCount,
+                  onSelected: () => _onProviderFilterChanged(null),
+                ),
+                const SizedBox(width: 8),
+
+                // Individual provider chips
+                ...providers.map((provider) {
+                  final result = _searchResult?.providerResults
+                      .where((r) => r.providerId == provider.id)
+                      .firstOrNull;
+                  final count = result?.items.length ?? 0;
+                  final hasError = result?.error != null;
+
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: _buildFilterChip(
+                      label: provider.name,
+                      isSelected: _selectedProviderId == provider.id,
+                      count: count,
+                      hasError: hasError,
+                      onSelected: () => _onProviderFilterChanged(provider.id),
+                    ),
+                  );
+                }),
+
+                // Deduplication toggle (only when "All" selected)
+                if (_selectedProviderId == null) ...[
+                  const SizedBox(width: 16),
+                  FilterChip(
+                    label: const Text('Без дублів'),
+                    selected: _deduplicateResults,
+                    onSelected: (value) {
+                      setState(() {
+                        _deduplicateResults = value;
+                        if (_searchResult != null) {
+                          var items = _searchResult!.getItemsForProvider(null);
+                          if (value) {
+                            items = _searchService.deduplicateResults(items);
+                          }
+                          _results = items;
+                        }
+                      });
+                    },
+                    avatar: Icon(
+                      _deduplicateResults
+                          ? Icons.filter_alt
+                          : Icons.filter_alt_outlined,
+                      size: 18,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+          // Search stats
+          if (_searchResult != null && !_isLoading)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                _buildSearchStats(),
+                style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterChip({
+    required String label,
+    required bool isSelected,
+    int? count,
+    bool hasError = false,
+    required VoidCallback onSelected,
+  }) {
+    return FilterChip(
+      label: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label),
+          if (count != null) ...[
+            const SizedBox(width: 4),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? Colors.white.withValues(alpha: 0.2)
+                    : AppTheme.textMuted.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '$count',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: hasError ? Colors.red : null,
+                ),
+              ),
+            ),
+          ],
+          if (hasError) ...[
+            const SizedBox(width: 4),
+            const Icon(Icons.warning_amber, size: 14, color: Colors.orange),
+          ],
+        ],
+      ),
+      selected: isSelected,
+      onSelected: (_) => onSelected(),
+      selectedColor: AppTheme.primaryColor.withValues(alpha: 0.3),
+      checkmarkColor: AppTheme.primaryColor,
+    );
+  }
+
+  void _onProviderFilterChanged(String? providerId) {
+    setState(() {
+      _selectedProviderId = providerId;
+      if (_searchResult != null) {
+        var items = _searchResult!.getItemsForProvider(providerId);
+        if (_deduplicateResults && providerId == null) {
+          items = _searchService.deduplicateResults(items);
+        }
+        _results = items;
+      }
+    });
+  }
+
+  String _buildSearchStats() {
+    if (_searchResult == null) return '';
+
+    final sr = _searchResult!;
+    final duration = sr.totalDuration.inMilliseconds;
+    final total = sr.totalCount;
+    final success = sr.successCount;
+    final providers = _registry.enabled.length;
+
+    if (sr.failureCount > 0) {
+      return '$total результатів з $success/$providers джерел за ${duration}мс';
+    }
+    return '$total результатів з $providers джерел за ${duration}мс';
   }
 
   Widget _buildSearchBar() {

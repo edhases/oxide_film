@@ -7,6 +7,7 @@ import '../../core/network/api_client.dart';
 import '../../core/utils/logger.dart';
 import '../../domain/entities/entities.dart';
 import '../../domain/repositories/content_provider.dart';
+import '../services/remote_config_service.dart';
 
 /// Filmix content provider
 ///
@@ -15,16 +16,28 @@ class FilmixProvider implements ContentProvider {
   static const String _tag = 'Filmix';
 
   final ApiClient _client;
+  final RemoteConfigService? _remoteConfig;
+
   // Disabled by default - mirror returns 503, needs working URL
   bool _isEnabled = false;
 
-  /// Current mirror URL
+  /// Current mirror URL - loaded from Remote Config or fallback
   String _mirror = 'https://filmix.ac';
+
+  /// Fallback mirrors if Remote Config is unavailable
+  static const List<String> _fallbackMirrors = [
+    'https://filmix.ac',
+    'https://filmix.co',
+    'https://filmix.me',
+  ];
 
   /// User token for API access (optional, for better quality)
   String? _userToken;
 
-  FilmixProvider(this._client);
+  /// Index of current mirror being used
+  int _currentMirrorIndex = 0;
+
+  FilmixProvider(this._client, [this._remoteConfig]);
 
   @override
   String get id => 'filmix';
@@ -39,13 +52,58 @@ class FilmixProvider implements ContentProvider {
   String get baseUrl => _mirror;
 
   @override
+  String get effectiveBaseUrl => _mirror;
+
+  @override
   bool get isEnabled => _isEnabled;
 
   set isEnabled(bool value) => _isEnabled = value;
 
-  /// Set mirror URL
+  /// Initialize provider with Remote Config mirrors
+  Future<void> initialize() async {
+    if (_remoteConfig != null) {
+      try {
+        final config = await _remoteConfig.getConfig();
+        final mirrors = config.getMirrors(id);
+        if (mirrors.isNotEmpty) {
+          _mirror = mirrors.first;
+          Logger.i('Loaded mirror from Remote Config: $_mirror', tag: _tag);
+        }
+      } catch (e) {
+        Logger.w('Failed to load Remote Config, using fallback', tag: _tag);
+      }
+    }
+  }
+
+  /// Set mirror URL manually
   void setMirror(String url) {
     _mirror = url.endsWith('/') ? url.substring(0, url.length - 1) : url;
+  }
+
+  /// Try next available mirror (call on network failures)
+  Future<bool> tryNextMirror() async {
+    List<String> mirrors;
+
+    if (_remoteConfig != null) {
+      try {
+        final config = await _remoteConfig.getConfig();
+        mirrors = config.getMirrors(id);
+      } catch (_) {
+        mirrors = _fallbackMirrors;
+      }
+    } else {
+      mirrors = _fallbackMirrors;
+    }
+
+    _currentMirrorIndex++;
+    if (_currentMirrorIndex >= mirrors.length) {
+      _currentMirrorIndex = 0;
+      return false; // No more mirrors to try
+    }
+
+    _mirror = mirrors[_currentMirrorIndex];
+    Logger.i('Switching to mirror: $_mirror', tag: _tag);
+    return true;
   }
 
   /// Set user token for PRO features
@@ -236,25 +294,77 @@ class FilmixProvider implements ContentProvider {
     int? episode,
   ) {
     try {
-      // Extract JSON data from script
-      final jsonMatch = RegExp(
-        r'playerParams\s*=\s*(\{.+?\});',
-        dotAll: true,
-      ).firstMatch(script);
+      // Extract JSON data from script using balanced brace matching
+      // instead of non-greedy regex (which fails on nested braces)
+      final startMatch = RegExp(r'playerParams\s*=\s*\{').firstMatch(script);
+      if (startMatch == null) return;
 
-      if (jsonMatch != null) {
-        final jsonStr = jsonMatch.group(1);
-        final data = jsonDecode(jsonStr!);
+      final startIndex = startMatch.end - 1; // Position of opening brace
+      String? jsonStr = _extractBalancedJson(script, startIndex);
 
-        if (data['src'] != null) {
-          final src = data['src'].toString();
-          Logger.d('Found m3u8 in script: $src', tag: _tag);
-          _parseM3u8Playlist(src, sources);
+      if (jsonStr != null) {
+        try {
+          final data = jsonDecode(jsonStr);
+
+          if (data['src'] != null) {
+            final src = data['src'].toString();
+            Logger.d('Found m3u8 in script: $src', tag: _tag);
+            _parseM3u8Playlist(src, sources);
+          }
+        } on FormatException catch (e) {
+          Logger.w(
+            'Failed to decode playerParams JSON: ${e.message}',
+            tag: _tag,
+          );
         }
       }
-    } catch (e) {
-      Logger.w('Failed to parse player script', tag: _tag);
+    } catch (e, stack) {
+      Logger.w('Failed to parse player script: $e', tag: _tag);
+      Logger.d('Stack trace: $stack', tag: _tag);
     }
+  }
+
+  /// Extract balanced JSON object from string starting at given position
+  /// Handles nested braces correctly
+  String? _extractBalancedJson(String input, int startIndex) {
+    if (startIndex >= input.length || input[startIndex] != '{') return null;
+
+    int depth = 0;
+    bool inString = false;
+    bool escaped = false;
+
+    for (int i = startIndex; i < input.length; i++) {
+      final char = input[i];
+
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (char == '\\' && inString) {
+        escaped = true;
+        continue;
+      }
+
+      if (char == '"') {
+        inString = !inString;
+        continue;
+      }
+
+      if (!inString) {
+        if (char == '{') {
+          depth++;
+        } else if (char == '}') {
+          depth--;
+          if (depth == 0) {
+            return input.substring(startIndex, i + 1);
+          }
+        }
+      }
+    }
+
+    Logger.w('Failed to find balanced JSON - unmatched braces', tag: _tag);
+    return null;
   }
 
   void _parseM3u8Playlist(String url, List<StreamSource> sources) {

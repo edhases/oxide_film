@@ -1,3 +1,5 @@
+import 'dart:math';
+
 /// Application configuration constants
 class AppConfig {
   AppConfig._();
@@ -10,7 +12,9 @@ class AppConfig {
   static const String tmdbImageBaseUrl = 'https://image.tmdb.org/t/p';
   static String? tmdbApiKey;
 
-  // User-Agent pool for web scraping (rotation reduces blocking risk)
+  // User-Agent pool for web scraping
+  // IMPORTANT: One UA is selected at app startup and kept for the entire session
+  // to avoid triggering anti-bot systems that detect UA rotation
   static const List<String> _userAgents = [
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
@@ -20,9 +24,10 @@ class AppConfig {
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
   ];
 
-  /// Get a rotating User-Agent (changes based on current time)
-  static String get userAgent =>
-      _userAgents[DateTime.now().millisecond % _userAgents.length];
+  /// Session-persistent User-Agent (randomly selected once at app startup)
+  /// This prevents anti-bot systems from detecting UA rotation within a session
+  static final String userAgent =
+      _userAgents[Random().nextInt(_userAgents.length)];
 
   // Timeouts
   static const Duration connectTimeout = Duration(seconds: 30);

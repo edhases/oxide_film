@@ -13,8 +13,14 @@ abstract class ContentProvider {
   /// Provider icon/logo URL (optional)
   String? get iconUrl;
 
-  /// Base URL of the provider
+  /// Base URL of the provider (default/fallback)
   String get baseUrl;
+
+  /// Effective base URL (may be different if domain changed via redirect)
+  ///
+  /// Providers should use this for API requests. By default returns [baseUrl],
+  /// but can be overridden to use resolved URL from ProviderRegistry.
+  String get effectiveBaseUrl => baseUrl;
 
   /// Whether this provider is currently enabled
   bool get isEnabled;

@@ -2163,16 +2163,16 @@ class $DownloadsTable extends Downloads
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
-  static const VerificationMeta _statusMeta = const VerificationMeta('status');
   @override
-  late final GeneratedColumn<String> status = GeneratedColumn<String>(
-    'status',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-    defaultValue: const Constant('pending'),
-  );
+  late final GeneratedColumnWithTypeConverter<DownloadStatus, int> status =
+      GeneratedColumn<int>(
+        'status',
+        aliasedName,
+        false,
+        type: DriftSqlType.int,
+        requiredDuringInsert: false,
+        defaultValue: const Constant(0),
+      ).withConverter<DownloadStatus>($DownloadsTable.$converterstatus);
   static const VerificationMeta _progressMeta = const VerificationMeta(
     'progress',
   );
@@ -2365,12 +2365,6 @@ class $DownloadsTable extends Downloads
         voiceover.isAcceptableOrUnknown(data['voiceover']!, _voiceoverMeta),
       );
     }
-    if (data.containsKey('status')) {
-      context.handle(
-        _statusMeta,
-        status.isAcceptableOrUnknown(data['status']!, _statusMeta),
-      );
-    }
     if (data.containsKey('progress')) {
       context.handle(
         _progressMeta,
@@ -2479,10 +2473,12 @@ class $DownloadsTable extends Downloads
         DriftSqlType.string,
         data['${effectivePrefix}voiceover'],
       ),
-      status: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}status'],
-      )!,
+      status: $DownloadsTable.$converterstatus.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.int,
+          data['${effectivePrefix}status'],
+        )!,
+      ),
       progress: attachedDatabase.typeMapping.read(
         DriftSqlType.double,
         data['${effectivePrefix}progress'],
@@ -2510,6 +2506,9 @@ class $DownloadsTable extends Downloads
   $DownloadsTable createAlias(String alias) {
     return $DownloadsTable(attachedDatabase, alias);
   }
+
+  static TypeConverter<DownloadStatus, int> $converterstatus =
+      const DownloadStatusConverter();
 }
 
 class Download extends DataClass implements Insertable<Download> {
@@ -2527,7 +2526,7 @@ class Download extends DataClass implements Insertable<Download> {
   final String localPath;
   final String quality;
   final String? voiceover;
-  final String status;
+  final DownloadStatus status;
   final double progress;
   final int fileSizeBytes;
   final int downloadedBytes;
@@ -2584,7 +2583,11 @@ class Download extends DataClass implements Insertable<Download> {
     if (!nullToAbsent || voiceover != null) {
       map['voiceover'] = Variable<String>(voiceover);
     }
-    map['status'] = Variable<String>(status);
+    {
+      map['status'] = Variable<int>(
+        $DownloadsTable.$converterstatus.toSql(status),
+      );
+    }
     map['progress'] = Variable<double>(progress);
     map['file_size_bytes'] = Variable<int>(fileSizeBytes);
     map['downloaded_bytes'] = Variable<int>(downloadedBytes);
@@ -2652,7 +2655,7 @@ class Download extends DataClass implements Insertable<Download> {
       localPath: serializer.fromJson<String>(json['localPath']),
       quality: serializer.fromJson<String>(json['quality']),
       voiceover: serializer.fromJson<String?>(json['voiceover']),
-      status: serializer.fromJson<String>(json['status']),
+      status: serializer.fromJson<DownloadStatus>(json['status']),
       progress: serializer.fromJson<double>(json['progress']),
       fileSizeBytes: serializer.fromJson<int>(json['fileSizeBytes']),
       downloadedBytes: serializer.fromJson<int>(json['downloadedBytes']),
@@ -2678,7 +2681,7 @@ class Download extends DataClass implements Insertable<Download> {
       'localPath': serializer.toJson<String>(localPath),
       'quality': serializer.toJson<String>(quality),
       'voiceover': serializer.toJson<String?>(voiceover),
-      'status': serializer.toJson<String>(status),
+      'status': serializer.toJson<DownloadStatus>(status),
       'progress': serializer.toJson<double>(progress),
       'fileSizeBytes': serializer.toJson<int>(fileSizeBytes),
       'downloadedBytes': serializer.toJson<int>(downloadedBytes),
@@ -2702,7 +2705,7 @@ class Download extends DataClass implements Insertable<Download> {
     String? localPath,
     String? quality,
     Value<String?> voiceover = const Value.absent(),
-    String? status,
+    DownloadStatus? status,
     double? progress,
     int? fileSizeBytes,
     int? downloadedBytes,
@@ -2856,7 +2859,7 @@ class DownloadsCompanion extends UpdateCompanion<Download> {
   final Value<String> localPath;
   final Value<String> quality;
   final Value<String?> voiceover;
-  final Value<String> status;
+  final Value<DownloadStatus> status;
   final Value<double> progress;
   final Value<int> fileSizeBytes;
   final Value<int> downloadedBytes;
@@ -2927,7 +2930,7 @@ class DownloadsCompanion extends UpdateCompanion<Download> {
     Expression<String>? localPath,
     Expression<String>? quality,
     Expression<String>? voiceover,
-    Expression<String>? status,
+    Expression<int>? status,
     Expression<double>? progress,
     Expression<int>? fileSizeBytes,
     Expression<int>? downloadedBytes,
@@ -2973,7 +2976,7 @@ class DownloadsCompanion extends UpdateCompanion<Download> {
     Value<String>? localPath,
     Value<String>? quality,
     Value<String?>? voiceover,
-    Value<String>? status,
+    Value<DownloadStatus>? status,
     Value<double>? progress,
     Value<int>? fileSizeBytes,
     Value<int>? downloadedBytes,
@@ -3050,7 +3053,9 @@ class DownloadsCompanion extends UpdateCompanion<Download> {
       map['voiceover'] = Variable<String>(voiceover.value);
     }
     if (status.present) {
-      map['status'] = Variable<String>(status.value);
+      map['status'] = Variable<int>(
+        $DownloadsTable.$converterstatus.toSql(status.value),
+      );
     }
     if (progress.present) {
       map['progress'] = Variable<double>(progress.value);
@@ -4155,7 +4160,7 @@ typedef $$DownloadsTableCreateCompanionBuilder =
       required String localPath,
       required String quality,
       Value<String?> voiceover,
-      Value<String> status,
+      Value<DownloadStatus> status,
       Value<double> progress,
       Value<int> fileSizeBytes,
       Value<int> downloadedBytes,
@@ -4178,7 +4183,7 @@ typedef $$DownloadsTableUpdateCompanionBuilder =
       Value<String> localPath,
       Value<String> quality,
       Value<String?> voiceover,
-      Value<String> status,
+      Value<DownloadStatus> status,
       Value<double> progress,
       Value<int> fileSizeBytes,
       Value<int> downloadedBytes,
@@ -4265,9 +4270,10 @@ class $$DownloadsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get status => $composableBuilder(
+  ColumnWithTypeConverterFilters<DownloadStatus, DownloadStatus, int>
+  get status => $composableBuilder(
     column: $table.status,
-    builder: (column) => ColumnFilters(column),
+    builder: (column) => ColumnWithTypeConverterFilters(column),
   );
 
   ColumnFilters<double> get progress => $composableBuilder(
@@ -4375,7 +4381,7 @@ class $$DownloadsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get status => $composableBuilder(
+  ColumnOrderings<int> get status => $composableBuilder(
     column: $table.status,
     builder: (column) => ColumnOrderings(column),
   );
@@ -4461,7 +4467,7 @@ class $$DownloadsTableAnnotationComposer
   GeneratedColumn<String> get voiceover =>
       $composableBuilder(column: $table.voiceover, builder: (column) => column);
 
-  GeneratedColumn<String> get status =>
+  GeneratedColumnWithTypeConverter<DownloadStatus, int> get status =>
       $composableBuilder(column: $table.status, builder: (column) => column);
 
   GeneratedColumn<double> get progress =>
@@ -4528,7 +4534,7 @@ class $$DownloadsTableTableManager
                 Value<String> localPath = const Value.absent(),
                 Value<String> quality = const Value.absent(),
                 Value<String?> voiceover = const Value.absent(),
-                Value<String> status = const Value.absent(),
+                Value<DownloadStatus> status = const Value.absent(),
                 Value<double> progress = const Value.absent(),
                 Value<int> fileSizeBytes = const Value.absent(),
                 Value<int> downloadedBytes = const Value.absent(),
@@ -4572,7 +4578,7 @@ class $$DownloadsTableTableManager
                 required String localPath,
                 required String quality,
                 Value<String?> voiceover = const Value.absent(),
-                Value<String> status = const Value.absent(),
+                Value<DownloadStatus> status = const Value.absent(),
                 Value<double> progress = const Value.absent(),
                 Value<int> fileSizeBytes = const Value.absent(),
                 Value<int> downloadedBytes = const Value.absent(),

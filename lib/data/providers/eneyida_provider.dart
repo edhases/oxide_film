@@ -6,12 +6,13 @@ import '../../core/network/api_client.dart';
 import '../../core/utils/logger.dart';
 import '../../domain/entities/entities.dart';
 import '../../domain/repositories/content_provider.dart';
+import '../mixins/resolved_url_mixin.dart';
 import '../parsers/playerjs_parser.dart';
 
 /// Eneyida content provider
 ///
 /// Ukrainian streaming site with PlayerJS player
-class EneyidaProvider implements ContentProvider {
+class EneyidaProvider with ResolvedUrlMixin implements ContentProvider {
   static const String _tag = 'Eneyida';
 
   final ApiClient _client;
@@ -26,7 +27,7 @@ class EneyidaProvider implements ContentProvider {
   String get name => 'Eneyida';
 
   @override
-  String? get iconUrl => '$baseUrl/favicon.ico';
+  String? get iconUrl => '$effectiveBaseUrl/favicon.ico';
 
   String _mirror = 'https://eneyida.tv';
 
@@ -345,6 +346,16 @@ class EneyidaProvider implements ContentProvider {
       final infoEl = card.find('div', class_: 'short_info');
       if (infoEl != null) {
         final yearMatch = RegExp(r'(\d{4})').firstMatch(infoEl.text);
+        if (yearMatch != null) {
+          year = int.tryParse(yearMatch.group(1) ?? '');
+        }
+      }
+
+      // Fallback: search in card text
+      if (year == null) {
+        final yearMatch = RegExp(
+          r'\b(19\d{2}|20\d{2})\b',
+        ).firstMatch(card.text);
         if (yearMatch != null) {
           year = int.tryParse(yearMatch.group(1) ?? '');
         }

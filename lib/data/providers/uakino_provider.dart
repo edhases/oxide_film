@@ -5,12 +5,13 @@ import '../../core/network/api_client.dart';
 import '../../core/utils/logger.dart';
 import '../../domain/entities/entities.dart';
 import '../../domain/repositories/content_provider.dart';
+import '../mixins/resolved_url_mixin.dart';
 import '../parsers/playerjs_parser.dart';
 
 /// UAKino.best content provider
 ///
 /// Ukrainian site using PlayerJS for streaming
-class UakinoProvider implements ContentProvider {
+class UakinoProvider with ResolvedUrlMixin implements ContentProvider {
   static const String _tag = 'UAKino';
 
   final ApiClient _client;

@@ -1,10 +1,11 @@
 import 'package:get_it/get_it.dart';
 import 'package:injectable/injectable.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../network/api_client.dart';
 import '../../data/providers/provider_registry.dart';
 import '../../data/providers/uakino_provider.dart';
 // import '../../data/providers/hdrezka_provider.dart';
-import '../../data/providers/filmix_provider.dart';
+// import '../../data/providers/filmix_provider.dart';
 import '../../data/providers/eneyida_provider.dart';
 import '../../data/providers/yummyanime_provider.dart';
 import '../../data/providers/uaflix_provider.dart';
@@ -19,6 +20,8 @@ import '../../data/services/stats_service.dart';
 import '../../data/services/episode_update_service.dart';
 import '../../data/services/watch_party_service.dart';
 import '../../data/services/auth_service.dart';
+import '../../data/services/search_service.dart';
+import '../../data/services/url_resolver_service.dart';
 // External API services
 import '../../data/services/tmdb_service.dart';
 import '../../data/services/jikan_service.dart';
@@ -30,12 +33,21 @@ final getIt = GetIt.instance;
 /// Initialize all dependencies
 @InjectableInit()
 Future<void> configureDependencies() async {
-  // Database (must be first)
+  // SharedPreferences (must be first - async)
+  final prefs = await SharedPreferences.getInstance();
+  getIt.registerSingleton<SharedPreferences>(prefs);
+
+  // Database (must be early)
   final database = AppDatabase();
   getIt.registerSingleton<AppDatabase>(database);
 
   // Core services - register ApiClient first
   getIt.registerLazySingleton<ApiClient>(() => ApiClient());
+
+  // URL Resolver for auto-detecting domain changes
+  getIt.registerLazySingleton<UrlResolverService>(
+    () => UrlResolverService(getIt<SharedPreferences>()),
+  );
 
   // Auth service (must be early as others may depend on it)
   getIt.registerLazySingleton<AuthService>(() => AuthService());
@@ -70,6 +82,11 @@ Future<void> configureDependencies() async {
   // Register content providers
   _registerProviders();
 
+  // Search service (depends on registry)
+  getIt.registerLazySingleton<SearchService>(
+    () => SearchService(getIt<ProviderRegistry>()),
+  );
+
   // Episode update service (depends on registry)
   getIt.registerLazySingleton<EpisodeUpdateService>(
     () => EpisodeUpdateService(database, getIt<ProviderRegistry>()),
@@ -86,9 +103,9 @@ void _registerProviders() {
   registry.register(UaflixProvider(apiClient));
   registry.register(UaserialsProvider(apiClient));
 
-  // Multi-language providers
+  // Multi-language providers (disabled - not Ukrainian)
   // registry.register(HdrezkaProvider(apiClient));
-  registry.register(FilmixProvider(apiClient));
+  // registry.register(FilmixProvider(apiClient)); // Russian content
 
   // Anime providers
   registry.register(YummyAnimeProvider(apiClient));

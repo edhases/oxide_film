@@ -4,9 +4,10 @@ import '../../core/network/api_client.dart';
 import '../../core/utils/logger.dart';
 import '../../domain/entities/entities.dart';
 import '../../domain/repositories/content_provider.dart';
+import '../mixins/resolved_url_mixin.dart';
 import '../parsers/playerjs_parser.dart';
 
-class UaserialsProvider implements ContentProvider {
+class UaserialsProvider with ResolvedUrlMixin implements ContentProvider {
   static const String _tag = 'UaSerials';
 
   final ApiClient _client;
@@ -21,10 +22,11 @@ class UaserialsProvider implements ContentProvider {
   String get name => 'UaSerials';
 
   @override
-  String get baseUrl => 'https://uaserials.pro';
+  String get baseUrl => 'https://uaserials.my';
 
   @override
-  String? get iconUrl => '$baseUrl/templates/uaserials2020/images/favicon.png';
+  String? get iconUrl =>
+      '$effectiveBaseUrl/templates/uaserials2020/images/favicon.png';
 
   @override
   bool get isEnabled => _isEnabled;
@@ -49,7 +51,7 @@ class UaserialsProvider implements ContentProvider {
     try {
       // DLE standard search
       final url =
-          '$baseUrl/index.php?do=search&subaction=search&story=${Uri.encodeComponent(query)}&search_start=$page';
+          '$effectiveBaseUrl/index.php?do=search&subaction=search&story=${Uri.encodeComponent(query)}&search_start=$page';
       Logger.d('Search URL: $url', tag: _tag);
       final html = await _client.get(url);
       Logger.d('Search response length: ${html.length}', tag: _tag);
@@ -66,7 +68,9 @@ class UaserialsProvider implements ContentProvider {
   Future<List<MediaItem>> getPopular({ContentType? type, int page = 1}) async {
     Logger.d('getPopular: page=$page', tag: _tag);
     try {
-      final url = page == 1 ? baseUrl : '$baseUrl/page/$page/';
+      final url = page == 1
+          ? effectiveBaseUrl
+          : '$effectiveBaseUrl/page/$page/';
       Logger.d('Fetching: $url', tag: _tag);
       final html = await _client.get(url);
       Logger.d('Response length: ${html.length}', tag: _tag);
@@ -96,7 +100,7 @@ class UaserialsProvider implements ContentProvider {
     int page = 1,
   }) async {
     try {
-      final url = '$baseUrl/$category/page/$page/';
+      final url = '$effectiveBaseUrl/$category/page/$page/';
       final html = await _client.get(url);
       return _parseList(html);
     } catch (e, stack) {
@@ -113,7 +117,7 @@ class UaserialsProvider implements ContentProvider {
   @override
   Future<MediaDetails> getDetails(String id) async {
     try {
-      final url = '$baseUrl/$id.html';
+      final url = '$effectiveBaseUrl/$id.html';
       Logger.d('Get details: $url', tag: _tag);
       final html = await _client.get(url);
       return _parseDetails(html, id);
@@ -131,7 +135,7 @@ class UaserialsProvider implements ContentProvider {
   }) async {
     Logger.d('getStreams: id=$id, season=$season, episode=$episode', tag: _tag);
     try {
-      final url = '$baseUrl/$id.html';
+      final url = '$effectiveBaseUrl/$id.html';
       Logger.d('Fetching page: $url', tag: _tag);
       final html = await _client.get(url);
       Logger.d('HTML length: ${html.length}', tag: _tag);
@@ -157,7 +161,7 @@ class UaserialsProvider implements ContentProvider {
           // If relative, make absolute
           final absSrc = src.startsWith('//')
               ? 'https:$src'
-              : (src.startsWith('/') ? '$baseUrl$src' : src);
+              : (src.startsWith('/') ? '$effectiveBaseUrl$src' : src);
 
           Logger.d('Processing iframe: $absSrc', tag: _tag);
 
@@ -165,7 +169,7 @@ class UaserialsProvider implements ContentProvider {
           try {
             final frameHtml = await _client.get(
               absSrc,
-              headers: {'Referer': baseUrl},
+              headers: {'Referer': effectiveBaseUrl},
             );
             final parsed = PlayerJsParser.parseFromHtml(frameHtml);
             if (parsed.isNotEmpty) {
@@ -197,26 +201,26 @@ class UaserialsProvider implements ContentProvider {
     final soup = BeautifulSoup(html);
     final items = <MediaItem>[];
 
-    // Try multiple selectors for cards
-    // 1. a.short-img (standard)
-    var links = soup.findAll('a', class_: 'short-img');
+    // UaSerials uses div.short-item for cards
+    final cardDivs = soup.findAll('div', class_: 'short-item');
 
-    // 2. div.short-item a (fallback)
-    if (links.isEmpty) {
-      Logger.d('No a.short-img found, checking div.short-item', tag: _tag);
-      final divs = soup.findAll('div', class_: 'short-item');
-      for (final div in divs) {
-        final link = div.find('a');
-        if (link != null) links.add(link);
+    if (cardDivs.isNotEmpty) {
+      Logger.d('Found ${cardDivs.length} short-item cards', tag: _tag);
+      for (final cardDiv in cardDivs) {
+        final item = _parseCardDiv(cardDiv);
+        if (item != null) items.add(item);
+      }
+    } else {
+      // Fallback: try a.short-img directly
+      Logger.d('No div.short-item found, checking a.short-img', tag: _tag);
+      final links = soup.findAll('a', class_: 'short-img');
+      for (final link in links) {
+        final item = _parseCard(link);
+        if (item != null) items.add(item);
       }
     }
 
-    Logger.d('Found ${links.length} potential cards', tag: _tag);
-
-    for (final link in links) {
-      final item = _parseCard(link);
-      if (item != null) items.add(item);
-    }
+    Logger.d('Parsed ${items.length} items', tag: _tag);
 
     if (items.isEmpty) {
       // Debug: print first 500 chars of HTML body to see what's wrong
@@ -226,6 +230,79 @@ class UaserialsProvider implements ContentProvider {
     }
 
     return items;
+  }
+
+  /// Parse a card from div.short-item structure
+  MediaItem? _parseCardDiv(Bs4Element cardDiv) {
+    try {
+      final link = cardDiv.find('a', class_: 'short-img');
+      if (link == null) return null;
+
+      final href = link.attributes['href'];
+      if (href == null) return null;
+
+      final id = _extractId(href);
+      if (id.isEmpty) return null;
+
+      // Get poster from img - check data-src first for lazy loading
+      final img = link.find('img');
+      final rawPosterUrl =
+          img?.attributes['data-src'] ?? img?.attributes['src'];
+      // Convert relative URL to absolute
+      final posterUrl = _absoluteUrl(rawPosterUrl);
+
+      // Get title from div.th-title
+      final titleEl = cardDiv.find('div', class_: 'th-title');
+      final title =
+          titleEl?.text.trim() ?? img?.attributes['alt']?.trim() ?? '';
+
+      if (title.isEmpty) return null;
+
+      // Get original title from div.th-title-oname
+      final oTitleEl = cardDiv.find('div', class_: 'th-title-oname');
+      final originalTitle = oTitleEl?.text.trim();
+
+      // UaSerials doesn't show year in list view - only on details page
+      // We can't get year from list, so it remains null
+      int? year;
+
+      // Try to extract rating
+      double? rating;
+      final ratingEl =
+          cardDiv.find('span', class_: 'rating') ??
+          cardDiv.find('div', class_: 'rating');
+      if (ratingEl != null) {
+        rating = double.tryParse(
+          ratingEl.text
+              .trim()
+              .replaceAll(',', '.')
+              .replaceAll(RegExp(r'[^\d.]'), ''),
+        );
+      }
+
+      // Determine type from URL
+      ContentType type = ContentType.series; // Default
+      if (href.contains('/filmss/') || href.contains('/fcartoon/')) {
+        type = ContentType.movie;
+      }
+      if (href.contains('/cartoons/')) type = ContentType.cartoon;
+      if (href.contains('/anime/')) type = ContentType.anime;
+
+      return MediaItem(
+        id: id,
+        title: title,
+        originalTitle: originalTitle,
+        posterUrl: posterUrl,
+        year: year,
+        rating: rating,
+        type: type,
+        providerId: 'uaserials',
+      );
+    } catch (e, stack) {
+      Logger.w('Failed to parse card div', tag: _tag);
+      Logger.d('Error: $e\n$stack', tag: _tag);
+      return null;
+    }
   }
 
   MediaItem? _parseCard(Bs4Element link) {
@@ -283,13 +360,20 @@ class UaserialsProvider implements ContentProvider {
         }
         // Try to find year in text like (2024) or 2024
         if (year == null) {
-          final yearMatch = RegExp(r'(\d{4})').firstMatch(parent.text);
+          final yearMatch = RegExp(
+            r'\b(19\d{2}|20\d{2})\b',
+          ).firstMatch(parent.text);
           if (yearMatch != null) {
-            final parsed = int.tryParse(yearMatch.group(1) ?? '');
-            if (parsed != null && parsed >= 1900 && parsed <= 2030) {
-              year = parsed;
-            }
+            year = int.tryParse(yearMatch.group(1) ?? '');
           }
+        }
+      }
+
+      // Fallback: extract year from URL (common in UaSerials)
+      if (year == null) {
+        final urlYearMatch = RegExp(r'-(\d{4})\.html').firstMatch(href);
+        if (urlYearMatch != null) {
+          year = int.tryParse(urlYearMatch.group(1) ?? '');
         }
       }
 
@@ -379,7 +463,10 @@ class UaserialsProvider implements ContentProvider {
     final title = titleEl?.text.trim() ?? '';
 
     String? description;
+    // UaSerials uses 'ftext full-text' or 'full-text' class for description
     final descEl =
+        soup.find('div', class_: 'full-text') ??
+        soup.find('div', class_: 'ftext') ??
         soup.find('div', class_: 'full-desc') ??
         soup.find('div', class_: 'fdesc');
     description = descEl?.text.trim();
@@ -460,7 +547,7 @@ class UaserialsProvider implements ContentProvider {
     if (url == null) return null;
     if (url.startsWith('http')) return url;
     if (url.startsWith('//')) return 'https:$url';
-    if (url.startsWith('/')) return '$baseUrl$url';
-    return '$baseUrl/$url';
+    if (url.startsWith('/')) return '$effectiveBaseUrl$url';
+    return '$effectiveBaseUrl/$url';
   }
 }

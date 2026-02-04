@@ -29,7 +29,7 @@ dependencies:
   connectivity_plus: ^6.1.2
 
   # HTML Parsing & Scraping
-  html: ^0.15.6
+  # Using beautiful_soup_dart for Python-like DOM parsing API
   beautiful_soup_dart: ^0.3.0
 
   # Video Player (cross-platform)
@@ -65,9 +65,6 @@ dependencies:
 
   # WebView for Cloudflare bypass (headless cookie extraction)
   flutter_inappwebview: ^6.1.5
-
-  # Better HTML parsing
-  universal_html: ^2.2.4
 
   # TMDB API
   tmdb_api: ^2.1.7

@@ -15,22 +15,27 @@ class DownloadsDao {
   }
 
   /// Get downloads by status
-  Future<List<Download>> getByStatus(String status) async {
+  Future<List<Download>> getByStatus(DownloadStatus status) async {
     final query = _db.select(_db.downloads)
-      ..where((t) => t.status.equals(status))
+      ..where((t) => t.status.equals(status.value))
       ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]);
     return query.get();
   }
 
   /// Get completed downloads for offline viewing
   Future<List<Download>> getCompleted() async {
-    return getByStatus('completed');
+    return getByStatus(DownloadStatus.completed);
   }
 
   /// Get pending/downloading items
   Future<List<Download>> getActive() async {
+    final activeStatuses = [
+      DownloadStatus.pending.value,
+      DownloadStatus.downloading.value,
+      DownloadStatus.paused.value,
+    ];
     final query = _db.select(_db.downloads)
-      ..where((t) => t.status.isIn(['pending', 'downloading', 'paused']))
+      ..where((t) => t.status.isIn(activeStatuses))
       ..orderBy([(t) => OrderingTerm.asc(t.createdAt)]);
     return query.get();
   }
@@ -66,7 +71,7 @@ class DownloadsDao {
       season: season,
       episode: episode,
     );
-    return download?.status == 'completed';
+    return download?.status == DownloadStatus.completed;
   }
 
   /// Add new download
@@ -108,11 +113,11 @@ class DownloadsDao {
   }
 
   /// Update download status
-  Future<int> updateStatus(int id, String status) async {
+  Future<int> updateStatus(int id, DownloadStatus status) async {
     return (_db.update(_db.downloads)..where((t) => t.id.equals(id))).write(
       DownloadsCompanion(
         status: Value(status),
-        completedAt: status == 'completed'
+        completedAt: status == DownloadStatus.completed
             ? Value(DateTime.now())
             : const Value.absent(),
       ),
@@ -180,8 +185,13 @@ class DownloadsDao {
 
   /// Watch active downloads
   Stream<List<Download>> watchActive() {
+    final activeStatuses = [
+      DownloadStatus.pending.value,
+      DownloadStatus.downloading.value,
+      DownloadStatus.paused.value,
+    ];
     final query = _db.select(_db.downloads)
-      ..where((t) => t.status.isIn(['pending', 'downloading', 'paused']))
+      ..where((t) => t.status.isIn(activeStatuses))
       ..orderBy([(t) => OrderingTerm.asc(t.createdAt)]);
     return query.watch();
   }

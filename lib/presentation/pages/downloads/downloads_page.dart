@@ -552,16 +552,16 @@ class _ActiveDownloadCard extends StatelessWidget {
 
   String _getStatusText() {
     switch (download.status) {
-      case 'pending':
+      case DownloadStatus.pending:
         return 'Очікування...';
-      case 'downloading':
+      case DownloadStatus.downloading:
         return 'Завантаження...';
-      case 'paused':
+      case DownloadStatus.paused:
         return 'Призупинено';
-      case 'failed':
+      case DownloadStatus.failed:
         return 'Помилка завантаження';
-      default:
-        return download.status;
+      case DownloadStatus.completed:
+        return 'Завершено';
     }
   }
 }

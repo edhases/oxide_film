@@ -5,12 +5,13 @@ import '../../core/network/api_client.dart';
 import '../../core/utils/logger.dart';
 import '../../domain/entities/entities.dart';
 import '../../domain/repositories/content_provider.dart';
+import '../mixins/resolved_url_mixin.dart';
 import '../parsers/playerjs_parser.dart';
 
 /// UAFlix content provider
 ///
 /// Ukrainian streaming site with Netflix content dubbed in Ukrainian
-class UaflixProvider implements ContentProvider {
+class UaflixProvider with ResolvedUrlMixin implements ContentProvider {
   static const String _tag = 'UAFlix';
 
   final ApiClient _client;
@@ -25,10 +26,10 @@ class UaflixProvider implements ContentProvider {
   String get name => 'UAFlix';
 
   @override
-  String? get iconUrl => '$baseUrl/favicon.ico';
+  String? get iconUrl => '$effectiveBaseUrl/favicon.ico';
 
   @override
-  String get baseUrl => 'https://uaflix.net';
+  String get baseUrl => 'https://uafix.net';
 
   @override
   bool get isEnabled => _isEnabled;
@@ -51,7 +52,7 @@ class UaflixProvider implements ContentProvider {
   }) async {
     try {
       final url =
-          '$baseUrl/index.php?do=search&subaction=search'
+          '$effectiveBaseUrl/index.php?do=search&subaction=search'
           '&story=${Uri.encodeComponent(query)}'
           '&search_start=$page';
 
@@ -85,7 +86,7 @@ class UaflixProvider implements ContentProvider {
           category = 'film';
       }
 
-      final url = '$baseUrl/$category/page/$page/';
+      final url = '$effectiveBaseUrl/$category/page/$page/';
       Logger.d('Get popular: $url', tag: _tag);
       final html = await _client.get(url);
       return compute(_parseSearchResultsStatic, html);
@@ -110,7 +111,7 @@ class UaflixProvider implements ContentProvider {
           category = 'films/new_netflix_ua';
       }
 
-      final url = '$baseUrl/$category/page/$page/';
+      final url = '$effectiveBaseUrl/$category/page/$page/';
       Logger.d('Get new: $url', tag: _tag);
       final html = await _client.get(url);
       return compute(_parseSearchResultsStatic, html);
@@ -147,7 +148,7 @@ class UaflixProvider implements ContentProvider {
     int page = 1,
   }) async {
     try {
-      final url = '$baseUrl/$category/page/$page/';
+      final url = '$effectiveBaseUrl/$category/page/$page/';
       Logger.d('Get by category: $url', tag: _tag);
       final html = await _client.get(url);
       return compute(_parseSearchResultsStatic, html);
@@ -166,7 +167,7 @@ class UaflixProvider implements ContentProvider {
   Future<MediaDetails> getDetails(String mediaId) async {
     try {
       // UAFlix URLs end with / not .html
-      final url = '$baseUrl/$mediaId/';
+      final url = '$effectiveBaseUrl/$mediaId/';
       Logger.d('Get details: $url', tag: _tag);
       final html = await _client.get(url);
       return compute(_parseDetailsStatic, ParseDetailsArgs(html, mediaId));
@@ -185,7 +186,7 @@ class UaflixProvider implements ContentProvider {
     Logger.d('getStreams: id=$mediaId, s=$season, e=$episode', tag: _tag);
     try {
       // UAFlix URLs end with / not .html
-      final url = '$baseUrl/$mediaId/';
+      final url = '$effectiveBaseUrl/$mediaId/';
       Logger.d('Fetching: $url', tag: _tag);
       final html = await _client.get(url);
       Logger.d('HTML length: ${html.length}', tag: _tag);
@@ -260,7 +261,7 @@ class UaflixProvider implements ContentProvider {
       // UAFlix iframes require Referer from main site
       final html = await _client.get(
         fullUrl,
-        headers: {'Referer': '$baseUrl/'},
+        headers: {'Referer': '$effectiveBaseUrl/'},
       );
       // Use compute for iframe parsing too
       final parsed = await PlayerJsParser.parseFromHtmlCompute(html);
@@ -274,19 +275,92 @@ class UaflixProvider implements ContentProvider {
   // Static parsing methods for Compute (Isolate)
 
   static List<MediaItem> _parseSearchResultsStatic(String html) {
-    // Moved logic from _parseSearchResults
     final soup = BeautifulSoup(html);
     final items = <MediaItem>[];
 
-    // UAFlix uses div.video-item for cards
-    final cards = soup.findAll('div', class_: 'video-item');
+    // UAFlix search results use a.sres-wrap (different from list pages)
+    final searchCards = soup.findAll('a', class_: 'sres-wrap');
 
-    for (final card in cards) {
-      final item = _parseCardStatic(card);
-      if (item != null) items.add(item);
+    if (searchCards.isNotEmpty) {
+      // Parse search-specific format
+      for (final card in searchCards) {
+        final item = _parseSearchCardStatic(card);
+        if (item != null) items.add(item);
+      }
+    } else {
+      // Fallback to list page format (div.video-item)
+      final listCards = soup.findAll('div', class_: 'video-item');
+      for (final card in listCards) {
+        final item = _parseCardStatic(card);
+        if (item != null) items.add(item);
+      }
     }
 
     return items;
+  }
+
+  /// Parse search result card (a.sres-wrap)
+  static MediaItem? _parseSearchCardStatic(dynamic card) {
+    try {
+      final href = card.attributes['href'] ?? '';
+      if (href.isEmpty) return null;
+
+      final mediaId = _extractIdFromUrlStatic(href);
+      if (mediaId.isEmpty) return null;
+
+      // Image is in div.sres-img > img
+      final imgDiv = card.find('div', class_: 'sres-img');
+      final img = imgDiv?.find('img');
+      final posterUrl = img?.attributes['src'];
+      final title = img?.attributes['alt']?.trim() ?? '';
+
+      if (title.isEmpty) return null;
+
+      // Extract year from title (format: "Title (Year)" or "Title / English Title")
+      int? year;
+      final yearMatch = RegExp(r'\((\d{4})\)').firstMatch(title);
+      if (yearMatch != null) {
+        year = int.tryParse(yearMatch.group(1) ?? '');
+      }
+
+      // Fallback: try to find year in URL
+      if (year == null) {
+        final urlYearMatch = RegExp(r'-(\d{4})/?$').firstMatch(href);
+        if (urlYearMatch != null) {
+          year = int.tryParse(urlYearMatch.group(1) ?? '');
+        }
+      }
+
+      // Clean title - remove English part after /
+      var cleanTitle = title;
+      if (cleanTitle.contains(' / ')) {
+        cleanTitle = cleanTitle.split(' / ').first.trim();
+      }
+
+      // Determine content type from URL
+      ContentType type = ContentType.movie;
+      if (href.contains('/serials/')) {
+        type = ContentType.series;
+      } else if (href.contains('/anime/')) {
+        type = ContentType.anime;
+      } else if (href.contains('/cartoons/') || href.contains('/mult')) {
+        type = ContentType.cartoon;
+      }
+
+      return MediaItem(
+        id: mediaId,
+        title: cleanTitle,
+        originalTitle: title.contains(' / ')
+            ? title.split(' / ').last.trim()
+            : null,
+        posterUrl: _absoluteUrlStatic(posterUrl),
+        year: year,
+        type: type,
+        providerId: 'uaflix',
+      );
+    } catch (e) {
+      return null;
+    }
   }
 
   static MediaItem? _parseCardStatic(dynamic card) {
@@ -318,6 +392,24 @@ class UaflixProvider implements ContentProvider {
       final yearMatch = RegExp(r'\((\d{4})\)').firstMatch(card.text);
       if (yearMatch != null) {
         year = int.tryParse(yearMatch.group(1) ?? '');
+      }
+
+      // Fallback: search in card text matching 19xx or 20xx
+      if (year == null) {
+        final yearFallback = RegExp(
+          r'\b(19\d{2}|20\d{2})\b',
+        ).firstMatch(card.text);
+        if (yearFallback != null) {
+          year = int.tryParse(yearFallback.group(1) ?? '');
+        }
+      }
+
+      // Fallback: extract year from URL
+      if (year == null) {
+        final urlYearMatch = RegExp(r'-(\d{4})/?$').firstMatch(href);
+        if (urlYearMatch != null) {
+          year = int.tryParse(urlYearMatch.group(1) ?? '');
+        }
       }
 
       double? rating;
@@ -430,11 +522,13 @@ class UaflixProvider implements ContentProvider {
     final titleEl = soup.find('h1');
     final title = titleEl?.text.trim() ?? '';
 
-    // Poster - improved detection
+    // Poster - improved detection with lazy loading support
     String? posterUrl;
 
-    // 1. Try specific classes first
+    // 1. Try specific classes first (fposter2, fposter3 are common on UAFlix)
     final posterEl =
+        soup.find('div', class_: 'fposter2') ??
+        soup.find('div', class_: 'fposter3') ??
         soup.find('div', class_: 'fposter') ??
         soup.find('div', class_: 'full-poster') ??
         soup.find('div', class_: 'poster') ??
@@ -442,14 +536,22 @@ class UaflixProvider implements ContentProvider {
 
     if (posterEl != null) {
       final img = posterEl.find('img');
-      final src = img?.attributes['src'] ?? img?.attributes['data-src'];
-      // Validate poster URL - skip if it's a logo/placeholder
-      if (src != null &&
-          !src.toLowerCase().contains('logo') &&
-          !src.toLowerCase().contains('netflix') &&
-          !src.toLowerCase().contains('placeholder') &&
-          !src.toLowerCase().contains('default')) {
-        posterUrl = src;
+      // IMPORTANT: Check data-src FIRST for lazy-loaded images
+      final dataSrc = img?.attributes['data-src'];
+      final src = img?.attributes['src'];
+
+      // Prefer data-src (real image) over src (which may be lazy placeholder)
+      String? candidate = dataSrc ?? src;
+
+      // Validate poster URL - skip if it's a logo/placeholder/lazy
+      if (candidate != null &&
+          !candidate.toLowerCase().contains('logo') &&
+          !candidate.toLowerCase().contains('netflix') &&
+          !candidate.toLowerCase().contains('placeholder') &&
+          !candidate.toLowerCase().contains('default') &&
+          !candidate.toLowerCase().contains('lazy-poster') &&
+          !candidate.toLowerCase().contains('lazy.')) {
+        posterUrl = candidate;
       }
     }
 
@@ -457,28 +559,33 @@ class UaflixProvider implements ContentProvider {
     if (posterUrl == null) {
       final images = soup.findAll('img');
       for (final img in images) {
-        final src = img.attributes['src'] ?? img.attributes['data-src'];
+        // IMPORTANT: Check data-src FIRST for lazy-loaded images
+        final dataSrc = img.attributes['data-src'];
+        final src = img.attributes['src'];
+        final candidate = dataSrc ?? src;
         final alt = (img.attributes['alt'] ?? '').toLowerCase();
 
-        if (src == null) continue;
+        if (candidate == null) continue;
 
-        // Skip logos and placeholders
-        if (src.toLowerCase().contains('logo') ||
-            src.toLowerCase().contains('netflix') ||
-            src.toLowerCase().contains('placeholder') ||
-            src.toLowerCase().contains('default') ||
-            src.toLowerCase().contains('icon') ||
+        // Skip logos, placeholders, and lazy placeholders
+        if (candidate.toLowerCase().contains('logo') ||
+            candidate.toLowerCase().contains('netflix') ||
+            candidate.toLowerCase().contains('placeholder') ||
+            candidate.toLowerCase().contains('default') ||
+            candidate.toLowerCase().contains('icon') ||
+            candidate.toLowerCase().contains('lazy-poster') ||
+            candidate.toLowerCase().contains('lazy.') ||
             alt.contains('logo') ||
             alt.contains('netflix')) {
           continue;
         }
 
         // Prefer posters from known paths
-        if (src.contains('/uploads/posts/') ||
-            src.contains('/posters/') ||
-            src.contains('/covers/') ||
-            src.contains('/thumbs/')) {
-          posterUrl = src;
+        if (candidate.contains('/uploads/posts/') ||
+            candidate.contains('/posters/') ||
+            candidate.contains('/covers/') ||
+            candidate.contains('/thumbs/')) {
+          posterUrl = candidate;
           break;
         }
       }
@@ -486,14 +593,17 @@ class UaflixProvider implements ContentProvider {
       // Last resort: first large-ish image
       if (posterUrl == null) {
         for (final img in images) {
-          final src = img.attributes['src'] ?? img.attributes['data-src'];
-          if (src != null &&
-              !src.toLowerCase().contains('logo') &&
-              !src.toLowerCase().contains('netflix') &&
-              !src.toLowerCase().contains('icon') &&
-              !src.endsWith('.ico') &&
-              !src.endsWith('.svg')) {
-            posterUrl = src;
+          final dataSrc = img.attributes['data-src'];
+          final src = img.attributes['src'];
+          final candidate = dataSrc ?? src;
+          if (candidate != null &&
+              !candidate.toLowerCase().contains('logo') &&
+              !candidate.toLowerCase().contains('netflix') &&
+              !candidate.toLowerCase().contains('icon') &&
+              !candidate.toLowerCase().contains('lazy') &&
+              !candidate.endsWith('.ico') &&
+              !candidate.endsWith('.svg')) {
+            posterUrl = candidate;
             break;
           }
         }

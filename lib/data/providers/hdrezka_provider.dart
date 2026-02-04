@@ -49,6 +49,9 @@ class HdrezkaProvider implements ContentProvider {
   String get baseUrl => _mirror;
 
   @override
+  String get effectiveBaseUrl => _mirror;
+
+  @override
   bool get isEnabled => _isEnabled;
 
   set isEnabled(bool value) => _isEnabled = value;
@@ -597,6 +600,16 @@ class HdrezkaProvider implements ContentProvider {
         final yearMatch = RegExp(r'(\d{4})').firstMatch(infoText);
         if (yearMatch != null) {
           year = int.tryParse(yearMatch.group(1) ?? '');
+        }
+
+        // Fallback: search in card text
+        if (year == null) {
+          final yearMatch = RegExp(
+            r'\b(19\d{2}|20\d{2})\b',
+          ).firstMatch(card.text);
+          if (yearMatch != null) {
+            year = int.tryParse(yearMatch.group(1) ?? '');
+          }
         }
 
         // Try to extract genres

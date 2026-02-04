@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:dio/dio.dart';
 import 'package:dio_smart_retry/dio_smart_retry.dart';
 import '../config/app_config.dart';
@@ -16,7 +18,7 @@ class ApiClient {
           'User-Agent': AppConfig.userAgent,
           'Accept':
               'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7',
+          'Accept-Language': _buildAcceptLanguage(),
         },
       ),
     );
@@ -33,6 +35,25 @@ class ApiClient {
         ],
       ),
     );
+  }
+
+  /// Build Accept-Language header based on system locale with fallback to Ukrainian
+  static String _buildAcceptLanguage() {
+    try {
+      final locale = Platform.localeName; // e.g., "uk_UA", "en_US"
+      final parts = locale.split('_');
+      final lang = parts.isNotEmpty ? parts[0] : 'uk';
+      final country = parts.length > 1 ? parts[1] : '';
+
+      // Build proper Accept-Language header with quality values
+      if (country.isNotEmpty) {
+        return '$lang-$country,$lang;q=0.9,en-US;q=0.8,en;q=0.7';
+      }
+      return '$lang;q=0.9,en-US;q=0.8,en;q=0.7';
+    } catch (_) {
+      // Fallback for platforms where Platform.localeName is not available
+      return 'uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7';
+    }
   }
 
   /// GET request that returns response body as String
@@ -92,22 +113,95 @@ class ApiClient {
   }
 
   AppException _handleDioError(DioException e) {
+    // Preserve original error details for debugging
+    final originalError = e.error;
+    final originalMessage = e.message ?? 'Unknown error';
+
     switch (e.type) {
       case DioExceptionType.connectionTimeout:
+        return NetworkException(
+          message:
+              'Connection timeout after ${AppConfig.connectTimeout.inSeconds}s',
+          code: 'CONNECTION_TIMEOUT',
+        );
       case DioExceptionType.sendTimeout:
+        return const NetworkException(
+          message: 'Request send timeout',
+          code: 'SEND_TIMEOUT',
+        );
       case DioExceptionType.receiveTimeout:
-        return const NetworkException(message: 'Connection timeout');
+        return NetworkException(
+          message:
+              'Response timeout after ${AppConfig.receiveTimeout.inSeconds}s',
+          code: 'RECEIVE_TIMEOUT',
+        );
       case DioExceptionType.connectionError:
-        return const NetworkException(message: 'No internet connection');
+        // Preserve the actual connection error type (DNS, SSL, etc.)
+        final errorType = _classifyConnectionError(originalError);
+        return NetworkException(
+          message: 'Connection failed: $errorType',
+          code: 'CONNECTION_ERROR',
+        );
+      case DioExceptionType.badCertificate:
+        return const NetworkException(
+          message: 'SSL certificate validation failed',
+          code: 'SSL_ERROR',
+        );
       case DioExceptionType.badResponse:
         final statusCode = e.response?.statusCode ?? 0;
+        final statusMessage = e.response?.statusMessage ?? 'Unknown';
         return ServerException(
-          message: 'Server error: ${e.response?.statusMessage}',
+          message: 'Server error $statusCode: $statusMessage',
           statusCode: statusCode,
+          code: 'HTTP_$statusCode',
         );
-      default:
-        return NetworkException(message: e.message ?? 'Unknown network error');
+      case DioExceptionType.cancel:
+        return const NetworkException(
+          message: 'Request was cancelled',
+          code: 'CANCELLED',
+        );
+      case DioExceptionType.unknown:
+        return NetworkException(
+          message: 'Network error: $originalMessage',
+          code: 'UNKNOWN',
+        );
     }
+  }
+
+  /// Classify connection errors for better debugging
+  String _classifyConnectionError(Object? error) {
+    if (error == null) return 'Unknown connection error';
+
+    final errorStr = error.toString().toLowerCase();
+
+    if (errorStr.contains('socketexception')) {
+      if (errorStr.contains('connection refused')) {
+        return 'Connection refused - server may be down';
+      }
+      if (errorStr.contains('network is unreachable')) {
+        return 'Network unreachable - no internet connection';
+      }
+      if (errorStr.contains('no route to host')) {
+        return 'No route to host';
+      }
+      return 'Socket error';
+    }
+
+    if (errorStr.contains('handshakeexception') || errorStr.contains('ssl')) {
+      return 'SSL/TLS handshake failed';
+    }
+
+    if (errorStr.contains('dns') ||
+        errorStr.contains('getaddrinfo') ||
+        errorStr.contains('nodename nor servname provided')) {
+      return 'DNS resolution failed';
+    }
+
+    if (errorStr.contains('timeout')) {
+      return 'Connection timed out';
+    }
+
+    return error.runtimeType.toString();
   }
 
   /// Get the underlying Dio instance for advanced usage
