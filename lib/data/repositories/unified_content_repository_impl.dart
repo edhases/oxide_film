@@ -1,3 +1,7 @@
+import '../../data/database/app_database.dart' hide WatchHistory, Favorites;
+import '../../data/database/dao/favorites_dao.dart';
+import '../../data/database/dao/history_dao.dart';
+import '../../data/database/dao/media_items_dao.dart';
 import '../../core/utils/logger.dart';
 import '../../domain/entities/entities.dart';
 import '../../domain/repositories/content_provider.dart';
@@ -7,8 +11,16 @@ class UnifiedContentRepositoryImpl implements UnifiedContentRepository {
   static const String _tag = 'UnifiedContentRepository';
 
   final List<ContentProvider> _providers;
+  final HistoryDao _historyDao;
+  final FavoritesDao _favoritesDao;
+  final MediaItemsDao _mediaItemsDao;
 
-  UnifiedContentRepositoryImpl(this._providers);
+  UnifiedContentRepositoryImpl(
+    this._providers,
+    this._historyDao,
+    this._favoritesDao,
+    this._mediaItemsDao,
+  );
 
   @override
   List<String> get providerIds => _providers.map((p) => p.id).toList();
@@ -42,10 +54,6 @@ class UnifiedContentRepositoryImpl implements UnifiedContentRepository {
     final futures = _providers.where((p) => p.isEnabled).map((provider) async {
       try {
         final items = await provider.search(query, type: type, page: page);
-        // Ensure items have provider prefix in ID if not already?
-        // MediaItem usually has providerId field.
-        // But UI expects unique IDs.
-        // Let's ensure the returned items have correct IDs for global context.
         return items.map((item) => _ensureGlobalId(item, provider.id)).toList();
       } catch (e) {
         Logger.w('Search failed for ${provider.name}', tag: _tag, error: e);
@@ -57,8 +65,6 @@ class UnifiedContentRepositoryImpl implements UnifiedContentRepository {
     for (final list in resultsList) {
       results.addAll(list);
     }
-
-    // Deduplicate logic could go here if providers return same content (unlikely for now)
 
     return results;
   }
@@ -73,8 +79,12 @@ class UnifiedContentRepositoryImpl implements UnifiedContentRepository {
 
     try {
       final details = await provider.getDetails(itemId);
-      // Ensure global ID
-      return details.copyWith(item: _ensureGlobalId(details.item, provider.id));
+      final globalItem = _ensureGlobalId(details.item, provider.id);
+
+      // Cache metadata
+      await _mediaItemsDao.upsert(globalItem);
+
+      return details.copyWith(item: globalItem);
     } catch (e, stack) {
       Logger.e(
         'Get details failed for $id',
@@ -113,6 +123,169 @@ class UnifiedContentRepositoryImpl implements UnifiedContentRepository {
       );
       rethrow;
     }
+  }
+
+  @override
+  Future<List<MediaItem>> getHistory({int? limit}) async {
+    final historyData = await _historyDao.getAll(limit: limit);
+    final results = <MediaItem>[];
+
+    for (final entry in historyData) {
+      // Try to get from metadata cache first
+      final cached = await _mediaItemsDao.get(entry.mediaId, entry.providerId);
+      if (cached != null) {
+        results.add(cached);
+      } else {
+        // Fallback to basic info from history record
+        results.add(
+          MediaItem(
+            id: entry.mediaId,
+            providerId: entry.providerId,
+            title: entry.title,
+            posterUrl: entry.posterUrl,
+            year: entry.year,
+            rating: entry.rating,
+            ratingSource: entry.ratingSource,
+            type: _parseType(entry.mediaType),
+          ),
+        );
+      }
+    }
+    return results;
+  }
+
+  @override
+  Future<List<MediaItem>> getFavorites() async {
+    final favoriteData = await _favoritesDao.getAll();
+    final results = <MediaItem>[];
+
+    for (final entry in favoriteData) {
+      final cached = await _mediaItemsDao.get(entry.mediaId, entry.providerId);
+      if (cached != null) {
+        results.add(cached);
+      } else {
+        results.add(
+          MediaItem(
+            id: entry.mediaId,
+            providerId: entry.providerId,
+            title: entry.title,
+            posterUrl: entry.posterUrl,
+            year: entry.year,
+            rating: entry.rating,
+            ratingSource: entry.ratingSource,
+            type: _parseType(entry.mediaType),
+          ),
+        );
+      }
+    }
+    return results;
+  }
+
+  @override
+  Future<bool> toggleFavorite(String id) async {
+    final (provider, itemId) = _resolveProviderAndId(id);
+    if (provider == null) return false;
+
+    final item = await _mediaItemsDao.get(itemId, provider.id);
+    if (item == null) {
+      // If not cached, we need to fetch details or at least have minimal info
+      // Usually toggle happens on details page where it IS cached.
+      throw Exception('Item metadata not found for toggle: $id');
+    }
+
+    return await _favoritesDao.toggle(
+      mediaId: itemId,
+      providerId: provider.id,
+      title: item.title,
+      posterUrl: item.posterUrl,
+      year: item.year,
+      mediaType: item.type.name,
+    );
+  }
+
+  @override
+  Future<bool> isFavorite(String id) async {
+    final (provider, itemId) = _resolveProviderAndId(id);
+    if (provider == null) return false;
+    return await _favoritesDao.isFavorite(itemId, provider.id);
+  }
+
+  @override
+  Future<(Duration, Duration)?> getWatchProgress(
+    String id, {
+    int? season,
+    int? episode,
+  }) async {
+    final (provider, itemId) = _resolveProviderAndId(id);
+    if (provider == null) return null;
+
+    final entry = await _historyDao.getForMedia(
+      itemId,
+      provider.id,
+      season: season,
+      episode: episode,
+    );
+
+    if (entry == null) return null;
+    return (
+      Duration(milliseconds: entry.positionMs),
+      Duration(milliseconds: entry.durationMs),
+    );
+  }
+
+  @override
+  Future<void> updateWatchProgress(
+    String id,
+    Duration position,
+    Duration duration, {
+    int? season,
+    int? episode,
+    String? episodeTitle,
+    String? lastStreamUrl,
+    String? voiceover,
+  }) async {
+    final (provider, itemId) = _resolveProviderAndId(id);
+    if (provider == null) return;
+
+    final item = await _mediaItemsDao.get(itemId, provider.id);
+    if (item == null) return; // Should be cached by getDetails
+
+    await _historyDao.saveProgress(
+      mediaId: itemId,
+      providerId: provider.id,
+      title: item.title,
+      posterUrl: item.posterUrl,
+      year: item.year,
+      mediaType: item.type.name,
+      positionMs: position.inMilliseconds,
+      durationMs: duration.inMilliseconds,
+      season: season,
+      episode: episode,
+      episodeTitle: episodeTitle,
+      lastStreamUrl: lastStreamUrl,
+      voiceover: voiceover,
+      rating: item.rating,
+      ratingSource: item.ratingSource,
+    );
+  }
+
+  @override
+  Future<void> removeFromHistory(String id) async {
+    final (provider, itemId) = _resolveProviderAndId(id);
+    if (provider == null) return;
+    await _historyDao.remove(itemId, provider.id);
+  }
+
+  @override
+  Future<void> clearHistory() async {
+    await _historyDao.clearAll();
+  }
+
+  ContentType _parseType(String type) {
+    return ContentType.values.firstWhere(
+      (e) => e.name == type,
+      orElse: () => ContentType.unknown,
+    );
   }
 
   @override

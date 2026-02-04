@@ -2,7 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:oxide_film/data/parsers/uaserials_parser.dart';
 import 'package:oxide_film/data/parsers/uaflix_parser.dart';
 import 'package:oxide_film/data/parsers/hdrezka_parser.dart';
-import 'package:oxide_film/domain/entities/entities.dart';
 
 void main() {
   group('UaserialsParser', () {

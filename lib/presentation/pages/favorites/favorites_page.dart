@@ -10,6 +10,7 @@ import '../../../data/services/settings_service.dart';
 import '../../../domain/entities/entities.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/custom_titlebar.dart';
+import '../../widgets/tv/focusable_card.dart';
 
 /// Favorites page - displays saved media items
 class FavoritesPage extends StatefulWidget {
@@ -166,10 +167,13 @@ class _FavoritesPageState extends State<FavoritesPage>
       itemCount: items.length,
       itemBuilder: (context, index) {
         final item = items[index];
-        return _FavoriteCard(
-          favorite: item,
+        return FocusableCard(
           onTap: () => _openDetails(item),
-          onRemove: () => _removeFavorite(item),
+          borderRadius: 8,
+          child: _FavoriteCard(
+            favorite: item,
+            onRemove: () => _removeFavorite(item),
+          ),
         );
       },
     );
@@ -181,10 +185,16 @@ class _FavoritesPageState extends State<FavoritesPage>
       itemCount: items.length,
       itemBuilder: (context, index) {
         final item = items[index];
-        return _FavoriteListTile(
-          favorite: item,
-          onTap: () => _openDetails(item),
-          onRemove: () => _removeFavorite(item),
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: FocusableCard(
+            onTap: () => _openDetails(item),
+            borderRadius: 8,
+            child: _FavoriteListTile(
+              favorite: item,
+              onRemove: () => _removeFavorite(item),
+            ),
+          ),
         );
       },
     );
@@ -196,10 +206,13 @@ class _FavoritesPageState extends State<FavoritesPage>
       itemCount: items.length,
       itemBuilder: (context, index) {
         final item = items[index];
-        return _FavoriteCompactTile(
-          favorite: item,
+        return FocusableCard(
           onTap: () => _openDetails(item),
-          onRemove: () => _removeFavorite(item),
+          borderRadius: 4,
+          child: _FavoriteCompactTile(
+            favorite: item,
+            onRemove: () => _removeFavorite(item),
+          ),
         );
       },
     );
@@ -285,102 +298,95 @@ class _FavoritesPageState extends State<FavoritesPage>
 
 class _FavoriteCard extends StatelessWidget {
   final Favorite favorite;
-  final VoidCallback onTap;
   final VoidCallback onRemove;
 
-  const _FavoriteCard({
-    required this.favorite,
-    required this.onTap,
-    required this.onRemove,
-  });
+  const _FavoriteCard({required this.favorite, required this.onRemove});
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Card(
-        clipBehavior: Clip.antiAlias,
-        color: AppTheme.surfaceColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Poster
-            if (favorite.posterUrl != null)
-              CachedNetworkImage(
-                imageUrl: favorite.posterUrl!,
-                fit: BoxFit.cover,
-                placeholder: (_, __) => Container(
-                  color: AppTheme.surfaceColor,
-                  child: const Center(child: CircularProgressIndicator()),
-                ),
-                errorWidget: (_, __, ___) => _PosterPlaceholder(),
-              )
-            else
-              _PosterPlaceholder(),
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      color: AppTheme.surfaceColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Poster
+          if (favorite.posterUrl != null)
+            CachedNetworkImage(
+              imageUrl: favorite.posterUrl!,
+              fit: BoxFit.cover,
+              placeholder: (_, __) => Container(
+                color: AppTheme.surfaceColor,
+                child: const Center(child: CircularProgressIndicator()),
+              ),
+              errorWidget: (_, __, ___) => _PosterPlaceholder(),
+            )
+          else
+            _PosterPlaceholder(),
 
-            // Gradient overlay
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.8),
-                    ],
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      favorite.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    if (favorite.year != null)
-                      Text(
-                        '${favorite.year}',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.7),
-                          fontSize: 11,
-                        ),
-                      ),
+          // Gradient overlay
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.8),
                   ],
                 ),
               ),
-            ),
-
-            // Remove button
-            Positioned(
-              top: 4,
-              right: 4,
-              child: Material(
-                color: Colors.black54,
-                borderRadius: BorderRadius.circular(16),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: onRemove,
-                  child: const Padding(
-                    padding: EdgeInsets.all(4),
-                    child: Icon(Icons.close, size: 16, color: Colors.white),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    favorite.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
+                  if (favorite.year != null)
+                    Text(
+                      '${favorite.year}',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 11,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+
+          // Remove button
+          Positioned(
+            top: 4,
+            right: 4,
+            child: Material(
+              color: Colors.black54,
+              borderRadius: BorderRadius.circular(16),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: onRemove,
+                child: const Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Icon(Icons.close, size: 16, color: Colors.white),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -398,106 +404,92 @@ class _PosterPlaceholder extends StatelessWidget {
   }
 }
 
-/// List tile style for favorites
 class _FavoriteListTile extends StatelessWidget {
   final Favorite favorite;
-  final VoidCallback onTap;
   final VoidCallback onRemove;
 
-  const _FavoriteListTile({
-    required this.favorite,
-    required this.onTap,
-    required this.onRemove,
-  });
+  const _FavoriteListTile({required this.favorite, required this.onRemove});
 
   @override
   Widget build(BuildContext context) {
     return Card(
+      margin: EdgeInsets.zero,
       color: AppTheme.surfaceColor,
-      margin: const EdgeInsets.only(bottom: 8),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              // Poster
-              ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: SizedBox(
-                  width: 60,
-                  height: 90,
-                  child: favorite.posterUrl != null
-                      ? CachedNetworkImage(
-                          imageUrl: favorite.posterUrl!,
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) => _PosterPlaceholder(),
-                          errorWidget: (_, __, ___) => _PosterPlaceholder(),
-                        )
-                      : _PosterPlaceholder(),
-                ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            // Poster
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: SizedBox(
+                width: 60,
+                height: 90,
+                child: favorite.posterUrl != null
+                    ? CachedNetworkImage(
+                        imageUrl: favorite.posterUrl!,
+                        fit: BoxFit.cover,
+                        placeholder: (_, __) => _PosterPlaceholder(),
+                        errorWidget: (_, __, ___) => _PosterPlaceholder(),
+                      )
+                    : _PosterPlaceholder(),
               ),
-              const SizedBox(width: 12),
-              // Info
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      favorite.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                      ),
+            ),
+            const SizedBox(width: 12),
+            // Info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    favorite.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
                     ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        if (favorite.year != null) ...[
-                          Icon(
-                            Icons.calendar_today,
-                            size: 14,
-                            color: AppTheme.textMuted,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${favorite.year}',
-                            style: TextStyle(
-                              color: AppTheme.textMuted,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                        ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      if (favorite.year != null) ...[
                         Icon(
-                          Icons.category,
+                          Icons.calendar_today,
                           size: 14,
                           color: AppTheme.textMuted,
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          _getTypeName(favorite.mediaType),
+                          '${favorite.year}',
                           style: TextStyle(
                             color: AppTheme.textMuted,
                             fontSize: 13,
                           ),
                         ),
+                        const SizedBox(width: 12),
                       ],
-                    ),
-                  ],
-                ),
+                      Icon(Icons.category, size: 14, color: AppTheme.textMuted),
+                      const SizedBox(width: 4),
+                      Text(
+                        _getTypeName(favorite.mediaType),
+                        style: TextStyle(
+                          color: AppTheme.textMuted,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              // Remove button
-              IconButton(
-                icon: Icon(Icons.delete_outline, color: AppTheme.textMuted),
-                onPressed: onRemove,
-                tooltip: 'Видалити',
-              ),
-            ],
-          ),
+            ),
+            // Remove button
+            IconButton(
+              icon: Icon(Icons.delete_outline, color: AppTheme.textMuted),
+              onPressed: onRemove,
+              tooltip: 'Видалити',
+            ),
+          ],
         ),
       ),
     );
@@ -519,17 +511,11 @@ class _FavoriteListTile extends StatelessWidget {
   }
 }
 
-/// Compact list tile for favorites
 class _FavoriteCompactTile extends StatelessWidget {
   final Favorite favorite;
-  final VoidCallback onTap;
   final VoidCallback onRemove;
 
-  const _FavoriteCompactTile({
-    required this.favorite,
-    required this.onTap,
-    required this.onRemove,
-  });
+  const _FavoriteCompactTile({required this.favorite, required this.onRemove});
 
   @override
   Widget build(BuildContext context) {
@@ -567,7 +553,6 @@ class _FavoriteCompactTile extends StatelessWidget {
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
       ),
-      onTap: onTap,
     );
   }
 }

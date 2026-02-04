@@ -58,8 +58,8 @@ class UaserialsParser {
       final originalTitle = oTitleEl?.text.trim();
 
       int? year;
-      // Try to extract rating
       double? rating;
+      String? ratingSource;
       final ratingEl =
           cardDiv.find('span', class_: 'rating') ??
           cardDiv.find('div', class_: 'rating');
@@ -70,6 +70,11 @@ class UaserialsParser {
               .replaceAll(',', '.')
               .replaceAll(RegExp(r'[^\d.]'), ''),
         );
+        ratingSource =
+            ratingEl.attributes['class']?.contains('imdb') == true ||
+                ratingEl.text.toLowerCase().contains('imdb')
+            ? 'IMDb'
+            : 'Site';
       }
 
       // Determine type from URL
@@ -87,6 +92,7 @@ class UaserialsParser {
         posterUrl: posterUrl,
         year: year,
         rating: rating,
+        ratingSource: ratingSource,
         type: type,
         providerId: 'uaserials',
       );
@@ -169,6 +175,7 @@ class UaserialsParser {
 
       // Try to extract rating
       double? rating;
+      String? ratingSource;
       if (parent != null) {
         final ratingEl =
             parent.find('span', class_: 'rating') ??
@@ -182,6 +189,12 @@ class UaserialsParser {
                 .replaceAll(',', '.')
                 .replaceAll(RegExp(r'[^\d.]'), ''),
           );
+          ratingSource =
+              ratingEl.attributes['class']?.contains('imdb') == true ||
+                  ratingEl.text.toLowerCase().contains('imdb') ||
+                  ratingEl.find('span', class_: 'imdb') != null
+              ? 'IMDb'
+              : 'Site';
         }
       }
 
@@ -237,6 +250,7 @@ class UaserialsParser {
         posterUrl: _absoluteUrl(posterUrl),
         year: year,
         rating: rating,
+        ratingSource: ratingSource,
         type: type,
         genres: genres,
         country: country,
@@ -320,6 +334,7 @@ class UaserialsParser {
       }
     }
 
+    String? ratingSource;
     // Rating
     final ratingEl =
         soup.find('div', class_: 'rating') ??
@@ -328,6 +343,11 @@ class UaserialsParser {
       rating = double.tryParse(
         ratingEl.text.replaceAll(',', '.').replaceAll(RegExp(r'[^\d.]'), ''),
       );
+      ratingSource =
+          ratingEl.attributes['class']?.contains('imdb') == true ||
+              ratingEl.text.toLowerCase().contains('imdb')
+          ? 'IMDb'
+          : 'Site';
     }
 
     // Determine type from id or breadcrumbs
@@ -343,6 +363,7 @@ class UaserialsParser {
       posterUrl: _absoluteUrl(posterUrl),
       year: year,
       rating: rating,
+      ratingSource: ratingSource,
       type: type,
     );
 

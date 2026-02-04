@@ -1,4 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:oxide_film/data/database/app_database.dart';
+import 'package:oxide_film/data/database/dao/favorites_dao.dart';
+import 'package:oxide_film/data/database/dao/history_dao.dart';
+import 'package:oxide_film/data/database/dao/media_items_dao.dart';
 import 'package:oxide_film/data/repositories/unified_content_repository_impl.dart';
 import 'package:oxide_film/domain/entities/entities.dart';
 import 'package:oxide_film/domain/repositories/content_provider.dart';
@@ -113,23 +117,132 @@ class MockContentProvider implements ContentProvider {
   }
 }
 
+class MockHistoryDao implements HistoryDao {
+  @override
+  Future<List<WatchHistoryData>> getAll({int? limit}) async => [];
+  @override
+  Future<WatchHistoryData?> getForMedia(
+    String mediaId,
+    String providerId, {
+    int? season,
+    int? episode,
+  }) async => null;
+  @override
+  Future<List<WatchHistoryData>> getContinueWatching({int limit = 20}) async =>
+      [];
+  @override
+  Future<void> saveProgress({
+    required String mediaId,
+    required String providerId,
+    required String title,
+    String? posterUrl,
+    int? year,
+    required String mediaType,
+    required int positionMs,
+    required int durationMs,
+    int? season,
+    int? episode,
+    String? episodeTitle,
+    String? lastStreamUrl,
+    String? voiceover,
+    double? rating,
+    String? ratingSource,
+  }) async {}
+  @override
+  Future<int> cleanupDuplicates() async => 0;
+  @override
+  Future<Duration?> getLastPosition(
+    String mediaId,
+    String providerId, {
+    int? season,
+    int? episode,
+  }) async => null;
+  @override
+  Future<int> remove(String mediaId, String providerId) async => 0;
+  @override
+  Future<int> clearAll() async => 0;
+  @override
+  Stream<List<WatchHistoryData>> watchAll({int? limit}) => Stream.value([]);
+  @override
+  Stream<List<WatchHistoryData>> watchContinueWatching({int limit = 10}) =>
+      Stream.value([]);
+  @override
+  Future<int> count() async => 0;
+}
+
+class MockFavoritesDao implements FavoritesDao {
+  @override
+  Future<List<Favorite>> getAll() async => [];
+  @override
+  Future<List<Favorite>> getByType(String type) async => [];
+  @override
+  Future<bool> isFavorite(String mediaId, String providerId) async => false;
+  @override
+  Future<int> add({
+    required String mediaId,
+    required String providerId,
+    required String title,
+    String? posterUrl,
+    int? year,
+    double? rating,
+    String? ratingSource,
+    required String mediaType,
+  }) async => 0;
+  @override
+  Future<int> remove(String mediaId, String providerId) async => 0;
+  @override
+  Future<bool> toggle({
+    required String mediaId,
+    required String providerId,
+    required String title,
+    String? posterUrl,
+    int? year,
+    double? rating,
+    String? ratingSource,
+    required String mediaType,
+  }) async => false;
+  @override
+  Stream<List<Favorite>> watchAll() => Stream.value([]);
+  @override
+  Stream<bool> watchIsFavorite(String mediaId, String providerId) =>
+      Stream.value(false);
+  @override
+  Future<int> count() async => 0;
+  @override
+  Future<int> clearAll() async => 0;
+}
+
+class MockMediaItemsDao implements MediaItemsDao {
+  @override
+  Future<MediaItem?> get(String id, String providerId) async => null;
+  @override
+  Future<void> upsert(MediaItem item) async {}
+}
+
 void main() {
   group('UnifiedContentRepositoryImpl', () {
     late UnifiedContentRepositoryImpl repository;
     late MockContentProvider providerA;
     late MockContentProvider providerB;
     late MockContentProvider providerDisabled;
+    late MockHistoryDao historyDao;
+    late MockFavoritesDao favoritesDao;
+    late MockMediaItemsDao mediaItemsDao;
 
     setUp(() {
       providerA = MockContentProvider('provA');
       providerB = MockContentProvider('provB');
       providerDisabled = MockContentProvider('provDis', enabled: false);
+      historyDao = MockHistoryDao();
+      favoritesDao = MockFavoritesDao();
+      mediaItemsDao = MockMediaItemsDao();
 
-      repository = UnifiedContentRepositoryImpl([
-        providerA,
-        providerB,
-        providerDisabled,
-      ]);
+      repository = UnifiedContentRepositoryImpl(
+        [providerA, providerB, providerDisabled],
+        historyDao,
+        favoritesDao,
+        mediaItemsDao,
+      );
     });
 
     test('providerIds should return all IDs', () {
@@ -154,16 +267,21 @@ void main() {
       // Hack: we need it to behave differently for 'error' query or valid query?
       // The mock throws if query is 'error'.
 
-      final repo = UnifiedContentRepositoryImpl([providerA, errorProvider]);
+      final repo = UnifiedContentRepositoryImpl(
+        [providerA, errorProvider],
+        historyDao,
+        favoritesDao,
+        mediaItemsDao,
+      );
 
-      final results = await repo.search('error');
+      await repo.search('error');
       // providerA returns 1 result (mock doesn't throw on 'error', my mock logic above says if query == 'error' throw.
       // Wait, providerA is MockContentProvider('provA'). It checks query == 'error'.
       // So both will throw if query is 'error'.
 
       // Let's make sure providerA DOES NOT throw.
       // The mock logic: if (query == 'error') throw Exception('Search Error');
-      // So if I pass 'error', all providers throw.
+      // So if I pass 'error', all instances throw.
 
       // I should update mock to be more flexible or just test one throws one doesn't.
       // But they share the same class logic.

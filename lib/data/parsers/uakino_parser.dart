@@ -76,6 +76,7 @@ class UakinoParser {
           final rating = ratingEl != null
               ? double.tryParse(ratingEl.text.trim().replaceAll(',', '.'))
               : null;
+          final ratingSource = rating != null ? 'Site' : null;
 
           // Get genres if available
           List<String>? genres;
@@ -107,6 +108,7 @@ class UakinoParser {
               posterUrl: _normalizeImageUrl(posterUrl),
               year: year,
               rating: rating,
+              ratingSource: ratingSource,
               type: _detectType(href),
               genres: genres,
               country: country,

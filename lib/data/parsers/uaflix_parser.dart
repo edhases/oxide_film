@@ -141,11 +141,13 @@ class UaflixParser {
       }
 
       double? rating;
+      String? ratingSource;
       final ratingEl =
           card.find('span', class_: 'rating') ??
           card.find('div', class_: 'rating');
       if (ratingEl != null) {
         rating = double.tryParse(ratingEl.text.trim().replaceAll(',', '.'));
+        ratingSource = 'Site';
       }
 
       // Parse genres
@@ -191,6 +193,7 @@ class UaflixParser {
         posterUrl: _absoluteUrl(posterUrl),
         year: year,
         rating: rating,
+        ratingSource: ratingSource,
         type: type,
         genres: genres,
         country: country,
@@ -249,6 +252,8 @@ class UaflixParser {
     String? director;
     List<String>? actors;
     Duration? duration;
+    double? rating;
+    String? ratingSource;
 
     final infoBlocks =
         soup.findAll('li', class_: 'full-info__item') +
@@ -258,8 +263,21 @@ class UaflixParser {
       final label = block.find('span')?.text.toLowerCase() ?? '';
       final value = block.findAll('a').map((a) => a.text.trim()).toList();
       final textValue = block.text.replaceFirst(label, '').trim();
+      RegExpMatch? ratingMatch;
 
-      if (label.contains('рік')) {
+      if (label.contains('imdb')) {
+        ratingMatch = RegExp(r'([\d.]+)').firstMatch(textValue);
+        if (ratingMatch != null) {
+          rating = double.tryParse(ratingMatch.group(1)!);
+          ratingSource = 'IMDb';
+        }
+      } else if (label.contains('tmdb')) {
+        ratingMatch = RegExp(r'([\d.]+)').firstMatch(textValue);
+        if (ratingMatch != null) {
+          rating = double.tryParse(ratingMatch.group(1)!);
+          ratingSource = 'TMDB';
+        }
+      } else if (label.contains('рік')) {
         year = int.tryParse(textValue.replaceAll(RegExp(r'[^\d]'), ''));
       } else if (label.contains('жанр')) {
         genres = value.isNotEmpty ? value : [textValue];
@@ -291,6 +309,8 @@ class UaflixParser {
       title: title,
       posterUrl: _absoluteUrl(posterUrl),
       year: year,
+      rating: rating,
+      ratingSource: ratingSource,
       type: type,
     );
 

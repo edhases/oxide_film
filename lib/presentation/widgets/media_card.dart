@@ -271,6 +271,8 @@ class _MediaCardState extends State<MediaCard> {
         ? Colors.orange
         : AppTheme.errorColor;
 
+    final source = widget.item.ratingSource;
+
     return Positioned(
       top: 8,
       right: 8,
@@ -280,13 +282,29 @@ class _MediaCardState extends State<MediaCard> {
           color: color,
           borderRadius: BorderRadius.circular(4),
         ),
-        child: Text(
-          rating.toStringAsFixed(1),
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 11,
-            fontWeight: FontWeight.bold,
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (source != null) ...[
+              Text(
+                source.toUpperCase(),
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 8,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 3),
+            ],
+            Text(
+              rating.toStringAsFixed(1),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
         ),
       ),
     );

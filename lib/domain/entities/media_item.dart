@@ -61,6 +61,7 @@ class MediaItem extends Equatable {
   final String? posterUrl;
   final int? year;
   final double? rating;
+  final String? ratingSource; // e.g., 'IMDb', 'TMDB', 'Site'
   final ContentType type;
   final String? description;
   final List<String>? genres;
@@ -74,6 +75,7 @@ class MediaItem extends Equatable {
     this.posterUrl,
     this.year,
     this.rating,
+    this.ratingSource,
     this.type = ContentType.unknown,
     this.description,
     this.genres,
@@ -89,6 +91,7 @@ class MediaItem extends Equatable {
     posterUrl,
     year,
     rating,
+    ratingSource,
     type,
     description,
     genres,
@@ -106,6 +109,7 @@ class MediaItem extends Equatable {
     String? posterUrl,
     int? year,
     double? rating,
+    String? ratingSource,
     ContentType? type,
     String? description,
     List<String>? genres,
@@ -119,6 +123,7 @@ class MediaItem extends Equatable {
       posterUrl: posterUrl ?? this.posterUrl,
       year: year ?? this.year,
       rating: rating ?? this.rating,
+      ratingSource: ratingSource ?? this.ratingSource,
       type: type ?? this.type,
       description: description ?? this.description,
       genres: genres ?? this.genres,

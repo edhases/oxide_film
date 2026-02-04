@@ -64,9 +64,11 @@ class EneyidaParser {
       }
 
       double? rating;
+      String? ratingSource;
       final ratingEl = card.find('span', class_: 'rating');
       if (ratingEl != null) {
         rating = double.tryParse(ratingEl.text.trim());
+        ratingSource = 'Site';
       }
 
       // Parse genres from card
@@ -112,6 +114,7 @@ class EneyidaParser {
         posterUrl: _absoluteUrl(posterUrl),
         year: year,
         rating: rating,
+        ratingSource: ratingSource,
         type: type,
         genres: genres,
         country: country,
@@ -248,11 +251,15 @@ class EneyidaParser {
 
     // Rating
     double? rating;
+    String? ratingSource;
     final ratingEl = soup.find('span', class_: 'full_rating');
     if (ratingEl != null) {
       final ratingMatch = RegExp(r'([\d.]+)').firstMatch(ratingEl.text);
       if (ratingMatch != null) {
         rating = double.tryParse(ratingMatch.group(1) ?? '');
+        ratingSource = ratingEl.text.toLowerCase().contains('imdb')
+            ? 'IMDb'
+            : 'Site';
       }
     }
 
@@ -274,6 +281,7 @@ class EneyidaParser {
         posterUrl: _absoluteUrl(posterUrl),
         year: year,
         rating: rating,
+        ratingSource: ratingSource,
         type: type,
       ),
       fullDescription: description,

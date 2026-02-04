@@ -41,4 +41,41 @@ abstract class UnifiedContentRepository {
     int page = 1,
     String? providerId,
   });
+
+  /// Get full watch history
+  Future<List<MediaItem>> getHistory({int? limit});
+
+  /// Get favorite items
+  Future<List<MediaItem>> getFavorites();
+
+  /// Toggle favorite status
+  Future<bool> toggleFavorite(String id);
+
+  /// Check if item is favorited
+  Future<bool> isFavorite(String id);
+
+  /// Get watch progress (position, duration) for media or specific episode
+  Future<(Duration, Duration)?> getWatchProgress(
+    String id, {
+    int? season,
+    int? episode,
+  });
+
+  /// Update watch progress
+  Future<void> updateWatchProgress(
+    String id,
+    Duration position,
+    Duration duration, {
+    int? season,
+    int? episode,
+    String? episodeTitle,
+    String? lastStreamUrl,
+    String? voiceover,
+  });
+
+  /// Remove item from history
+  Future<void> removeFromHistory(String id);
+
+  /// Clear all history
+  Future<void> clearHistory();
 }

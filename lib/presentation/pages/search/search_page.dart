@@ -14,6 +14,7 @@ import '../../../domain/entities/entities.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/media_card.dart';
 import '../../widgets/custom_titlebar.dart';
+import '../../widgets/tv/focusable_card.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../widgets/common/skeleton.dart';
 
@@ -506,11 +507,17 @@ class _SearchPageState extends State<SearchPage> {
               ),
             ),
             ..._recentSearches.map(
-              (query) => ListTile(
-                leading: const Icon(Icons.history),
-                title: Text(query),
-                dense: true,
-                onTap: () => _useRecentSearch(query),
+              (query) => Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                child: FocusableCard(
+                  onTap: () => _useRecentSearch(query),
+                  borderRadius: 8,
+                  child: ListTile(
+                    leading: const Icon(Icons.history),
+                    title: Text(query),
+                    dense: true,
+                  ),
+                ),
               ),
             ),
           ],
@@ -540,52 +547,73 @@ class _SearchPageState extends State<SearchPage> {
 
               if (mediaItem != null) {
                 // Show media item with poster
-                return ListTile(
-                  leading: mediaItem.posterUrl != null
-                      ? ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: CachedNetworkImage(
-                            imageUrl: mediaItem.posterUrl!,
-                            width: 40,
-                            height: 56,
-                            fit: BoxFit.cover,
-                            memCacheHeight: 200,
-                            placeholder: (context, url) => const Skeleton(
-                              width: 40,
-                              height: 56,
-                              borderRadius: 0,
-                            ),
-                            errorWidget: (context, url, error) =>
-                                const Icon(Icons.movie, size: 40),
-                          ),
-                        )
-                      : const Icon(Icons.movie, size: 40),
-                  title: Text(mediaItem.title),
-                  subtitle: Text(
-                    '${mediaItem.type.displayName}${mediaItem.year != null ? ' • ${mediaItem.year}' : ''}',
-                    style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                return Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
                   ),
-                  dense: true,
-                  onTap: () => _selectSuggestion(mediaItem),
+                  child: FocusableCard(
+                    onTap: () => _selectSuggestion(mediaItem),
+                    borderRadius: 8,
+                    child: ListTile(
+                      leading: mediaItem.posterUrl != null
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: CachedNetworkImage(
+                                imageUrl: mediaItem.posterUrl!,
+                                width: 40,
+                                height: 56,
+                                fit: BoxFit.cover,
+                                memCacheHeight: 200,
+                                placeholder: (context, url) => const Skeleton(
+                                  width: 40,
+                                  height: 56,
+                                  borderRadius: 0,
+                                ),
+                                errorWidget: (context, url, error) =>
+                                    const Icon(Icons.movie, size: 40),
+                              ),
+                            )
+                          : const Icon(Icons.movie, size: 40),
+                      title: Text(mediaItem.title),
+                      subtitle: Text(
+                        '${mediaItem.type.displayName}${mediaItem.year != null ? ' • ${mediaItem.year}' : ''}',
+                        style: TextStyle(
+                          color: AppTheme.textMuted,
+                          fontSize: 12,
+                        ),
+                      ),
+                      dense: true,
+                    ),
+                  ),
                 );
               } else {
                 // Show text-only suggestion
-                return ListTile(
-                  leading: Icon(icon),
-                  title: Text(suggestion.text),
-                  trailing:
-                      suggestion.searchCount != null &&
-                          suggestion.searchCount! > 1
-                      ? Text(
-                          '${suggestion.searchCount}x',
-                          style: TextStyle(
-                            color: AppTheme.textMuted,
-                            fontSize: 12,
-                          ),
-                        )
-                      : null,
-                  dense: true,
-                  onTap: () => _useRecentSearch(suggestion.text),
+                return Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  child: FocusableCard(
+                    onTap: () => _useRecentSearch(suggestion.text),
+                    borderRadius: 8,
+                    child: ListTile(
+                      leading: Icon(icon),
+                      title: Text(suggestion.text),
+                      trailing:
+                          suggestion.searchCount != null &&
+                              suggestion.searchCount! > 1
+                          ? Text(
+                              '${suggestion.searchCount}x',
+                              style: TextStyle(
+                                color: AppTheme.textMuted,
+                                fontSize: 12,
+                              ),
+                            )
+                          : null,
+                      dense: true,
+                    ),
+                  ),
                 );
               }
             }),

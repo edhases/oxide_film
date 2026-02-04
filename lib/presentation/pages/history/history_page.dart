@@ -8,6 +8,7 @@ import '../../../data/database/app_database.dart';
 import '../../../data/services/history_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/custom_titlebar.dart';
+import '../../widgets/tv/focusable_card.dart';
 
 /// History page - displays watch history
 class HistoryPage extends StatefulWidget {
@@ -124,11 +125,14 @@ class _HistoryPageState extends State<HistoryPage> {
                   padding: EdgeInsets.only(
                     right: index < continueWatching.length - 1 ? 12 : 0,
                   ),
-                  child: _ContinueWatchingCard(
-                    item: item,
-                    progress: _historyService.getProgress(item),
-                    remaining: _historyService.formatRemaining(item),
+                  child: FocusableCard(
                     onTap: () => _playItem(item),
+                    borderRadius: 12,
+                    child: _ContinueWatchingCard(
+                      item: item,
+                      progress: _historyService.getProgress(item),
+                      remaining: _historyService.formatRemaining(item),
+                    ),
                   ),
                 );
               },
@@ -141,10 +145,16 @@ class _HistoryPageState extends State<HistoryPage> {
         _SectionHeader(title: 'Вся історія', icon: Icons.history),
         const SizedBox(height: 8),
         ...history.map(
-          (item) => _HistoryTile(
-            item: item,
-            onTap: () => _openDetails(item),
-            onRemove: () => _removeItem(item),
+          (item) => Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: FocusableCard(
+              onTap: () => _openDetails(item),
+              borderRadius: 8,
+              child: _HistoryTile(
+                item: item,
+                onRemove: () => _removeItem(item),
+              ),
+            ),
           ),
         ),
       ],
@@ -242,115 +252,106 @@ class _ContinueWatchingCard extends StatelessWidget {
   final WatchHistoryData item;
   final double progress;
   final String remaining;
-  final VoidCallback onTap;
 
   const _ContinueWatchingCard({
     required this.item,
     required this.progress,
     required this.remaining,
-    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: SizedBox(
-        width: 280,
-        child: Card(
-          clipBehavior: Clip.antiAlias,
-          color: AppTheme.surfaceColor,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // Background image
-              if (item.posterUrl != null)
-                CachedNetworkImage(
-                  imageUrl: item.posterUrl!,
-                  fit: BoxFit.cover,
-                  color: Colors.black54,
-                  colorBlendMode: BlendMode.darken,
-                )
-              else
-                Container(color: AppTheme.backgroundColor),
+    return SizedBox(
+      width: 280,
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        color: AppTheme.surfaceColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Background image
+            if (item.posterUrl != null)
+              CachedNetworkImage(
+                imageUrl: item.posterUrl!,
+                fit: BoxFit.cover,
+                color: Colors.black54,
+                colorBlendMode: BlendMode.darken,
+              )
+            else
+              Container(color: AppTheme.backgroundColor),
 
-              // Content
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Title
+            // Content
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Title
+                  Text(
+                    item.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  if (item.episodeTitle != null) ...[
+                    const SizedBox(height: 4),
                     Text(
-                      item.title,
-                      maxLines: 2,
+                      item.episodeTitle!,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    if (item.episodeTitle != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        item.episodeTitle!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.7),
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                    const Spacer(),
-                    // Remaining time
-                    Text(
-                      remaining,
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.8),
-                        fontSize: 11,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    // Progress bar
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(2),
-                      child: LinearProgressIndicator(
-                        value: progress,
-                        backgroundColor: Colors.white24,
-                        valueColor: AlwaysStoppedAnimation(
-                          AppTheme.primaryColor,
-                        ),
-                        minHeight: 4,
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 12,
                       ),
                     ),
                   ],
-                ),
+                  const Spacer(),
+                  // Remaining time
+                  Text(
+                    remaining,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.8),
+                      fontSize: 11,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Progress bar
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      backgroundColor: Colors.white24,
+                      valueColor: AlwaysStoppedAnimation(AppTheme.primaryColor),
+                      minHeight: 4,
+                    ),
+                  ),
+                ],
               ),
+            ),
 
-              // Play button overlay
-              Positioned.fill(
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryColor,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.play_arrow,
-                      color: Colors.white,
-                      size: 32,
-                    ),
+            // Play button overlay
+            Positioned.fill(
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryColor,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.play_arrow,
+                    color: Colors.white,
+                    size: 32,
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -359,83 +360,71 @@ class _ContinueWatchingCard extends StatelessWidget {
 
 class _HistoryTile extends StatelessWidget {
   final WatchHistoryData item;
-  final VoidCallback onTap;
   final VoidCallback onRemove;
 
-  const _HistoryTile({
-    required this.item,
-    required this.onTap,
-    required this.onRemove,
-  });
+  const _HistoryTile({required this.item, required this.onRemove});
 
   @override
   Widget build(BuildContext context) {
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: EdgeInsets.zero,
       color: AppTheme.surfaceColor,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Row(
-            children: [
-              // Poster
-              ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: SizedBox(
-                  width: 60,
-                  height: 80,
-                  child: item.posterUrl != null
-                      ? CachedNetworkImage(
-                          imageUrl: item.posterUrl!,
-                          fit: BoxFit.cover,
-                        )
-                      : Container(
-                          color: AppTheme.backgroundColor,
-                          child: Icon(Icons.movie, color: AppTheme.textMuted),
-                        ),
-                ),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Row(
+          children: [
+            // Poster
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: SizedBox(
+                width: 60,
+                height: 80,
+                child: item.posterUrl != null
+                    ? CachedNetworkImage(
+                        imageUrl: item.posterUrl!,
+                        fit: BoxFit.cover,
+                      )
+                    : Container(
+                        color: AppTheme.backgroundColor,
+                        child: Icon(Icons.movie, color: AppTheme.textMuted),
+                      ),
               ),
-              const SizedBox(width: 12),
-              // Info
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+            ),
+            const SizedBox(width: 12),
+            // Info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  if (item.episodeTitle != null)
                     Text(
-                      item.title,
+                      item.episodeTitle!,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
                     ),
-                    if (item.episodeTitle != null)
-                      Text(
-                        item.episodeTitle!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: AppTheme.textMuted,
-                          fontSize: 12,
-                        ),
-                      ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _formatDate(item.watchedAt),
-                      style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
-                    ),
-                  ],
-                ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _formatDate(item.watchedAt),
+                    style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
+                  ),
+                ],
               ),
-              // Remove button
-              IconButton(
-                icon: Icon(Icons.close, color: AppTheme.textMuted),
-                onPressed: onRemove,
-                tooltip: 'Видалити',
-              ),
-            ],
-          ),
+            ),
+            // Remove button
+            IconButton(
+              icon: Icon(Icons.close, color: AppTheme.textMuted),
+              onPressed: onRemove,
+              tooltip: 'Видалити',
+            ),
+          ],
         ),
       ),
     );

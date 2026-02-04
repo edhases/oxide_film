@@ -69,6 +69,8 @@ class Favorites extends Table {
   TextColumn get title => text()();
   TextColumn get posterUrl => text().nullable()();
   IntColumn get year => integer().nullable()();
+  RealColumn get rating => real().nullable()();
+  TextColumn get ratingSource => text().nullable()();
   TextColumn get mediaType => text()(); // movie, series, cartoon, anime
   DateTimeColumn get addedAt => dateTime().withDefault(currentDateAndTime)();
 
@@ -86,6 +88,8 @@ class WatchHistory extends Table {
   TextColumn get title => text()();
   TextColumn get posterUrl => text().nullable()();
   IntColumn get year => integer().nullable()();
+  RealColumn get rating => real().nullable()();
+  TextColumn get ratingSource => text().nullable()();
   TextColumn get mediaType => text()();
 
   // Playback position
@@ -117,6 +121,8 @@ class Downloads extends Table {
   TextColumn get title => text()();
   TextColumn get posterUrl => text().nullable()();
   IntColumn get year => integer().nullable()();
+  RealColumn get rating => real().nullable()();
+  TextColumn get ratingSource => text().nullable()();
   TextColumn get mediaType => text()();
 
   // Episode info (for series)
@@ -181,6 +187,26 @@ class SearchHistoryTable extends Table {
   ];
 }
 
+/// Metadata cache for all encountered media items
+class StoredMediaItems extends Table {
+  TextColumn get id => text()();
+  TextColumn get providerId => text()();
+  TextColumn get title => text()();
+  TextColumn get originalTitle => text().nullable()();
+  TextColumn get posterUrl => text().nullable()();
+  IntColumn get year => integer().nullable()();
+  RealColumn get rating => real().nullable()();
+  TextColumn get mediaType => text()(); // movie, series, cartoon, anime
+  TextColumn get description => text().nullable()();
+  TextColumn get genres => text().nullable()(); // Comma-separated
+  TextColumn get country => text().nullable()();
+  TextColumn get ratingSource => text().nullable()();
+  DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column> get primaryKey => {providerId, id};
+}
+
 // ============================================================================
 // DATABASE
 // ============================================================================
@@ -193,13 +219,14 @@ class SearchHistoryTable extends Table {
     WatchHistory,
     Downloads,
     SearchHistoryTable,
+    StoredMediaItems,
   ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 7;
 
   static QueryExecutor _openConnection() {
     return driftDatabase(
@@ -292,6 +319,30 @@ class AppDatabase extends _$AppDatabase {
           );
           await customStatement(
             "DELETE FROM enabled_providers WHERE provider_id = 'filmix'",
+          );
+        }
+        // Migration: add MediaItems table
+        if (from < 6) {
+          await m.createTable(storedMediaItems);
+        }
+        // Migration: add ratingSource/rating to various tables
+        if (from < 7) {
+          await customStatement('ALTER TABLE favorites ADD COLUMN rating REAL');
+          await customStatement(
+            'ALTER TABLE favorites ADD COLUMN rating_source TEXT',
+          );
+          await customStatement(
+            'ALTER TABLE watch_history ADD COLUMN rating REAL',
+          );
+          await customStatement(
+            'ALTER TABLE watch_history ADD COLUMN rating_source TEXT',
+          );
+          await customStatement('ALTER TABLE downloads ADD COLUMN rating REAL');
+          await customStatement(
+            'ALTER TABLE downloads ADD COLUMN rating_source TEXT',
+          );
+          await customStatement(
+            'ALTER TABLE stored_media_items ADD COLUMN rating_source TEXT',
           );
         }
       },

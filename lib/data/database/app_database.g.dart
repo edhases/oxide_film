@@ -721,6 +721,26 @@ class $FavoritesTable extends Favorites
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _ratingMeta = const VerificationMeta('rating');
+  @override
+  late final GeneratedColumn<double> rating = GeneratedColumn<double>(
+    'rating',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _ratingSourceMeta = const VerificationMeta(
+    'ratingSource',
+  );
+  @override
+  late final GeneratedColumn<String> ratingSource = GeneratedColumn<String>(
+    'rating_source',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _mediaTypeMeta = const VerificationMeta(
     'mediaType',
   );
@@ -752,6 +772,8 @@ class $FavoritesTable extends Favorites
     title,
     posterUrl,
     year,
+    rating,
+    ratingSource,
     mediaType,
     addedAt,
   ];
@@ -806,6 +828,21 @@ class $FavoritesTable extends Favorites
         year.isAcceptableOrUnknown(data['year']!, _yearMeta),
       );
     }
+    if (data.containsKey('rating')) {
+      context.handle(
+        _ratingMeta,
+        rating.isAcceptableOrUnknown(data['rating']!, _ratingMeta),
+      );
+    }
+    if (data.containsKey('rating_source')) {
+      context.handle(
+        _ratingSourceMeta,
+        ratingSource.isAcceptableOrUnknown(
+          data['rating_source']!,
+          _ratingSourceMeta,
+        ),
+      );
+    }
     if (data.containsKey('media_type')) {
       context.handle(
         _mediaTypeMeta,
@@ -857,6 +894,14 @@ class $FavoritesTable extends Favorites
         DriftSqlType.int,
         data['${effectivePrefix}year'],
       ),
+      rating: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}rating'],
+      ),
+      ratingSource: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}rating_source'],
+      ),
       mediaType: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}media_type'],
@@ -881,6 +926,8 @@ class Favorite extends DataClass implements Insertable<Favorite> {
   final String title;
   final String? posterUrl;
   final int? year;
+  final double? rating;
+  final String? ratingSource;
   final String mediaType;
   final DateTime addedAt;
   const Favorite({
@@ -890,6 +937,8 @@ class Favorite extends DataClass implements Insertable<Favorite> {
     required this.title,
     this.posterUrl,
     this.year,
+    this.rating,
+    this.ratingSource,
     required this.mediaType,
     required this.addedAt,
   });
@@ -906,6 +955,12 @@ class Favorite extends DataClass implements Insertable<Favorite> {
     if (!nullToAbsent || year != null) {
       map['year'] = Variable<int>(year);
     }
+    if (!nullToAbsent || rating != null) {
+      map['rating'] = Variable<double>(rating);
+    }
+    if (!nullToAbsent || ratingSource != null) {
+      map['rating_source'] = Variable<String>(ratingSource);
+    }
     map['media_type'] = Variable<String>(mediaType);
     map['added_at'] = Variable<DateTime>(addedAt);
     return map;
@@ -921,6 +976,12 @@ class Favorite extends DataClass implements Insertable<Favorite> {
           ? const Value.absent()
           : Value(posterUrl),
       year: year == null && nullToAbsent ? const Value.absent() : Value(year),
+      rating: rating == null && nullToAbsent
+          ? const Value.absent()
+          : Value(rating),
+      ratingSource: ratingSource == null && nullToAbsent
+          ? const Value.absent()
+          : Value(ratingSource),
       mediaType: Value(mediaType),
       addedAt: Value(addedAt),
     );
@@ -938,6 +999,8 @@ class Favorite extends DataClass implements Insertable<Favorite> {
       title: serializer.fromJson<String>(json['title']),
       posterUrl: serializer.fromJson<String?>(json['posterUrl']),
       year: serializer.fromJson<int?>(json['year']),
+      rating: serializer.fromJson<double?>(json['rating']),
+      ratingSource: serializer.fromJson<String?>(json['ratingSource']),
       mediaType: serializer.fromJson<String>(json['mediaType']),
       addedAt: serializer.fromJson<DateTime>(json['addedAt']),
     );
@@ -952,6 +1015,8 @@ class Favorite extends DataClass implements Insertable<Favorite> {
       'title': serializer.toJson<String>(title),
       'posterUrl': serializer.toJson<String?>(posterUrl),
       'year': serializer.toJson<int?>(year),
+      'rating': serializer.toJson<double?>(rating),
+      'ratingSource': serializer.toJson<String?>(ratingSource),
       'mediaType': serializer.toJson<String>(mediaType),
       'addedAt': serializer.toJson<DateTime>(addedAt),
     };
@@ -964,6 +1029,8 @@ class Favorite extends DataClass implements Insertable<Favorite> {
     String? title,
     Value<String?> posterUrl = const Value.absent(),
     Value<int?> year = const Value.absent(),
+    Value<double?> rating = const Value.absent(),
+    Value<String?> ratingSource = const Value.absent(),
     String? mediaType,
     DateTime? addedAt,
   }) => Favorite(
@@ -973,6 +1040,8 @@ class Favorite extends DataClass implements Insertable<Favorite> {
     title: title ?? this.title,
     posterUrl: posterUrl.present ? posterUrl.value : this.posterUrl,
     year: year.present ? year.value : this.year,
+    rating: rating.present ? rating.value : this.rating,
+    ratingSource: ratingSource.present ? ratingSource.value : this.ratingSource,
     mediaType: mediaType ?? this.mediaType,
     addedAt: addedAt ?? this.addedAt,
   );
@@ -986,6 +1055,10 @@ class Favorite extends DataClass implements Insertable<Favorite> {
       title: data.title.present ? data.title.value : this.title,
       posterUrl: data.posterUrl.present ? data.posterUrl.value : this.posterUrl,
       year: data.year.present ? data.year.value : this.year,
+      rating: data.rating.present ? data.rating.value : this.rating,
+      ratingSource: data.ratingSource.present
+          ? data.ratingSource.value
+          : this.ratingSource,
       mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
       addedAt: data.addedAt.present ? data.addedAt.value : this.addedAt,
     );
@@ -1000,6 +1073,8 @@ class Favorite extends DataClass implements Insertable<Favorite> {
           ..write('title: $title, ')
           ..write('posterUrl: $posterUrl, ')
           ..write('year: $year, ')
+          ..write('rating: $rating, ')
+          ..write('ratingSource: $ratingSource, ')
           ..write('mediaType: $mediaType, ')
           ..write('addedAt: $addedAt')
           ..write(')'))
@@ -1014,6 +1089,8 @@ class Favorite extends DataClass implements Insertable<Favorite> {
     title,
     posterUrl,
     year,
+    rating,
+    ratingSource,
     mediaType,
     addedAt,
   );
@@ -1027,6 +1104,8 @@ class Favorite extends DataClass implements Insertable<Favorite> {
           other.title == this.title &&
           other.posterUrl == this.posterUrl &&
           other.year == this.year &&
+          other.rating == this.rating &&
+          other.ratingSource == this.ratingSource &&
           other.mediaType == this.mediaType &&
           other.addedAt == this.addedAt);
 }
@@ -1038,6 +1117,8 @@ class FavoritesCompanion extends UpdateCompanion<Favorite> {
   final Value<String> title;
   final Value<String?> posterUrl;
   final Value<int?> year;
+  final Value<double?> rating;
+  final Value<String?> ratingSource;
   final Value<String> mediaType;
   final Value<DateTime> addedAt;
   const FavoritesCompanion({
@@ -1047,6 +1128,8 @@ class FavoritesCompanion extends UpdateCompanion<Favorite> {
     this.title = const Value.absent(),
     this.posterUrl = const Value.absent(),
     this.year = const Value.absent(),
+    this.rating = const Value.absent(),
+    this.ratingSource = const Value.absent(),
     this.mediaType = const Value.absent(),
     this.addedAt = const Value.absent(),
   });
@@ -1057,6 +1140,8 @@ class FavoritesCompanion extends UpdateCompanion<Favorite> {
     required String title,
     this.posterUrl = const Value.absent(),
     this.year = const Value.absent(),
+    this.rating = const Value.absent(),
+    this.ratingSource = const Value.absent(),
     required String mediaType,
     this.addedAt = const Value.absent(),
   }) : mediaId = Value(mediaId),
@@ -1070,6 +1155,8 @@ class FavoritesCompanion extends UpdateCompanion<Favorite> {
     Expression<String>? title,
     Expression<String>? posterUrl,
     Expression<int>? year,
+    Expression<double>? rating,
+    Expression<String>? ratingSource,
     Expression<String>? mediaType,
     Expression<DateTime>? addedAt,
   }) {
@@ -1080,6 +1167,8 @@ class FavoritesCompanion extends UpdateCompanion<Favorite> {
       if (title != null) 'title': title,
       if (posterUrl != null) 'poster_url': posterUrl,
       if (year != null) 'year': year,
+      if (rating != null) 'rating': rating,
+      if (ratingSource != null) 'rating_source': ratingSource,
       if (mediaType != null) 'media_type': mediaType,
       if (addedAt != null) 'added_at': addedAt,
     });
@@ -1092,6 +1181,8 @@ class FavoritesCompanion extends UpdateCompanion<Favorite> {
     Value<String>? title,
     Value<String?>? posterUrl,
     Value<int?>? year,
+    Value<double?>? rating,
+    Value<String?>? ratingSource,
     Value<String>? mediaType,
     Value<DateTime>? addedAt,
   }) {
@@ -1102,6 +1193,8 @@ class FavoritesCompanion extends UpdateCompanion<Favorite> {
       title: title ?? this.title,
       posterUrl: posterUrl ?? this.posterUrl,
       year: year ?? this.year,
+      rating: rating ?? this.rating,
+      ratingSource: ratingSource ?? this.ratingSource,
       mediaType: mediaType ?? this.mediaType,
       addedAt: addedAt ?? this.addedAt,
     );
@@ -1128,6 +1221,12 @@ class FavoritesCompanion extends UpdateCompanion<Favorite> {
     if (year.present) {
       map['year'] = Variable<int>(year.value);
     }
+    if (rating.present) {
+      map['rating'] = Variable<double>(rating.value);
+    }
+    if (ratingSource.present) {
+      map['rating_source'] = Variable<String>(ratingSource.value);
+    }
     if (mediaType.present) {
       map['media_type'] = Variable<String>(mediaType.value);
     }
@@ -1146,6 +1245,8 @@ class FavoritesCompanion extends UpdateCompanion<Favorite> {
           ..write('title: $title, ')
           ..write('posterUrl: $posterUrl, ')
           ..write('year: $year, ')
+          ..write('rating: $rating, ')
+          ..write('ratingSource: $ratingSource, ')
           ..write('mediaType: $mediaType, ')
           ..write('addedAt: $addedAt')
           ..write(')'))
@@ -1221,6 +1322,26 @@ class $WatchHistoryTable extends WatchHistory
     aliasedName,
     true,
     type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _ratingMeta = const VerificationMeta('rating');
+  @override
+  late final GeneratedColumn<double> rating = GeneratedColumn<double>(
+    'rating',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _ratingSourceMeta = const VerificationMeta(
+    'ratingSource',
+  );
+  @override
+  late final GeneratedColumn<String> ratingSource = GeneratedColumn<String>(
+    'rating_source',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
   static const VerificationMeta _mediaTypeMeta = const VerificationMeta(
@@ -1331,6 +1452,8 @@ class $WatchHistoryTable extends WatchHistory
     title,
     posterUrl,
     year,
+    rating,
+    ratingSource,
     mediaType,
     positionMs,
     durationMs,
@@ -1390,6 +1513,21 @@ class $WatchHistoryTable extends WatchHistory
       context.handle(
         _yearMeta,
         year.isAcceptableOrUnknown(data['year']!, _yearMeta),
+      );
+    }
+    if (data.containsKey('rating')) {
+      context.handle(
+        _ratingMeta,
+        rating.isAcceptableOrUnknown(data['rating']!, _ratingMeta),
+      );
+    }
+    if (data.containsKey('rating_source')) {
+      context.handle(
+        _ratingSourceMeta,
+        ratingSource.isAcceptableOrUnknown(
+          data['rating_source']!,
+          _ratingSourceMeta,
+        ),
       );
     }
     if (data.containsKey('media_type')) {
@@ -1491,6 +1629,14 @@ class $WatchHistoryTable extends WatchHistory
         DriftSqlType.int,
         data['${effectivePrefix}year'],
       ),
+      rating: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}rating'],
+      ),
+      ratingSource: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}rating_source'],
+      ),
       mediaType: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}media_type'],
@@ -1544,6 +1690,8 @@ class WatchHistoryData extends DataClass
   final String title;
   final String? posterUrl;
   final int? year;
+  final double? rating;
+  final String? ratingSource;
   final String mediaType;
   final int positionMs;
   final int durationMs;
@@ -1560,6 +1708,8 @@ class WatchHistoryData extends DataClass
     required this.title,
     this.posterUrl,
     this.year,
+    this.rating,
+    this.ratingSource,
     required this.mediaType,
     required this.positionMs,
     required this.durationMs,
@@ -1582,6 +1732,12 @@ class WatchHistoryData extends DataClass
     }
     if (!nullToAbsent || year != null) {
       map['year'] = Variable<int>(year);
+    }
+    if (!nullToAbsent || rating != null) {
+      map['rating'] = Variable<double>(rating);
+    }
+    if (!nullToAbsent || ratingSource != null) {
+      map['rating_source'] = Variable<String>(ratingSource);
     }
     map['media_type'] = Variable<String>(mediaType);
     map['position_ms'] = Variable<int>(positionMs);
@@ -1615,6 +1771,12 @@ class WatchHistoryData extends DataClass
           ? const Value.absent()
           : Value(posterUrl),
       year: year == null && nullToAbsent ? const Value.absent() : Value(year),
+      rating: rating == null && nullToAbsent
+          ? const Value.absent()
+          : Value(rating),
+      ratingSource: ratingSource == null && nullToAbsent
+          ? const Value.absent()
+          : Value(ratingSource),
       mediaType: Value(mediaType),
       positionMs: Value(positionMs),
       durationMs: Value(durationMs),
@@ -1649,6 +1811,8 @@ class WatchHistoryData extends DataClass
       title: serializer.fromJson<String>(json['title']),
       posterUrl: serializer.fromJson<String?>(json['posterUrl']),
       year: serializer.fromJson<int?>(json['year']),
+      rating: serializer.fromJson<double?>(json['rating']),
+      ratingSource: serializer.fromJson<String?>(json['ratingSource']),
       mediaType: serializer.fromJson<String>(json['mediaType']),
       positionMs: serializer.fromJson<int>(json['positionMs']),
       durationMs: serializer.fromJson<int>(json['durationMs']),
@@ -1670,6 +1834,8 @@ class WatchHistoryData extends DataClass
       'title': serializer.toJson<String>(title),
       'posterUrl': serializer.toJson<String?>(posterUrl),
       'year': serializer.toJson<int?>(year),
+      'rating': serializer.toJson<double?>(rating),
+      'ratingSource': serializer.toJson<String?>(ratingSource),
       'mediaType': serializer.toJson<String>(mediaType),
       'positionMs': serializer.toJson<int>(positionMs),
       'durationMs': serializer.toJson<int>(durationMs),
@@ -1689,6 +1855,8 @@ class WatchHistoryData extends DataClass
     String? title,
     Value<String?> posterUrl = const Value.absent(),
     Value<int?> year = const Value.absent(),
+    Value<double?> rating = const Value.absent(),
+    Value<String?> ratingSource = const Value.absent(),
     String? mediaType,
     int? positionMs,
     int? durationMs,
@@ -1705,6 +1873,8 @@ class WatchHistoryData extends DataClass
     title: title ?? this.title,
     posterUrl: posterUrl.present ? posterUrl.value : this.posterUrl,
     year: year.present ? year.value : this.year,
+    rating: rating.present ? rating.value : this.rating,
+    ratingSource: ratingSource.present ? ratingSource.value : this.ratingSource,
     mediaType: mediaType ?? this.mediaType,
     positionMs: positionMs ?? this.positionMs,
     durationMs: durationMs ?? this.durationMs,
@@ -1727,6 +1897,10 @@ class WatchHistoryData extends DataClass
       title: data.title.present ? data.title.value : this.title,
       posterUrl: data.posterUrl.present ? data.posterUrl.value : this.posterUrl,
       year: data.year.present ? data.year.value : this.year,
+      rating: data.rating.present ? data.rating.value : this.rating,
+      ratingSource: data.ratingSource.present
+          ? data.ratingSource.value
+          : this.ratingSource,
       mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
       positionMs: data.positionMs.present
           ? data.positionMs.value
@@ -1756,6 +1930,8 @@ class WatchHistoryData extends DataClass
           ..write('title: $title, ')
           ..write('posterUrl: $posterUrl, ')
           ..write('year: $year, ')
+          ..write('rating: $rating, ')
+          ..write('ratingSource: $ratingSource, ')
           ..write('mediaType: $mediaType, ')
           ..write('positionMs: $positionMs, ')
           ..write('durationMs: $durationMs, ')
@@ -1777,6 +1953,8 @@ class WatchHistoryData extends DataClass
     title,
     posterUrl,
     year,
+    rating,
+    ratingSource,
     mediaType,
     positionMs,
     durationMs,
@@ -1797,6 +1975,8 @@ class WatchHistoryData extends DataClass
           other.title == this.title &&
           other.posterUrl == this.posterUrl &&
           other.year == this.year &&
+          other.rating == this.rating &&
+          other.ratingSource == this.ratingSource &&
           other.mediaType == this.mediaType &&
           other.positionMs == this.positionMs &&
           other.durationMs == this.durationMs &&
@@ -1815,6 +1995,8 @@ class WatchHistoryCompanion extends UpdateCompanion<WatchHistoryData> {
   final Value<String> title;
   final Value<String?> posterUrl;
   final Value<int?> year;
+  final Value<double?> rating;
+  final Value<String?> ratingSource;
   final Value<String> mediaType;
   final Value<int> positionMs;
   final Value<int> durationMs;
@@ -1831,6 +2013,8 @@ class WatchHistoryCompanion extends UpdateCompanion<WatchHistoryData> {
     this.title = const Value.absent(),
     this.posterUrl = const Value.absent(),
     this.year = const Value.absent(),
+    this.rating = const Value.absent(),
+    this.ratingSource = const Value.absent(),
     this.mediaType = const Value.absent(),
     this.positionMs = const Value.absent(),
     this.durationMs = const Value.absent(),
@@ -1848,6 +2032,8 @@ class WatchHistoryCompanion extends UpdateCompanion<WatchHistoryData> {
     required String title,
     this.posterUrl = const Value.absent(),
     this.year = const Value.absent(),
+    this.rating = const Value.absent(),
+    this.ratingSource = const Value.absent(),
     required String mediaType,
     this.positionMs = const Value.absent(),
     this.durationMs = const Value.absent(),
@@ -1868,6 +2054,8 @@ class WatchHistoryCompanion extends UpdateCompanion<WatchHistoryData> {
     Expression<String>? title,
     Expression<String>? posterUrl,
     Expression<int>? year,
+    Expression<double>? rating,
+    Expression<String>? ratingSource,
     Expression<String>? mediaType,
     Expression<int>? positionMs,
     Expression<int>? durationMs,
@@ -1885,6 +2073,8 @@ class WatchHistoryCompanion extends UpdateCompanion<WatchHistoryData> {
       if (title != null) 'title': title,
       if (posterUrl != null) 'poster_url': posterUrl,
       if (year != null) 'year': year,
+      if (rating != null) 'rating': rating,
+      if (ratingSource != null) 'rating_source': ratingSource,
       if (mediaType != null) 'media_type': mediaType,
       if (positionMs != null) 'position_ms': positionMs,
       if (durationMs != null) 'duration_ms': durationMs,
@@ -1904,6 +2094,8 @@ class WatchHistoryCompanion extends UpdateCompanion<WatchHistoryData> {
     Value<String>? title,
     Value<String?>? posterUrl,
     Value<int?>? year,
+    Value<double?>? rating,
+    Value<String?>? ratingSource,
     Value<String>? mediaType,
     Value<int>? positionMs,
     Value<int>? durationMs,
@@ -1921,6 +2113,8 @@ class WatchHistoryCompanion extends UpdateCompanion<WatchHistoryData> {
       title: title ?? this.title,
       posterUrl: posterUrl ?? this.posterUrl,
       year: year ?? this.year,
+      rating: rating ?? this.rating,
+      ratingSource: ratingSource ?? this.ratingSource,
       mediaType: mediaType ?? this.mediaType,
       positionMs: positionMs ?? this.positionMs,
       durationMs: durationMs ?? this.durationMs,
@@ -1953,6 +2147,12 @@ class WatchHistoryCompanion extends UpdateCompanion<WatchHistoryData> {
     }
     if (year.present) {
       map['year'] = Variable<int>(year.value);
+    }
+    if (rating.present) {
+      map['rating'] = Variable<double>(rating.value);
+    }
+    if (ratingSource.present) {
+      map['rating_source'] = Variable<String>(ratingSource.value);
     }
     if (mediaType.present) {
       map['media_type'] = Variable<String>(mediaType.value);
@@ -1993,6 +2193,8 @@ class WatchHistoryCompanion extends UpdateCompanion<WatchHistoryData> {
           ..write('title: $title, ')
           ..write('posterUrl: $posterUrl, ')
           ..write('year: $year, ')
+          ..write('rating: $rating, ')
+          ..write('ratingSource: $ratingSource, ')
           ..write('mediaType: $mediaType, ')
           ..write('positionMs: $positionMs, ')
           ..write('durationMs: $durationMs, ')
@@ -2075,6 +2277,26 @@ class $DownloadsTable extends Downloads
     aliasedName,
     true,
     type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _ratingMeta = const VerificationMeta('rating');
+  @override
+  late final GeneratedColumn<double> rating = GeneratedColumn<double>(
+    'rating',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _ratingSourceMeta = const VerificationMeta(
+    'ratingSource',
+  );
+  @override
+  late final GeneratedColumn<String> ratingSource = GeneratedColumn<String>(
+    'rating_source',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
   static const VerificationMeta _mediaTypeMeta = const VerificationMeta(
@@ -2240,6 +2462,8 @@ class $DownloadsTable extends Downloads
     title,
     posterUrl,
     year,
+    rating,
+    ratingSource,
     mediaType,
     season,
     episode,
@@ -2304,6 +2528,21 @@ class $DownloadsTable extends Downloads
       context.handle(
         _yearMeta,
         year.isAcceptableOrUnknown(data['year']!, _yearMeta),
+      );
+    }
+    if (data.containsKey('rating')) {
+      context.handle(
+        _ratingMeta,
+        rating.isAcceptableOrUnknown(data['rating']!, _ratingMeta),
+      );
+    }
+    if (data.containsKey('rating_source')) {
+      context.handle(
+        _ratingSourceMeta,
+        ratingSource.isAcceptableOrUnknown(
+          data['rating_source']!,
+          _ratingSourceMeta,
+        ),
       );
     }
     if (data.containsKey('media_type')) {
@@ -2441,6 +2680,14 @@ class $DownloadsTable extends Downloads
         DriftSqlType.int,
         data['${effectivePrefix}year'],
       ),
+      rating: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}rating'],
+      ),
+      ratingSource: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}rating_source'],
+      ),
       mediaType: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}media_type'],
@@ -2518,6 +2765,8 @@ class Download extends DataClass implements Insertable<Download> {
   final String title;
   final String? posterUrl;
   final int? year;
+  final double? rating;
+  final String? ratingSource;
   final String mediaType;
   final int? season;
   final int? episode;
@@ -2539,6 +2788,8 @@ class Download extends DataClass implements Insertable<Download> {
     required this.title,
     this.posterUrl,
     this.year,
+    this.rating,
+    this.ratingSource,
     required this.mediaType,
     this.season,
     this.episode,
@@ -2566,6 +2817,12 @@ class Download extends DataClass implements Insertable<Download> {
     }
     if (!nullToAbsent || year != null) {
       map['year'] = Variable<int>(year);
+    }
+    if (!nullToAbsent || rating != null) {
+      map['rating'] = Variable<double>(rating);
+    }
+    if (!nullToAbsent || ratingSource != null) {
+      map['rating_source'] = Variable<String>(ratingSource);
     }
     map['media_type'] = Variable<String>(mediaType);
     if (!nullToAbsent || season != null) {
@@ -2608,6 +2865,12 @@ class Download extends DataClass implements Insertable<Download> {
           ? const Value.absent()
           : Value(posterUrl),
       year: year == null && nullToAbsent ? const Value.absent() : Value(year),
+      rating: rating == null && nullToAbsent
+          ? const Value.absent()
+          : Value(rating),
+      ratingSource: ratingSource == null && nullToAbsent
+          ? const Value.absent()
+          : Value(ratingSource),
       mediaType: Value(mediaType),
       season: season == null && nullToAbsent
           ? const Value.absent()
@@ -2647,6 +2910,8 @@ class Download extends DataClass implements Insertable<Download> {
       title: serializer.fromJson<String>(json['title']),
       posterUrl: serializer.fromJson<String?>(json['posterUrl']),
       year: serializer.fromJson<int?>(json['year']),
+      rating: serializer.fromJson<double?>(json['rating']),
+      ratingSource: serializer.fromJson<String?>(json['ratingSource']),
       mediaType: serializer.fromJson<String>(json['mediaType']),
       season: serializer.fromJson<int?>(json['season']),
       episode: serializer.fromJson<int?>(json['episode']),
@@ -2673,6 +2938,8 @@ class Download extends DataClass implements Insertable<Download> {
       'title': serializer.toJson<String>(title),
       'posterUrl': serializer.toJson<String?>(posterUrl),
       'year': serializer.toJson<int?>(year),
+      'rating': serializer.toJson<double?>(rating),
+      'ratingSource': serializer.toJson<String?>(ratingSource),
       'mediaType': serializer.toJson<String>(mediaType),
       'season': serializer.toJson<int?>(season),
       'episode': serializer.toJson<int?>(episode),
@@ -2697,6 +2964,8 @@ class Download extends DataClass implements Insertable<Download> {
     String? title,
     Value<String?> posterUrl = const Value.absent(),
     Value<int?> year = const Value.absent(),
+    Value<double?> rating = const Value.absent(),
+    Value<String?> ratingSource = const Value.absent(),
     String? mediaType,
     Value<int?> season = const Value.absent(),
     Value<int?> episode = const Value.absent(),
@@ -2718,6 +2987,8 @@ class Download extends DataClass implements Insertable<Download> {
     title: title ?? this.title,
     posterUrl: posterUrl.present ? posterUrl.value : this.posterUrl,
     year: year.present ? year.value : this.year,
+    rating: rating.present ? rating.value : this.rating,
+    ratingSource: ratingSource.present ? ratingSource.value : this.ratingSource,
     mediaType: mediaType ?? this.mediaType,
     season: season.present ? season.value : this.season,
     episode: episode.present ? episode.value : this.episode,
@@ -2743,6 +3014,10 @@ class Download extends DataClass implements Insertable<Download> {
       title: data.title.present ? data.title.value : this.title,
       posterUrl: data.posterUrl.present ? data.posterUrl.value : this.posterUrl,
       year: data.year.present ? data.year.value : this.year,
+      rating: data.rating.present ? data.rating.value : this.rating,
+      ratingSource: data.ratingSource.present
+          ? data.ratingSource.value
+          : this.ratingSource,
       mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
       season: data.season.present ? data.season.value : this.season,
       episode: data.episode.present ? data.episode.value : this.episode,
@@ -2777,6 +3052,8 @@ class Download extends DataClass implements Insertable<Download> {
           ..write('title: $title, ')
           ..write('posterUrl: $posterUrl, ')
           ..write('year: $year, ')
+          ..write('rating: $rating, ')
+          ..write('ratingSource: $ratingSource, ')
           ..write('mediaType: $mediaType, ')
           ..write('season: $season, ')
           ..write('episode: $episode, ')
@@ -2796,13 +3073,15 @@ class Download extends DataClass implements Insertable<Download> {
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     id,
     mediaId,
     providerId,
     title,
     posterUrl,
     year,
+    rating,
+    ratingSource,
     mediaType,
     season,
     episode,
@@ -2817,7 +3096,7 @@ class Download extends DataClass implements Insertable<Download> {
     downloadedBytes,
     createdAt,
     completedAt,
-  );
+  ]);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -2828,6 +3107,8 @@ class Download extends DataClass implements Insertable<Download> {
           other.title == this.title &&
           other.posterUrl == this.posterUrl &&
           other.year == this.year &&
+          other.rating == this.rating &&
+          other.ratingSource == this.ratingSource &&
           other.mediaType == this.mediaType &&
           other.season == this.season &&
           other.episode == this.episode &&
@@ -2851,6 +3132,8 @@ class DownloadsCompanion extends UpdateCompanion<Download> {
   final Value<String> title;
   final Value<String?> posterUrl;
   final Value<int?> year;
+  final Value<double?> rating;
+  final Value<String?> ratingSource;
   final Value<String> mediaType;
   final Value<int?> season;
   final Value<int?> episode;
@@ -2872,6 +3155,8 @@ class DownloadsCompanion extends UpdateCompanion<Download> {
     this.title = const Value.absent(),
     this.posterUrl = const Value.absent(),
     this.year = const Value.absent(),
+    this.rating = const Value.absent(),
+    this.ratingSource = const Value.absent(),
     this.mediaType = const Value.absent(),
     this.season = const Value.absent(),
     this.episode = const Value.absent(),
@@ -2894,6 +3179,8 @@ class DownloadsCompanion extends UpdateCompanion<Download> {
     required String title,
     this.posterUrl = const Value.absent(),
     this.year = const Value.absent(),
+    this.rating = const Value.absent(),
+    this.ratingSource = const Value.absent(),
     required String mediaType,
     this.season = const Value.absent(),
     this.episode = const Value.absent(),
@@ -2922,6 +3209,8 @@ class DownloadsCompanion extends UpdateCompanion<Download> {
     Expression<String>? title,
     Expression<String>? posterUrl,
     Expression<int>? year,
+    Expression<double>? rating,
+    Expression<String>? ratingSource,
     Expression<String>? mediaType,
     Expression<int>? season,
     Expression<int>? episode,
@@ -2944,6 +3233,8 @@ class DownloadsCompanion extends UpdateCompanion<Download> {
       if (title != null) 'title': title,
       if (posterUrl != null) 'poster_url': posterUrl,
       if (year != null) 'year': year,
+      if (rating != null) 'rating': rating,
+      if (ratingSource != null) 'rating_source': ratingSource,
       if (mediaType != null) 'media_type': mediaType,
       if (season != null) 'season': season,
       if (episode != null) 'episode': episode,
@@ -2968,6 +3259,8 @@ class DownloadsCompanion extends UpdateCompanion<Download> {
     Value<String>? title,
     Value<String?>? posterUrl,
     Value<int?>? year,
+    Value<double?>? rating,
+    Value<String?>? ratingSource,
     Value<String>? mediaType,
     Value<int?>? season,
     Value<int?>? episode,
@@ -2990,6 +3283,8 @@ class DownloadsCompanion extends UpdateCompanion<Download> {
       title: title ?? this.title,
       posterUrl: posterUrl ?? this.posterUrl,
       year: year ?? this.year,
+      rating: rating ?? this.rating,
+      ratingSource: ratingSource ?? this.ratingSource,
       mediaType: mediaType ?? this.mediaType,
       season: season ?? this.season,
       episode: episode ?? this.episode,
@@ -3027,6 +3322,12 @@ class DownloadsCompanion extends UpdateCompanion<Download> {
     }
     if (year.present) {
       map['year'] = Variable<int>(year.value);
+    }
+    if (rating.present) {
+      map['rating'] = Variable<double>(rating.value);
+    }
+    if (ratingSource.present) {
+      map['rating_source'] = Variable<String>(ratingSource.value);
     }
     if (mediaType.present) {
       map['media_type'] = Variable<String>(mediaType.value);
@@ -3084,6 +3385,8 @@ class DownloadsCompanion extends UpdateCompanion<Download> {
           ..write('title: $title, ')
           ..write('posterUrl: $posterUrl, ')
           ..write('year: $year, ')
+          ..write('rating: $rating, ')
+          ..write('ratingSource: $ratingSource, ')
           ..write('mediaType: $mediaType, ')
           ..write('season: $season, ')
           ..write('episode: $episode, ')
@@ -3648,6 +3951,773 @@ class SearchHistoryTableCompanion
   }
 }
 
+class $StoredMediaItemsTable extends StoredMediaItems
+    with TableInfo<$StoredMediaItemsTable, StoredMediaItem> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $StoredMediaItemsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _providerIdMeta = const VerificationMeta(
+    'providerId',
+  );
+  @override
+  late final GeneratedColumn<String> providerId = GeneratedColumn<String>(
+    'provider_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+    'title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _originalTitleMeta = const VerificationMeta(
+    'originalTitle',
+  );
+  @override
+  late final GeneratedColumn<String> originalTitle = GeneratedColumn<String>(
+    'original_title',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _posterUrlMeta = const VerificationMeta(
+    'posterUrl',
+  );
+  @override
+  late final GeneratedColumn<String> posterUrl = GeneratedColumn<String>(
+    'poster_url',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _yearMeta = const VerificationMeta('year');
+  @override
+  late final GeneratedColumn<int> year = GeneratedColumn<int>(
+    'year',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _ratingMeta = const VerificationMeta('rating');
+  @override
+  late final GeneratedColumn<double> rating = GeneratedColumn<double>(
+    'rating',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _mediaTypeMeta = const VerificationMeta(
+    'mediaType',
+  );
+  @override
+  late final GeneratedColumn<String> mediaType = GeneratedColumn<String>(
+    'media_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _descriptionMeta = const VerificationMeta(
+    'description',
+  );
+  @override
+  late final GeneratedColumn<String> description = GeneratedColumn<String>(
+    'description',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _genresMeta = const VerificationMeta('genres');
+  @override
+  late final GeneratedColumn<String> genres = GeneratedColumn<String>(
+    'genres',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _countryMeta = const VerificationMeta(
+    'country',
+  );
+  @override
+  late final GeneratedColumn<String> country = GeneratedColumn<String>(
+    'country',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _ratingSourceMeta = const VerificationMeta(
+    'ratingSource',
+  );
+  @override
+  late final GeneratedColumn<String> ratingSource = GeneratedColumn<String>(
+    'rating_source',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    providerId,
+    title,
+    originalTitle,
+    posterUrl,
+    year,
+    rating,
+    mediaType,
+    description,
+    genres,
+    country,
+    ratingSource,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'stored_media_items';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<StoredMediaItem> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('provider_id')) {
+      context.handle(
+        _providerIdMeta,
+        providerId.isAcceptableOrUnknown(data['provider_id']!, _providerIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_providerIdMeta);
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+        _titleMeta,
+        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('original_title')) {
+      context.handle(
+        _originalTitleMeta,
+        originalTitle.isAcceptableOrUnknown(
+          data['original_title']!,
+          _originalTitleMeta,
+        ),
+      );
+    }
+    if (data.containsKey('poster_url')) {
+      context.handle(
+        _posterUrlMeta,
+        posterUrl.isAcceptableOrUnknown(data['poster_url']!, _posterUrlMeta),
+      );
+    }
+    if (data.containsKey('year')) {
+      context.handle(
+        _yearMeta,
+        year.isAcceptableOrUnknown(data['year']!, _yearMeta),
+      );
+    }
+    if (data.containsKey('rating')) {
+      context.handle(
+        _ratingMeta,
+        rating.isAcceptableOrUnknown(data['rating']!, _ratingMeta),
+      );
+    }
+    if (data.containsKey('media_type')) {
+      context.handle(
+        _mediaTypeMeta,
+        mediaType.isAcceptableOrUnknown(data['media_type']!, _mediaTypeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mediaTypeMeta);
+    }
+    if (data.containsKey('description')) {
+      context.handle(
+        _descriptionMeta,
+        description.isAcceptableOrUnknown(
+          data['description']!,
+          _descriptionMeta,
+        ),
+      );
+    }
+    if (data.containsKey('genres')) {
+      context.handle(
+        _genresMeta,
+        genres.isAcceptableOrUnknown(data['genres']!, _genresMeta),
+      );
+    }
+    if (data.containsKey('country')) {
+      context.handle(
+        _countryMeta,
+        country.isAcceptableOrUnknown(data['country']!, _countryMeta),
+      );
+    }
+    if (data.containsKey('rating_source')) {
+      context.handle(
+        _ratingSourceMeta,
+        ratingSource.isAcceptableOrUnknown(
+          data['rating_source']!,
+          _ratingSourceMeta,
+        ),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {providerId, id};
+  @override
+  StoredMediaItem map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return StoredMediaItem(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      providerId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}provider_id'],
+      )!,
+      title: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title'],
+      )!,
+      originalTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}original_title'],
+      ),
+      posterUrl: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}poster_url'],
+      ),
+      year: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}year'],
+      ),
+      rating: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}rating'],
+      ),
+      mediaType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_type'],
+      )!,
+      description: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}description'],
+      ),
+      genres: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}genres'],
+      ),
+      country: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}country'],
+      ),
+      ratingSource: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}rating_source'],
+      ),
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $StoredMediaItemsTable createAlias(String alias) {
+    return $StoredMediaItemsTable(attachedDatabase, alias);
+  }
+}
+
+class StoredMediaItem extends DataClass implements Insertable<StoredMediaItem> {
+  final String id;
+  final String providerId;
+  final String title;
+  final String? originalTitle;
+  final String? posterUrl;
+  final int? year;
+  final double? rating;
+  final String mediaType;
+  final String? description;
+  final String? genres;
+  final String? country;
+  final String? ratingSource;
+  final DateTime updatedAt;
+  const StoredMediaItem({
+    required this.id,
+    required this.providerId,
+    required this.title,
+    this.originalTitle,
+    this.posterUrl,
+    this.year,
+    this.rating,
+    required this.mediaType,
+    this.description,
+    this.genres,
+    this.country,
+    this.ratingSource,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['provider_id'] = Variable<String>(providerId);
+    map['title'] = Variable<String>(title);
+    if (!nullToAbsent || originalTitle != null) {
+      map['original_title'] = Variable<String>(originalTitle);
+    }
+    if (!nullToAbsent || posterUrl != null) {
+      map['poster_url'] = Variable<String>(posterUrl);
+    }
+    if (!nullToAbsent || year != null) {
+      map['year'] = Variable<int>(year);
+    }
+    if (!nullToAbsent || rating != null) {
+      map['rating'] = Variable<double>(rating);
+    }
+    map['media_type'] = Variable<String>(mediaType);
+    if (!nullToAbsent || description != null) {
+      map['description'] = Variable<String>(description);
+    }
+    if (!nullToAbsent || genres != null) {
+      map['genres'] = Variable<String>(genres);
+    }
+    if (!nullToAbsent || country != null) {
+      map['country'] = Variable<String>(country);
+    }
+    if (!nullToAbsent || ratingSource != null) {
+      map['rating_source'] = Variable<String>(ratingSource);
+    }
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  StoredMediaItemsCompanion toCompanion(bool nullToAbsent) {
+    return StoredMediaItemsCompanion(
+      id: Value(id),
+      providerId: Value(providerId),
+      title: Value(title),
+      originalTitle: originalTitle == null && nullToAbsent
+          ? const Value.absent()
+          : Value(originalTitle),
+      posterUrl: posterUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(posterUrl),
+      year: year == null && nullToAbsent ? const Value.absent() : Value(year),
+      rating: rating == null && nullToAbsent
+          ? const Value.absent()
+          : Value(rating),
+      mediaType: Value(mediaType),
+      description: description == null && nullToAbsent
+          ? const Value.absent()
+          : Value(description),
+      genres: genres == null && nullToAbsent
+          ? const Value.absent()
+          : Value(genres),
+      country: country == null && nullToAbsent
+          ? const Value.absent()
+          : Value(country),
+      ratingSource: ratingSource == null && nullToAbsent
+          ? const Value.absent()
+          : Value(ratingSource),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory StoredMediaItem.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return StoredMediaItem(
+      id: serializer.fromJson<String>(json['id']),
+      providerId: serializer.fromJson<String>(json['providerId']),
+      title: serializer.fromJson<String>(json['title']),
+      originalTitle: serializer.fromJson<String?>(json['originalTitle']),
+      posterUrl: serializer.fromJson<String?>(json['posterUrl']),
+      year: serializer.fromJson<int?>(json['year']),
+      rating: serializer.fromJson<double?>(json['rating']),
+      mediaType: serializer.fromJson<String>(json['mediaType']),
+      description: serializer.fromJson<String?>(json['description']),
+      genres: serializer.fromJson<String?>(json['genres']),
+      country: serializer.fromJson<String?>(json['country']),
+      ratingSource: serializer.fromJson<String?>(json['ratingSource']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'providerId': serializer.toJson<String>(providerId),
+      'title': serializer.toJson<String>(title),
+      'originalTitle': serializer.toJson<String?>(originalTitle),
+      'posterUrl': serializer.toJson<String?>(posterUrl),
+      'year': serializer.toJson<int?>(year),
+      'rating': serializer.toJson<double?>(rating),
+      'mediaType': serializer.toJson<String>(mediaType),
+      'description': serializer.toJson<String?>(description),
+      'genres': serializer.toJson<String?>(genres),
+      'country': serializer.toJson<String?>(country),
+      'ratingSource': serializer.toJson<String?>(ratingSource),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  StoredMediaItem copyWith({
+    String? id,
+    String? providerId,
+    String? title,
+    Value<String?> originalTitle = const Value.absent(),
+    Value<String?> posterUrl = const Value.absent(),
+    Value<int?> year = const Value.absent(),
+    Value<double?> rating = const Value.absent(),
+    String? mediaType,
+    Value<String?> description = const Value.absent(),
+    Value<String?> genres = const Value.absent(),
+    Value<String?> country = const Value.absent(),
+    Value<String?> ratingSource = const Value.absent(),
+    DateTime? updatedAt,
+  }) => StoredMediaItem(
+    id: id ?? this.id,
+    providerId: providerId ?? this.providerId,
+    title: title ?? this.title,
+    originalTitle: originalTitle.present
+        ? originalTitle.value
+        : this.originalTitle,
+    posterUrl: posterUrl.present ? posterUrl.value : this.posterUrl,
+    year: year.present ? year.value : this.year,
+    rating: rating.present ? rating.value : this.rating,
+    mediaType: mediaType ?? this.mediaType,
+    description: description.present ? description.value : this.description,
+    genres: genres.present ? genres.value : this.genres,
+    country: country.present ? country.value : this.country,
+    ratingSource: ratingSource.present ? ratingSource.value : this.ratingSource,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  StoredMediaItem copyWithCompanion(StoredMediaItemsCompanion data) {
+    return StoredMediaItem(
+      id: data.id.present ? data.id.value : this.id,
+      providerId: data.providerId.present
+          ? data.providerId.value
+          : this.providerId,
+      title: data.title.present ? data.title.value : this.title,
+      originalTitle: data.originalTitle.present
+          ? data.originalTitle.value
+          : this.originalTitle,
+      posterUrl: data.posterUrl.present ? data.posterUrl.value : this.posterUrl,
+      year: data.year.present ? data.year.value : this.year,
+      rating: data.rating.present ? data.rating.value : this.rating,
+      mediaType: data.mediaType.present ? data.mediaType.value : this.mediaType,
+      description: data.description.present
+          ? data.description.value
+          : this.description,
+      genres: data.genres.present ? data.genres.value : this.genres,
+      country: data.country.present ? data.country.value : this.country,
+      ratingSource: data.ratingSource.present
+          ? data.ratingSource.value
+          : this.ratingSource,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('StoredMediaItem(')
+          ..write('id: $id, ')
+          ..write('providerId: $providerId, ')
+          ..write('title: $title, ')
+          ..write('originalTitle: $originalTitle, ')
+          ..write('posterUrl: $posterUrl, ')
+          ..write('year: $year, ')
+          ..write('rating: $rating, ')
+          ..write('mediaType: $mediaType, ')
+          ..write('description: $description, ')
+          ..write('genres: $genres, ')
+          ..write('country: $country, ')
+          ..write('ratingSource: $ratingSource, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    providerId,
+    title,
+    originalTitle,
+    posterUrl,
+    year,
+    rating,
+    mediaType,
+    description,
+    genres,
+    country,
+    ratingSource,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is StoredMediaItem &&
+          other.id == this.id &&
+          other.providerId == this.providerId &&
+          other.title == this.title &&
+          other.originalTitle == this.originalTitle &&
+          other.posterUrl == this.posterUrl &&
+          other.year == this.year &&
+          other.rating == this.rating &&
+          other.mediaType == this.mediaType &&
+          other.description == this.description &&
+          other.genres == this.genres &&
+          other.country == this.country &&
+          other.ratingSource == this.ratingSource &&
+          other.updatedAt == this.updatedAt);
+}
+
+class StoredMediaItemsCompanion extends UpdateCompanion<StoredMediaItem> {
+  final Value<String> id;
+  final Value<String> providerId;
+  final Value<String> title;
+  final Value<String?> originalTitle;
+  final Value<String?> posterUrl;
+  final Value<int?> year;
+  final Value<double?> rating;
+  final Value<String> mediaType;
+  final Value<String?> description;
+  final Value<String?> genres;
+  final Value<String?> country;
+  final Value<String?> ratingSource;
+  final Value<DateTime> updatedAt;
+  final Value<int> rowid;
+  const StoredMediaItemsCompanion({
+    this.id = const Value.absent(),
+    this.providerId = const Value.absent(),
+    this.title = const Value.absent(),
+    this.originalTitle = const Value.absent(),
+    this.posterUrl = const Value.absent(),
+    this.year = const Value.absent(),
+    this.rating = const Value.absent(),
+    this.mediaType = const Value.absent(),
+    this.description = const Value.absent(),
+    this.genres = const Value.absent(),
+    this.country = const Value.absent(),
+    this.ratingSource = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  StoredMediaItemsCompanion.insert({
+    required String id,
+    required String providerId,
+    required String title,
+    this.originalTitle = const Value.absent(),
+    this.posterUrl = const Value.absent(),
+    this.year = const Value.absent(),
+    this.rating = const Value.absent(),
+    required String mediaType,
+    this.description = const Value.absent(),
+    this.genres = const Value.absent(),
+    this.country = const Value.absent(),
+    this.ratingSource = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       providerId = Value(providerId),
+       title = Value(title),
+       mediaType = Value(mediaType);
+  static Insertable<StoredMediaItem> custom({
+    Expression<String>? id,
+    Expression<String>? providerId,
+    Expression<String>? title,
+    Expression<String>? originalTitle,
+    Expression<String>? posterUrl,
+    Expression<int>? year,
+    Expression<double>? rating,
+    Expression<String>? mediaType,
+    Expression<String>? description,
+    Expression<String>? genres,
+    Expression<String>? country,
+    Expression<String>? ratingSource,
+    Expression<DateTime>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (providerId != null) 'provider_id': providerId,
+      if (title != null) 'title': title,
+      if (originalTitle != null) 'original_title': originalTitle,
+      if (posterUrl != null) 'poster_url': posterUrl,
+      if (year != null) 'year': year,
+      if (rating != null) 'rating': rating,
+      if (mediaType != null) 'media_type': mediaType,
+      if (description != null) 'description': description,
+      if (genres != null) 'genres': genres,
+      if (country != null) 'country': country,
+      if (ratingSource != null) 'rating_source': ratingSource,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  StoredMediaItemsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? providerId,
+    Value<String>? title,
+    Value<String?>? originalTitle,
+    Value<String?>? posterUrl,
+    Value<int?>? year,
+    Value<double?>? rating,
+    Value<String>? mediaType,
+    Value<String?>? description,
+    Value<String?>? genres,
+    Value<String?>? country,
+    Value<String?>? ratingSource,
+    Value<DateTime>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return StoredMediaItemsCompanion(
+      id: id ?? this.id,
+      providerId: providerId ?? this.providerId,
+      title: title ?? this.title,
+      originalTitle: originalTitle ?? this.originalTitle,
+      posterUrl: posterUrl ?? this.posterUrl,
+      year: year ?? this.year,
+      rating: rating ?? this.rating,
+      mediaType: mediaType ?? this.mediaType,
+      description: description ?? this.description,
+      genres: genres ?? this.genres,
+      country: country ?? this.country,
+      ratingSource: ratingSource ?? this.ratingSource,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (providerId.present) {
+      map['provider_id'] = Variable<String>(providerId.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (originalTitle.present) {
+      map['original_title'] = Variable<String>(originalTitle.value);
+    }
+    if (posterUrl.present) {
+      map['poster_url'] = Variable<String>(posterUrl.value);
+    }
+    if (year.present) {
+      map['year'] = Variable<int>(year.value);
+    }
+    if (rating.present) {
+      map['rating'] = Variable<double>(rating.value);
+    }
+    if (mediaType.present) {
+      map['media_type'] = Variable<String>(mediaType.value);
+    }
+    if (description.present) {
+      map['description'] = Variable<String>(description.value);
+    }
+    if (genres.present) {
+      map['genres'] = Variable<String>(genres.value);
+    }
+    if (country.present) {
+      map['country'] = Variable<String>(country.value);
+    }
+    if (ratingSource.present) {
+      map['rating_source'] = Variable<String>(ratingSource.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('StoredMediaItemsCompanion(')
+          ..write('id: $id, ')
+          ..write('providerId: $providerId, ')
+          ..write('title: $title, ')
+          ..write('originalTitle: $originalTitle, ')
+          ..write('posterUrl: $posterUrl, ')
+          ..write('year: $year, ')
+          ..write('rating: $rating, ')
+          ..write('mediaType: $mediaType, ')
+          ..write('description: $description, ')
+          ..write('genres: $genres, ')
+          ..write('country: $country, ')
+          ..write('ratingSource: $ratingSource, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -3660,6 +4730,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $DownloadsTable downloads = $DownloadsTable(this);
   late final $SearchHistoryTableTable searchHistoryTable =
       $SearchHistoryTableTable(this);
+  late final $StoredMediaItemsTable storedMediaItems = $StoredMediaItemsTable(
+    this,
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3671,6 +4744,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     watchHistory,
     downloads,
     searchHistoryTable,
+    storedMediaItems,
   ];
 }
 
@@ -4059,6 +5133,8 @@ typedef $$FavoritesTableCreateCompanionBuilder =
       required String title,
       Value<String?> posterUrl,
       Value<int?> year,
+      Value<double?> rating,
+      Value<String?> ratingSource,
       required String mediaType,
       Value<DateTime> addedAt,
     });
@@ -4070,6 +5146,8 @@ typedef $$FavoritesTableUpdateCompanionBuilder =
       Value<String> title,
       Value<String?> posterUrl,
       Value<int?> year,
+      Value<double?> rating,
+      Value<String?> ratingSource,
       Value<String> mediaType,
       Value<DateTime> addedAt,
     });
@@ -4110,6 +5188,16 @@ class $$FavoritesTableFilterComposer
 
   ColumnFilters<int> get year => $composableBuilder(
     column: $table.year,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get rating => $composableBuilder(
+    column: $table.rating,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get ratingSource => $composableBuilder(
+    column: $table.ratingSource,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4163,6 +5251,16 @@ class $$FavoritesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<double> get rating => $composableBuilder(
+    column: $table.rating,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get ratingSource => $composableBuilder(
+    column: $table.ratingSource,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get mediaType => $composableBuilder(
     column: $table.mediaType,
     builder: (column) => ColumnOrderings(column),
@@ -4202,6 +5300,14 @@ class $$FavoritesTableAnnotationComposer
 
   GeneratedColumn<int> get year =>
       $composableBuilder(column: $table.year, builder: (column) => column);
+
+  GeneratedColumn<double> get rating =>
+      $composableBuilder(column: $table.rating, builder: (column) => column);
+
+  GeneratedColumn<String> get ratingSource => $composableBuilder(
+    column: $table.ratingSource,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<String> get mediaType =>
       $composableBuilder(column: $table.mediaType, builder: (column) => column);
@@ -4244,6 +5350,8 @@ class $$FavoritesTableTableManager
                 Value<String> title = const Value.absent(),
                 Value<String?> posterUrl = const Value.absent(),
                 Value<int?> year = const Value.absent(),
+                Value<double?> rating = const Value.absent(),
+                Value<String?> ratingSource = const Value.absent(),
                 Value<String> mediaType = const Value.absent(),
                 Value<DateTime> addedAt = const Value.absent(),
               }) => FavoritesCompanion(
@@ -4253,6 +5361,8 @@ class $$FavoritesTableTableManager
                 title: title,
                 posterUrl: posterUrl,
                 year: year,
+                rating: rating,
+                ratingSource: ratingSource,
                 mediaType: mediaType,
                 addedAt: addedAt,
               ),
@@ -4264,6 +5374,8 @@ class $$FavoritesTableTableManager
                 required String title,
                 Value<String?> posterUrl = const Value.absent(),
                 Value<int?> year = const Value.absent(),
+                Value<double?> rating = const Value.absent(),
+                Value<String?> ratingSource = const Value.absent(),
                 required String mediaType,
                 Value<DateTime> addedAt = const Value.absent(),
               }) => FavoritesCompanion.insert(
@@ -4273,6 +5385,8 @@ class $$FavoritesTableTableManager
                 title: title,
                 posterUrl: posterUrl,
                 year: year,
+                rating: rating,
+                ratingSource: ratingSource,
                 mediaType: mediaType,
                 addedAt: addedAt,
               ),
@@ -4306,6 +5420,8 @@ typedef $$WatchHistoryTableCreateCompanionBuilder =
       required String title,
       Value<String?> posterUrl,
       Value<int?> year,
+      Value<double?> rating,
+      Value<String?> ratingSource,
       required String mediaType,
       Value<int> positionMs,
       Value<int> durationMs,
@@ -4324,6 +5440,8 @@ typedef $$WatchHistoryTableUpdateCompanionBuilder =
       Value<String> title,
       Value<String?> posterUrl,
       Value<int?> year,
+      Value<double?> rating,
+      Value<String?> ratingSource,
       Value<String> mediaType,
       Value<int> positionMs,
       Value<int> durationMs,
@@ -4371,6 +5489,16 @@ class $$WatchHistoryTableFilterComposer
 
   ColumnFilters<int> get year => $composableBuilder(
     column: $table.year,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get rating => $composableBuilder(
+    column: $table.rating,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get ratingSource => $composableBuilder(
+    column: $table.ratingSource,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4459,6 +5587,16 @@ class $$WatchHistoryTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<double> get rating => $composableBuilder(
+    column: $table.rating,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get ratingSource => $composableBuilder(
+    column: $table.ratingSource,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get mediaType => $composableBuilder(
     column: $table.mediaType,
     builder: (column) => ColumnOrderings(column),
@@ -4534,6 +5672,14 @@ class $$WatchHistoryTableAnnotationComposer
   GeneratedColumn<int> get year =>
       $composableBuilder(column: $table.year, builder: (column) => column);
 
+  GeneratedColumn<double> get rating =>
+      $composableBuilder(column: $table.rating, builder: (column) => column);
+
+  GeneratedColumn<String> get ratingSource => $composableBuilder(
+    column: $table.ratingSource,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get mediaType =>
       $composableBuilder(column: $table.mediaType, builder: (column) => column);
 
@@ -4607,6 +5753,8 @@ class $$WatchHistoryTableTableManager
                 Value<String> title = const Value.absent(),
                 Value<String?> posterUrl = const Value.absent(),
                 Value<int?> year = const Value.absent(),
+                Value<double?> rating = const Value.absent(),
+                Value<String?> ratingSource = const Value.absent(),
                 Value<String> mediaType = const Value.absent(),
                 Value<int> positionMs = const Value.absent(),
                 Value<int> durationMs = const Value.absent(),
@@ -4623,6 +5771,8 @@ class $$WatchHistoryTableTableManager
                 title: title,
                 posterUrl: posterUrl,
                 year: year,
+                rating: rating,
+                ratingSource: ratingSource,
                 mediaType: mediaType,
                 positionMs: positionMs,
                 durationMs: durationMs,
@@ -4641,6 +5791,8 @@ class $$WatchHistoryTableTableManager
                 required String title,
                 Value<String?> posterUrl = const Value.absent(),
                 Value<int?> year = const Value.absent(),
+                Value<double?> rating = const Value.absent(),
+                Value<String?> ratingSource = const Value.absent(),
                 required String mediaType,
                 Value<int> positionMs = const Value.absent(),
                 Value<int> durationMs = const Value.absent(),
@@ -4657,6 +5809,8 @@ class $$WatchHistoryTableTableManager
                 title: title,
                 posterUrl: posterUrl,
                 year: year,
+                rating: rating,
+                ratingSource: ratingSource,
                 mediaType: mediaType,
                 positionMs: positionMs,
                 durationMs: durationMs,
@@ -4700,6 +5854,8 @@ typedef $$DownloadsTableCreateCompanionBuilder =
       required String title,
       Value<String?> posterUrl,
       Value<int?> year,
+      Value<double?> rating,
+      Value<String?> ratingSource,
       required String mediaType,
       Value<int?> season,
       Value<int?> episode,
@@ -4723,6 +5879,8 @@ typedef $$DownloadsTableUpdateCompanionBuilder =
       Value<String> title,
       Value<String?> posterUrl,
       Value<int?> year,
+      Value<double?> rating,
+      Value<String?> ratingSource,
       Value<String> mediaType,
       Value<int?> season,
       Value<int?> episode,
@@ -4775,6 +5933,16 @@ class $$DownloadsTableFilterComposer
 
   ColumnFilters<int> get year => $composableBuilder(
     column: $table.year,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get rating => $composableBuilder(
+    column: $table.rating,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get ratingSource => $composableBuilder(
+    column: $table.ratingSource,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4889,6 +6057,16 @@ class $$DownloadsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<double> get rating => $composableBuilder(
+    column: $table.rating,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get ratingSource => $composableBuilder(
+    column: $table.ratingSource,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get mediaType => $composableBuilder(
     column: $table.mediaType,
     builder: (column) => ColumnOrderings(column),
@@ -4989,6 +6167,14 @@ class $$DownloadsTableAnnotationComposer
   GeneratedColumn<int> get year =>
       $composableBuilder(column: $table.year, builder: (column) => column);
 
+  GeneratedColumn<double> get rating =>
+      $composableBuilder(column: $table.rating, builder: (column) => column);
+
+  GeneratedColumn<String> get ratingSource => $composableBuilder(
+    column: $table.ratingSource,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get mediaType =>
       $composableBuilder(column: $table.mediaType, builder: (column) => column);
 
@@ -5074,6 +6260,8 @@ class $$DownloadsTableTableManager
                 Value<String> title = const Value.absent(),
                 Value<String?> posterUrl = const Value.absent(),
                 Value<int?> year = const Value.absent(),
+                Value<double?> rating = const Value.absent(),
+                Value<String?> ratingSource = const Value.absent(),
                 Value<String> mediaType = const Value.absent(),
                 Value<int?> season = const Value.absent(),
                 Value<int?> episode = const Value.absent(),
@@ -5095,6 +6283,8 @@ class $$DownloadsTableTableManager
                 title: title,
                 posterUrl: posterUrl,
                 year: year,
+                rating: rating,
+                ratingSource: ratingSource,
                 mediaType: mediaType,
                 season: season,
                 episode: episode,
@@ -5118,6 +6308,8 @@ class $$DownloadsTableTableManager
                 required String title,
                 Value<String?> posterUrl = const Value.absent(),
                 Value<int?> year = const Value.absent(),
+                Value<double?> rating = const Value.absent(),
+                Value<String?> ratingSource = const Value.absent(),
                 required String mediaType,
                 Value<int?> season = const Value.absent(),
                 Value<int?> episode = const Value.absent(),
@@ -5139,6 +6331,8 @@ class $$DownloadsTableTableManager
                 title: title,
                 posterUrl: posterUrl,
                 year: year,
+                rating: rating,
+                ratingSource: ratingSource,
                 mediaType: mediaType,
                 season: season,
                 episode: episode,
@@ -5452,6 +6646,372 @@ typedef $$SearchHistoryTableTableProcessedTableManager =
       SearchHistoryTableData,
       PrefetchHooks Function()
     >;
+typedef $$StoredMediaItemsTableCreateCompanionBuilder =
+    StoredMediaItemsCompanion Function({
+      required String id,
+      required String providerId,
+      required String title,
+      Value<String?> originalTitle,
+      Value<String?> posterUrl,
+      Value<int?> year,
+      Value<double?> rating,
+      required String mediaType,
+      Value<String?> description,
+      Value<String?> genres,
+      Value<String?> country,
+      Value<String?> ratingSource,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+typedef $$StoredMediaItemsTableUpdateCompanionBuilder =
+    StoredMediaItemsCompanion Function({
+      Value<String> id,
+      Value<String> providerId,
+      Value<String> title,
+      Value<String?> originalTitle,
+      Value<String?> posterUrl,
+      Value<int?> year,
+      Value<double?> rating,
+      Value<String> mediaType,
+      Value<String?> description,
+      Value<String?> genres,
+      Value<String?> country,
+      Value<String?> ratingSource,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$StoredMediaItemsTableFilterComposer
+    extends Composer<_$AppDatabase, $StoredMediaItemsTable> {
+  $$StoredMediaItemsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get providerId => $composableBuilder(
+    column: $table.providerId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get originalTitle => $composableBuilder(
+    column: $table.originalTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get posterUrl => $composableBuilder(
+    column: $table.posterUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get year => $composableBuilder(
+    column: $table.year,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get rating => $composableBuilder(
+    column: $table.rating,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mediaType => $composableBuilder(
+    column: $table.mediaType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get description => $composableBuilder(
+    column: $table.description,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get genres => $composableBuilder(
+    column: $table.genres,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get country => $composableBuilder(
+    column: $table.country,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get ratingSource => $composableBuilder(
+    column: $table.ratingSource,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$StoredMediaItemsTableOrderingComposer
+    extends Composer<_$AppDatabase, $StoredMediaItemsTable> {
+  $$StoredMediaItemsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get providerId => $composableBuilder(
+    column: $table.providerId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get originalTitle => $composableBuilder(
+    column: $table.originalTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get posterUrl => $composableBuilder(
+    column: $table.posterUrl,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get year => $composableBuilder(
+    column: $table.year,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get rating => $composableBuilder(
+    column: $table.rating,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mediaType => $composableBuilder(
+    column: $table.mediaType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get description => $composableBuilder(
+    column: $table.description,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get genres => $composableBuilder(
+    column: $table.genres,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get country => $composableBuilder(
+    column: $table.country,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get ratingSource => $composableBuilder(
+    column: $table.ratingSource,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$StoredMediaItemsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $StoredMediaItemsTable> {
+  $$StoredMediaItemsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get providerId => $composableBuilder(
+    column: $table.providerId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get originalTitle => $composableBuilder(
+    column: $table.originalTitle,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get posterUrl =>
+      $composableBuilder(column: $table.posterUrl, builder: (column) => column);
+
+  GeneratedColumn<int> get year =>
+      $composableBuilder(column: $table.year, builder: (column) => column);
+
+  GeneratedColumn<double> get rating =>
+      $composableBuilder(column: $table.rating, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaType =>
+      $composableBuilder(column: $table.mediaType, builder: (column) => column);
+
+  GeneratedColumn<String> get description => $composableBuilder(
+    column: $table.description,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get genres =>
+      $composableBuilder(column: $table.genres, builder: (column) => column);
+
+  GeneratedColumn<String> get country =>
+      $composableBuilder(column: $table.country, builder: (column) => column);
+
+  GeneratedColumn<String> get ratingSource => $composableBuilder(
+    column: $table.ratingSource,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$StoredMediaItemsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $StoredMediaItemsTable,
+          StoredMediaItem,
+          $$StoredMediaItemsTableFilterComposer,
+          $$StoredMediaItemsTableOrderingComposer,
+          $$StoredMediaItemsTableAnnotationComposer,
+          $$StoredMediaItemsTableCreateCompanionBuilder,
+          $$StoredMediaItemsTableUpdateCompanionBuilder,
+          (
+            StoredMediaItem,
+            BaseReferences<
+              _$AppDatabase,
+              $StoredMediaItemsTable,
+              StoredMediaItem
+            >,
+          ),
+          StoredMediaItem,
+          PrefetchHooks Function()
+        > {
+  $$StoredMediaItemsTableTableManager(
+    _$AppDatabase db,
+    $StoredMediaItemsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$StoredMediaItemsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$StoredMediaItemsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$StoredMediaItemsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> providerId = const Value.absent(),
+                Value<String> title = const Value.absent(),
+                Value<String?> originalTitle = const Value.absent(),
+                Value<String?> posterUrl = const Value.absent(),
+                Value<int?> year = const Value.absent(),
+                Value<double?> rating = const Value.absent(),
+                Value<String> mediaType = const Value.absent(),
+                Value<String?> description = const Value.absent(),
+                Value<String?> genres = const Value.absent(),
+                Value<String?> country = const Value.absent(),
+                Value<String?> ratingSource = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => StoredMediaItemsCompanion(
+                id: id,
+                providerId: providerId,
+                title: title,
+                originalTitle: originalTitle,
+                posterUrl: posterUrl,
+                year: year,
+                rating: rating,
+                mediaType: mediaType,
+                description: description,
+                genres: genres,
+                country: country,
+                ratingSource: ratingSource,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String providerId,
+                required String title,
+                Value<String?> originalTitle = const Value.absent(),
+                Value<String?> posterUrl = const Value.absent(),
+                Value<int?> year = const Value.absent(),
+                Value<double?> rating = const Value.absent(),
+                required String mediaType,
+                Value<String?> description = const Value.absent(),
+                Value<String?> genres = const Value.absent(),
+                Value<String?> country = const Value.absent(),
+                Value<String?> ratingSource = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => StoredMediaItemsCompanion.insert(
+                id: id,
+                providerId: providerId,
+                title: title,
+                originalTitle: originalTitle,
+                posterUrl: posterUrl,
+                year: year,
+                rating: rating,
+                mediaType: mediaType,
+                description: description,
+                genres: genres,
+                country: country,
+                ratingSource: ratingSource,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$StoredMediaItemsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $StoredMediaItemsTable,
+      StoredMediaItem,
+      $$StoredMediaItemsTableFilterComposer,
+      $$StoredMediaItemsTableOrderingComposer,
+      $$StoredMediaItemsTableAnnotationComposer,
+      $$StoredMediaItemsTableCreateCompanionBuilder,
+      $$StoredMediaItemsTableUpdateCompanionBuilder,
+      (
+        StoredMediaItem,
+        BaseReferences<_$AppDatabase, $StoredMediaItemsTable, StoredMediaItem>,
+      ),
+      StoredMediaItem,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -5468,4 +7028,6 @@ class $AppDatabaseManager {
       $$DownloadsTableTableManager(_db, _db.downloads);
   $$SearchHistoryTableTableTableManager get searchHistoryTable =>
       $$SearchHistoryTableTableTableManager(_db, _db.searchHistoryTable);
+  $$StoredMediaItemsTableTableManager get storedMediaItems =>
+      $$StoredMediaItemsTableTableManager(_db, _db.storedMediaItems);
 }

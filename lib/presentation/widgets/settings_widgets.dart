@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/services.dart';
+import 'package:get_it/get_it.dart';
+import '../../data/services/settings_service.dart';
+import '../../domain/entities/ui_settings.dart';
 import '../theme/app_theme.dart';
 
 // =============================================================================
@@ -61,7 +65,7 @@ class SettingsSection extends StatelessWidget {
 // =============================================================================
 
 /// A list tile for navigation/action settings
-class SettingsTile extends StatelessWidget {
+class SettingsTile extends StatefulWidget {
   final IconData icon;
   final String title;
   final String value;
@@ -78,27 +82,65 @@ class SettingsTile extends StatelessWidget {
   });
 
   @override
+  State<SettingsTile> createState() => _SettingsTileState();
+}
+
+class _SettingsTileState extends State<SettingsTile> {
+  final _settings = GetIt.instance<SettingsService>();
+  bool _isFocused = false;
+
+  UISettings get _ui => _settings.uiSettings;
+  Color get _accentColor => Color(_ui.accentColor.colorValue);
+
+  @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(
-        icon,
-        color: destructive ? AppTheme.errorColor : AppTheme.textSecondary,
-      ),
-      title: Text(
-        title,
-        style: TextStyle(color: destructive ? AppTheme.errorColor : null),
-      ),
-      subtitle: Text(
-        value,
-        style: TextStyle(
-          color: destructive
-              ? AppTheme.errorColor.withValues(alpha: 0.7)
-              : AppTheme.textMuted,
-          fontSize: 13,
+    return Focus(
+      onFocusChange: (hasFocus) => setState(() => _isFocused = hasFocus),
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent &&
+            (event.logicalKey == LogicalKeyboardKey.select ||
+                event.logicalKey == LogicalKeyboardKey.enter)) {
+          widget.onTap();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        decoration: BoxDecoration(
+          color: _isFocused
+              ? _accentColor.withValues(alpha: 0.1)
+              : Colors.transparent,
+          border: _isFocused ? Border.all(color: _accentColor, width: 2) : null,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+        child: ListTile(
+          leading: Icon(
+            widget.icon,
+            color: widget.destructive
+                ? AppTheme.errorColor
+                : AppTheme.textSecondary,
+          ),
+          title: Text(
+            widget.title,
+            style: TextStyle(
+              color: widget.destructive ? AppTheme.errorColor : null,
+            ),
+          ),
+          subtitle: Text(
+            widget.value,
+            style: TextStyle(
+              color: widget.destructive
+                  ? AppTheme.errorColor.withValues(alpha: 0.7)
+                  : AppTheme.textMuted,
+              fontSize: 13,
+            ),
+          ),
+          trailing: Icon(Icons.chevron_right, color: AppTheme.textMuted),
+          onTap: widget.onTap,
         ),
       ),
-      trailing: Icon(Icons.chevron_right, color: AppTheme.textMuted),
-      onTap: onTap,
     );
   }
 }
@@ -108,7 +150,7 @@ class SettingsTile extends StatelessWidget {
 // =============================================================================
 
 /// A switch tile for toggle settings
-class SettingsSwitch extends StatelessWidget {
+class SettingsSwitch extends StatefulWidget {
   final IconData icon;
   final String title;
   final String subtitle;
@@ -125,17 +167,51 @@ class SettingsSwitch extends StatelessWidget {
   });
 
   @override
+  State<SettingsSwitch> createState() => _SettingsSwitchState();
+}
+
+class _SettingsSwitchState extends State<SettingsSwitch> {
+  final _settings = GetIt.instance<SettingsService>();
+  bool _isFocused = false;
+
+  UISettings get _ui => _settings.uiSettings;
+  Color get _accentColor => Color(_ui.accentColor.colorValue);
+
+  @override
   Widget build(BuildContext context) {
-    return SwitchListTile(
-      secondary: Icon(icon, color: AppTheme.textSecondary),
-      title: Text(title),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+    return Focus(
+      onFocusChange: (hasFocus) => setState(() => _isFocused = hasFocus),
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent &&
+            (event.logicalKey == LogicalKeyboardKey.select ||
+                event.logicalKey == LogicalKeyboardKey.enter)) {
+          widget.onChanged(!widget.value);
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        decoration: BoxDecoration(
+          color: _isFocused
+              ? _accentColor.withValues(alpha: 0.1)
+              : Colors.transparent,
+          border: _isFocused ? Border.all(color: _accentColor, width: 2) : null,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+        child: SwitchListTile(
+          secondary: Icon(widget.icon, color: AppTheme.textSecondary),
+          title: Text(widget.title),
+          subtitle: Text(
+            widget.subtitle,
+            style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+          ),
+          value: widget.value,
+          activeThumbColor: AppTheme.primaryColor,
+          onChanged: widget.onChanged,
+        ),
       ),
-      value: value,
-      activeThumbColor: AppTheme.primaryColor,
-      onChanged: onChanged,
     );
   }
 }
@@ -145,7 +221,7 @@ class SettingsSwitch extends StatelessWidget {
 // =============================================================================
 
 /// A tile for content provider toggle
-class ProviderTile extends StatelessWidget {
+class ProviderTile extends StatefulWidget {
   final String name;
   final String url;
   final String? iconUrl;
@@ -162,46 +238,82 @@ class ProviderTile extends StatelessWidget {
   });
 
   @override
+  State<ProviderTile> createState() => _ProviderTileState();
+}
+
+class _ProviderTileState extends State<ProviderTile> {
+  final _settings = GetIt.instance<SettingsService>();
+  bool _isFocused = false;
+
+  UISettings get _ui => _settings.uiSettings;
+  Color get _accentColor => Color(_ui.accentColor.colorValue);
+
+  @override
   Widget build(BuildContext context) {
-    return SwitchListTile(
-      secondary: Container(
-        width: 40,
-        height: 40,
+    return Focus(
+      onFocusChange: (hasFocus) => setState(() => _isFocused = hasFocus),
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent &&
+            (event.logicalKey == LogicalKeyboardKey.select ||
+                event.logicalKey == LogicalKeyboardKey.enter)) {
+          widget.onChanged(!widget.isEnabled);
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
         decoration: BoxDecoration(
-          color: isEnabled
-              ? AppTheme.primaryColor.withValues(alpha: 0.15)
-              : AppTheme.textMuted.withValues(alpha: 0.1),
+          color: _isFocused
+              ? _accentColor.withValues(alpha: 0.1)
+              : Colors.transparent,
+          border: _isFocused ? Border.all(color: _accentColor, width: 2) : null,
           borderRadius: BorderRadius.circular(8),
         ),
-        child: iconUrl != null
-            ? ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: CachedNetworkImage(
-                  imageUrl: iconUrl!,
-                  width: 40,
-                  height: 40,
-                  fit: BoxFit.cover,
-                  errorWidget: (_, __, ___) => Icon(
+        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+        child: SwitchListTile(
+          secondary: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: widget.isEnabled
+                  ? AppTheme.primaryColor.withValues(alpha: 0.15)
+                  : AppTheme.textMuted.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: widget.iconUrl != null
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: CachedNetworkImage(
+                      imageUrl: widget.iconUrl!,
+                      width: 40,
+                      height: 40,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, __, ___) => Icon(
+                        Icons.movie_filter,
+                        color: widget.isEnabled
+                            ? AppTheme.primaryColor
+                            : AppTheme.textMuted,
+                      ),
+                    ),
+                  )
+                : Icon(
                     Icons.movie_filter,
-                    color: isEnabled
+                    color: widget.isEnabled
                         ? AppTheme.primaryColor
                         : AppTheme.textMuted,
                   ),
-                ),
-              )
-            : Icon(
-                Icons.movie_filter,
-                color: isEnabled ? AppTheme.primaryColor : AppTheme.textMuted,
-              ),
+          ),
+          title: Text(widget.name),
+          subtitle: Text(
+            widget.url,
+            style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+          ),
+          value: widget.isEnabled,
+          activeThumbColor: AppTheme.primaryColor,
+          onChanged: widget.onChanged,
+        ),
       ),
-      title: Text(name),
-      subtitle: Text(
-        url,
-        style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
-      ),
-      value: isEnabled,
-      activeThumbColor: AppTheme.primaryColor,
-      onChanged: onChanged,
     );
   }
 }

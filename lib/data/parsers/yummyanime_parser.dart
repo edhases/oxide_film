@@ -25,6 +25,7 @@ class YummyAnimeParser {
             posterUrl: _absoluteUrl(poster),
             year: int.tryParse(item['year']?.toString() ?? ''),
             rating: double.tryParse(item['rating']?.toString() ?? ''),
+            ratingSource: 'Site',
             type: ContentType.anime,
           ),
         );

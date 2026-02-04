@@ -39,6 +39,8 @@ class FavoritesDao {
     required String title,
     String? posterUrl,
     int? year,
+    double? rating,
+    String? ratingSource,
     required String mediaType,
   }) async {
     return _db
@@ -50,6 +52,8 @@ class FavoritesDao {
             title: title,
             posterUrl: Value(posterUrl),
             year: Value(year),
+            rating: Value(rating),
+            ratingSource: Value(ratingSource),
             mediaType: mediaType,
           ),
           mode: InsertMode.insertOrIgnore,
@@ -71,6 +75,8 @@ class FavoritesDao {
     required String title,
     String? posterUrl,
     int? year,
+    double? rating,
+    String? ratingSource,
     required String mediaType,
   }) async {
     final exists = await isFavorite(mediaId, providerId);
@@ -84,6 +90,8 @@ class FavoritesDao {
         title: title,
         posterUrl: posterUrl,
         year: year,
+        rating: rating,
+        ratingSource: ratingSource,
         mediaType: mediaType,
       );
       return true;

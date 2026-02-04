@@ -72,6 +72,8 @@ class HistoryDao {
     String? episodeTitle,
     String? lastStreamUrl,
     String? voiceover,
+    double? rating,
+    String? ratingSource,
   }) async {
     // Manually check for existing entry to handle NULLs in Unique Keys correctly
     final existing =
@@ -102,6 +104,8 @@ class HistoryDao {
           episodeTitle: Value(episodeTitle),
           lastStreamUrl: Value(lastStreamUrl),
           voiceover: Value(voiceover),
+          rating: Value(rating),
+          ratingSource: Value(ratingSource),
           watchedAt: Value(DateTime.now()),
         ),
       );
@@ -124,6 +128,8 @@ class HistoryDao {
               episodeTitle: Value(episodeTitle),
               lastStreamUrl: Value(lastStreamUrl),
               voiceover: Value(voiceover),
+              rating: Value(rating),
+              ratingSource: Value(ratingSource),
               watchedAt: Value(DateTime.now()),
             ),
           );

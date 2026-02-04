@@ -511,10 +511,10 @@ class WatchPartyService extends ChangeNotifier {
   static const String _tag = 'WatchParty';
 
   // Sync thresholds (in milliseconds)
-  static const int _driftIgnoreThreshold = 2000; // < 2s: ignore
-  static const int _driftSmoothThreshold = 5000; // 2-5s: smooth correction
-  static const int _driftFastThreshold = 10000; // 5-10s: fast correction
-  // > 10s: hard seek
+  static const int _driftIgnoreThreshold = 5000; // < 5s: ignore
+  static const int _driftSmoothThreshold = 10000; // 5-10s: smooth correction
+  static const int _driftFastThreshold = 15000; // 10-15s: fast correction
+  // > 15s: hard seek
 
   WatchPartyState _state = WatchPartyState.idle;
   WatchPartyBackendType _backendType = WatchPartyBackendType.none;

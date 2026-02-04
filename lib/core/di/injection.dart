@@ -24,6 +24,11 @@ import '../../data/services/search_service.dart';
 import '../../data/services/url_resolver_service.dart';
 import '../../data/services/smart_search/smart_search_service.dart';
 import '../../data/database/dao/search_history_dao.dart';
+import '../../data/database/dao/history_dao.dart';
+import '../../data/database/dao/favorites_dao.dart';
+import '../../data/database/dao/media_items_dao.dart';
+import '../../data/repositories/unified_content_repository_impl.dart';
+import '../../domain/repositories/unified_content_repository.dart';
 // External API services
 import '../../data/services/tmdb_service.dart';
 import '../../data/services/jikan_service.dart';
@@ -104,6 +109,16 @@ Future<void> configureDependencies() async {
   // Episode update service (depends on registry)
   getIt.registerLazySingleton<EpisodeUpdateService>(
     () => EpisodeUpdateService(database, getIt<ProviderRegistry>()),
+  );
+
+  // Unified Repository
+  getIt.registerLazySingleton<UnifiedContentRepository>(
+    () => UnifiedContentRepositoryImpl(
+      getIt<ProviderRegistry>().all,
+      HistoryDao(database),
+      FavoritesDao(database),
+      MediaItemsDao(database),
+    ),
   );
 }
 
