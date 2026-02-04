@@ -327,23 +327,29 @@ class AppDatabase extends _$AppDatabase {
         }
         // Migration: add ratingSource/rating to various tables
         if (from < 7) {
-          await customStatement('ALTER TABLE favorites ADD COLUMN rating REAL');
-          await customStatement(
+          final columnsToAdd = [
+            'ALTER TABLE favorites ADD COLUMN rating REAL',
             'ALTER TABLE favorites ADD COLUMN rating_source TEXT',
-          );
-          await customStatement(
             'ALTER TABLE watch_history ADD COLUMN rating REAL',
-          );
-          await customStatement(
             'ALTER TABLE watch_history ADD COLUMN rating_source TEXT',
-          );
-          await customStatement('ALTER TABLE downloads ADD COLUMN rating REAL');
-          await customStatement(
+            'ALTER TABLE downloads ADD COLUMN rating REAL',
             'ALTER TABLE downloads ADD COLUMN rating_source TEXT',
-          );
-          await customStatement(
             'ALTER TABLE stored_media_items ADD COLUMN rating_source TEXT',
-          );
+          ];
+
+          for (final stmt in columnsToAdd) {
+            try {
+              await customStatement(stmt);
+            } catch (e) {
+              // Ignore duplicate column errors (code 1)
+              // This ensures migration is idempotent
+              if (e.toString().contains('duplicate column')) {
+                print('Column already exists, skipping: $stmt');
+              } else {
+                rethrow;
+              }
+            }
+          }
         }
       },
     );

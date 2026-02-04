@@ -68,7 +68,7 @@ class _HomePageState extends State<HomePage> {
     });
 
     try {
-      final providers = _registry.enabled;
+      final providers = _registry.homeProviders;
       final allItems = <MediaItem>[];
       final seenIds = <String>{};
 

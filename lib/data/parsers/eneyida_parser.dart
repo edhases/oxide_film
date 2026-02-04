@@ -216,6 +216,13 @@ class EneyidaParser {
           genres = value?.findAll('a').map((a) => a.text.trim()).toList();
         } else if (label.contains('країн')) {
           countries = value?.findAll('a').map((a) => a.text.trim()).toList();
+          // Fallback: parse plain text if no links
+          if (countries == null || countries.isEmpty) {
+            final text = value?.text.trim();
+            if (text != null && text.isNotEmpty) {
+              countries = text.split(',').map((s) => s.trim()).toList();
+            }
+          }
         } else if (label.contains('рік')) {
           year = int.tryParse(value?.text.trim() ?? '');
         } else if (label.contains('трива')) {
@@ -354,7 +361,35 @@ class EneyidaParser {
       if (dataFile != null && dataFile.isNotEmpty) {
         dataFile = _cleanUrl(dataFile);
 
-        // Check direct
+        // Check if dataFile contains multiple qualities in format: [480p]url1,[720p]url2
+        if (dataFile.contains('[') && dataFile.contains(']')) {
+          final qualityPattern = RegExp(r'\[(\d+p?)\]([^,\[]+)');
+          final matches = qualityPattern.allMatches(dataFile);
+
+          if (matches.isNotEmpty) {
+            for (final match in matches) {
+              final qLabel = match.group(1);
+              final qUrl = match.group(2)?.trim();
+              if (qUrl != null && qUrl.isNotEmpty) {
+                sources.add(
+                  StreamSource(
+                    url: qUrl,
+                    quality: _detectQuality(qLabel ?? qUrl),
+                    voiceover: voiceover,
+                    type: qUrl.contains('.m3u8')
+                        ? StreamType.hls
+                        : StreamType.direct,
+                    season: itemSeason,
+                    episode: itemEpisode,
+                  ),
+                );
+              }
+            }
+            continue; // Move to next item
+          }
+        }
+
+        // Direct fallback
         if (dataFile.contains('.m3u8') || dataFile.contains('.mp4')) {
           sources.add(
             StreamSource(
@@ -369,16 +404,12 @@ class EneyidaParser {
             ),
           );
         } else {
-          // Player link - add as direct for now, repo will resolve
-          // We add a marker or just treat as direct?
-          // Let's treat as direct but repo needs to know to resolve it if it's not a video file.
-          // Actually, StreamSource can hold the player URL.
           sources.add(
             StreamSource(
               url: dataFile,
-              quality: StreamQuality.unknown, // Need resolution
+              quality: StreamQuality.unknown,
               voiceover: voiceover,
-              type: StreamType.direct, // Mark as direct, verify logic in repo
+              type: StreamType.direct,
               season: itemSeason,
               episode: itemEpisode,
             ),

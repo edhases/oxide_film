@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:beautiful_soup_dart/beautiful_soup.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
@@ -129,113 +128,22 @@ class HdrezkaRepository {
       final url = '$_mirror/$id.html';
       Logger.d(' Fetching: $url');
       final html = await _client.get(url);
-      final soup = BeautifulSoup(html);
       final sources = <StreamSource>[];
 
-      // Extract CSRF
-      String? csrfToken;
-      final metaCsrf = soup.find('meta', attrs: {'name': 'csrf-token'});
-      csrfToken = metaCsrf?.attributes['content'];
+      // Offload initial parsing to isolate
+      final params = await compute(HDRezkaParser.parseStreamInitParams, html);
 
-      if (csrfToken == null) {
-        for (final script in soup.findAll('script')) {
-          final content = script.text;
-          final tokenMatch = RegExp(
-            r'''(?:b_token|csrf_token|_token)\s*[:=]\s*["']([^"']+)["']''',
-          ).firstMatch(content);
-          if (tokenMatch != null) {
-            csrfToken = tokenMatch.group(1);
-            break;
-          }
-        }
-      }
-
-      // Extract IDs
-      var dataId = '';
-      var translatorId = '';
-
-      for (final script in soup.findAll('script')) {
-        final content = script.text;
-        final initMatch = RegExp(
-          r'initCDN(?:Movies|Series)Events\s*\(\s*(\d+)\s*,\s*(\d+)',
-        ).firstMatch(content);
-        if (initMatch != null) {
-          dataId = initMatch.group(1) ?? '';
-          translatorId = initMatch.group(2) ?? '';
-          break;
-        }
-
-        final sofMatch = RegExp(
-          r'sof\.tv\.initCDN\w+Events\s*\(\s*(\d+)\s*,\s*(\d+)',
-        ).firstMatch(content);
-        if (sofMatch != null) {
-          dataId = sofMatch.group(1) ?? '';
-          translatorId = sofMatch.group(2) ?? '';
-          break;
-        }
-      }
-
-      if (dataId.isEmpty) {
-        final playerDiv =
-            soup.find('div', attrs: {'id': 'cdnplayer'}) ??
-            soup.find('div', class_: 'b-player') ??
-            soup.find('div', class_: 'b-content__inline_item') ??
-            soup.find('div', attrs: {'id': 'player'});
-
-        dataId = playerDiv?.attributes['data-id'] ?? '';
-        translatorId =
-            playerDiv?.attributes['data-translator_id'] ?? translatorId;
-      }
-
-      if (translatorId.isEmpty || translatorId == '0') {
-        final firstTranslator = soup.find('li', class_: 'b-translator__item');
-        if (firstTranslator != null) {
-          translatorId = firstTranslator.attributes['data-translator_id'] ?? '';
-        }
-      }
-
-      if (dataId.isEmpty) {
-        final fallback = soup.find('*', attrs: {'data-id': true});
-        if (fallback != null) {
-          dataId = fallback.attributes['data-id'] ?? '';
-          if (translatorId.isEmpty) {
-            translatorId = fallback.attributes['data-translator_id'] ?? '';
-          }
-        }
-      }
-
-      if (dataId.isEmpty) {
-        final urlMatch = RegExp(r'/(\d+)-').firstMatch(id);
-        if (urlMatch != null) {
-          dataId = urlMatch.group(1) ?? '';
-        }
-      }
-
-      if (translatorId.isEmpty) {
-        translatorId = '238';
-      }
+      final csrfToken = params['csrf_token'] as String?;
+      final dataId = params['data_id'] as String? ?? '';
+      final translatorId = params['translator_id'] as String? ?? '';
+      final translators = Map<String, String>.from(params['translators'] ?? {});
 
       if (dataId.isEmpty) {
         return sources;
       }
 
-      // Translators
-      final translators = <String, String>{};
-      final translatorsList = soup.find('ul', id: 'translators-list');
-
-      if (translatorsList != null) {
-        for (final li in translatorsList.findAll('li')) {
-          final tid = li.attributes['data-translator_id'];
-          final tname = li.text.trim();
-          if (tid != null) {
-            translators[tid] = tname;
-          }
-        }
-      }
-
-      if (translators.isEmpty) {
-        translators[translatorId] = 'Оригінал';
-      }
+      // Default translator check logic handled in parser now, or fallback here?
+      // Parser returns '238' default if missing.
 
       if (season != null && episode != null) {
         await _getEpisodeStreams(
@@ -301,7 +209,7 @@ class HdrezkaRepository {
 
       final json = jsonDecode(response.data ?? '{}');
       if (json['success'] == true && json['url'] != null) {
-        _parseStreamUrls(json['url'], voiceover, sources);
+        await _parseStreamUrls(json['url'], voiceover, sources);
       }
     } catch (e) {
       Logger.w('Failed to get movie streams for $voiceover', tag: _tag);
@@ -347,41 +255,26 @@ class HdrezkaRepository {
 
       final json = jsonDecode(response.data ?? '{}');
       if (json['success'] == true && json['url'] != null) {
-        _parseStreamUrls(json['url'], voiceover, sources);
+        await _parseStreamUrls(json['url'], voiceover, sources);
       }
     } catch (e) {
       Logger.w('Failed to get episode streams', tag: _tag);
     }
   }
 
-  void _parseStreamUrls(
+  Future<void> _parseStreamUrls(
     String urlData,
     String voiceover,
     List<StreamSource> sources,
-  ) {
-    final decoded = HDRezkaParser.decodeStreamUrl(urlData);
-    final pattern = RegExp(r'\[(\d+)p?\s*[^\]]*\]([^\[]+)');
-    final matches = pattern.allMatches(decoded).toList();
-
-    for (final match in matches) {
-      final quality = match.group(1);
-      var url = match.group(2)?.trim() ?? '';
-
-      // Use parser utilities for cleaning and validation
-      url = HDRezkaParser.normalizeStreamUrl(url);
-
-      if (url.isNotEmpty &&
-          !url.contains('undefined') &&
-          HDRezkaParser.isValidStreamUrl(url)) {
-        sources.add(
-          StreamSource(
-            url: url,
-            quality: HDRezkaParser.parseQuality(quality),
-            voiceover: voiceover,
-            type: url.contains('.m3u8') ? StreamType.hls : StreamType.direct,
-          ),
-        );
-      }
+  ) async {
+    try {
+      final extracted = await compute(HDRezkaParser.extractStreamSources, {
+        'url': urlData,
+        'voiceover': voiceover,
+      });
+      sources.addAll(extracted);
+    } catch (e) {
+      Logger.w('Failed to parse stream URLs in isolate', tag: _tag, error: e);
     }
   }
 }

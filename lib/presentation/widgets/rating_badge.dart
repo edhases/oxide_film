@@ -1,119 +1,72 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
-/// Rating badge showing ratings from multiple sources
-///
-/// Displays provider rating, TMDb rating, and MAL rating side-by-side
+/// Rating badge showing a rating from a specific source (IMDb, TMDB, Site, etc.)
 class RatingBadge extends StatelessWidget {
-  final double? providerRating;
-  final double? tmdbRating;
-  final double? malRating;
+  final double? rating;
+  final String? source;
   final bool compact;
+  final Color? color;
 
   const RatingBadge({
     super.key,
-    this.providerRating,
-    this.tmdbRating,
-    this.malRating,
+    this.rating,
+    this.source,
     this.compact = false,
+    this.color,
   });
 
   @override
   Widget build(BuildContext context) {
-    final ratings = <Widget>[];
-
-    // Provider rating
-    if (providerRating != null) {
-      ratings.add(
-        _RatingChip(
-          value: providerRating!,
-          icon: Icons.star,
-          color: AppTheme.primaryColor,
-          label: compact ? null : 'Провайдер',
-        ),
-      );
-    }
-
-    // TMDb rating
-    if (tmdbRating != null) {
-      ratings.add(
-        _RatingChip(
-          value: tmdbRating!,
-          icon: Icons.movie,
-          color: const Color(0xFF01D277), // TMDb green
-          label: compact ? null : 'TMDb',
-        ),
-      );
-    }
-
-    // MAL rating
-    if (malRating != null) {
-      ratings.add(
-        _RatingChip(
-          value: malRating!,
-          icon: Icons.auto_awesome,
-          color: const Color(0xFF2E51A2), // MAL blue
-          label: compact ? null : 'MAL',
-        ),
-      );
-    }
-
-    if (ratings.isEmpty) {
+    if (rating == null || rating! < 0) {
       return const SizedBox.shrink();
     }
 
-    return Wrap(spacing: 8, runSpacing: 4, children: ratings);
-  }
-}
+    // Normalize: if > 10, treat as percentage
+    final displayRating = rating! > 10
+        ? (rating! / 10).clamp(0.0, 10.0)
+        : rating!;
 
-class _RatingChip extends StatelessWidget {
-  final double value;
-  final IconData icon;
-  final Color color;
-  final String? label;
+    final badgeColor = color ?? _getRatingColor(displayRating);
+    final sourceLabel = source?.toUpperCase();
 
-  const _RatingChip({
-    required this.value,
-    required this.icon,
-    required this.color,
-    this.label,
-  });
-
-  @override
-  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: EdgeInsets.symmetric(horizontal: compact ? 4 : 6, vertical: 2),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.5)),
+        color: badgeColor,
+        borderRadius: BorderRadius.circular(4),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: color),
-          const SizedBox(width: 4),
-          Text(
-            value.toStringAsFixed(1),
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
-            ),
-          ),
-          if (label != null) ...[
-            const SizedBox(width: 4),
+          if (sourceLabel != null && !compact) ...[
             Text(
-              label!,
+              sourceLabel,
               style: TextStyle(
-                color: color.withValues(alpha: 0.8),
-                fontSize: 11,
+                color: Colors.white.withValues(alpha: 0.7),
+                fontSize: 8,
+                fontWeight: FontWeight.w600,
               ),
             ),
+            const SizedBox(width: 4),
           ],
+          Text(
+            displayRating.toStringAsFixed(1),
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: compact ? 10 : 11,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  Color _getRatingColor(double rating) {
+    if (rating >= 7.0) return AppTheme.successColor;
+    if (rating >= 5.0) return Colors.orange;
+    return AppTheme.errorColor;
   }
 }
 

@@ -79,7 +79,9 @@ class UaserialsParser {
 
       // Determine type from URL
       ContentType type = ContentType.series; // Default
-      if (href.contains('/filmss/') || href.contains('/fcartoon/')) {
+      if (href.contains('/films/') ||
+          href.contains('/filmss/') ||
+          href.contains('/fcartoon/')) {
         type = ContentType.movie;
       }
       if (href.contains('/cartoons/')) type = ContentType.cartoon;
@@ -200,7 +202,9 @@ class UaserialsParser {
 
       // Determine type
       ContentType type = ContentType.series; // Default
-      if (href.contains('/filmss/') || href.contains('movies')) {
+      if (href.contains('/films/') ||
+          href.contains('/filmss/') ||
+          href.contains('movies')) {
         type = ContentType.movie;
       }
       if (href.contains('cartoons')) type = ContentType.cartoon;
@@ -351,9 +355,25 @@ class UaserialsParser {
     }
 
     // Determine type from id or breadcrumbs
-    // We can guess from ID for now
     var type = ContentType.series;
-    // Fallback logic for type detection could be added here similar to Eneyida
+
+    // Breadcrumbs check
+    final bc =
+        soup.find('ul', class_: 'breadcrumb') ??
+        soup.find('div', class_: 'breadcrumb');
+    if (bc != null) {
+      final bcText = bc.text.toLowerCase();
+      if (bcText.contains('фільм')) type = ContentType.movie;
+      if (bcText.contains('серіал')) type = ContentType.series;
+      if (bcText.contains('мультфільм'))
+        type = ContentType.movie; // Single films
+      if (bcText.contains('мультсеріал')) type = ContentType.series;
+    } else {
+      // Fallback to URL-based guess if breadcrumbs missing
+      if (id.contains('/films/') || id.contains('/filmss/')) {
+        type = ContentType.movie;
+      }
+    }
 
     final item = MediaItem(
       id: id,
@@ -377,10 +397,11 @@ class UaserialsParser {
   static List<String> extractIframeSrcs(String html) {
     final soup = BeautifulSoup(html);
     final srcs = <String>[];
-    final iframes = soup.findAll('iframe');
 
+    // 1. Standard iframes
+    final iframes = soup.findAll('iframe');
     for (final iframe in iframes) {
-      final src = iframe.attributes['src'] ?? iframe.attributes['data-src'];
+      var src = iframe.attributes['src'] ?? iframe.attributes['data-src'];
       if (src != null) {
         // Skip YouTube/Vimeo trailers
         if (src.contains('youtube.com') ||
@@ -389,16 +410,32 @@ class UaserialsParser {
           continue;
         }
 
-        var absSrc = src;
-        if (absSrc.startsWith('//')) {
-          absSrc = 'https:$absSrc';
-        } else if (absSrc.startsWith('/')) {
-          absSrc = '$baseUrl$absSrc';
-        }
+        // Fix relative protocol
+        if (src.startsWith('//'))
+          src = 'https:$src';
+        else if (src.startsWith('/'))
+          src = '$baseUrl$src';
 
-        srcs.add(absSrc);
+        srcs.add(src);
       }
     }
+
+    // 2. Scripts with Ashdi/PlayerJS
+    final scripts = soup.findAll('script');
+    for (final script in scripts) {
+      final text = script.text;
+
+      // Ashdi
+      if (text.contains('ashdi')) {
+        final match = RegExp(
+          r'src=["\x27](https?://[^"\x27]*ashdi[^"\x27]*)["\x27]',
+        ).firstMatch(text);
+        if (match != null) {
+          srcs.add(match.group(1)!);
+        }
+      }
+    }
+
     return srcs;
   }
 

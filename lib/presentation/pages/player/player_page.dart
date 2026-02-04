@@ -39,7 +39,7 @@ class PlayerPage extends StatefulWidget {
   State<PlayerPage> createState() => _PlayerPageState();
 }
 
-class _PlayerPageState extends State<PlayerPage> {
+class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   late final PlayerController _controller;
   final FocusNode _focusNode = FocusNode();
 
@@ -52,6 +52,8 @@ class _PlayerPageState extends State<PlayerPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+
     _controller = PlayerController(
       initialUrl: widget.url,
       historyService: GetIt.instance<HistoryService>(),
@@ -100,6 +102,19 @@ class _PlayerPageState extends State<PlayerPage> {
     _scheduleHideControls();
   }
 
+  @override
+  void didChangeMetrics() {
+    // FORCE Update UI when window metrics change (resize/fullscreen)
+    // This prevents the "frozen UI" state mentioned by user
+    if (mounted) {
+      // Schedule a frame to ensure the new size is respected by the engine
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    }
+    super.didChangeMetrics();
+  }
+
   void _onWatchPartyUpdate() {
     if (!mounted) return;
     // Track new messages when chat is closed
@@ -141,6 +156,7 @@ class _PlayerPageState extends State<PlayerPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller.watchPartyService.removeListener(_onWatchPartyUpdate);
     _controller.dispose();
     _focusNode.dispose();
@@ -193,80 +209,97 @@ class _PlayerPageState extends State<PlayerPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: KeyboardListener(
-        focusNode: _focusNode,
-        onKeyEvent: _handleKeyEvent,
-        child: MouseRegion(
-          onHover: (_) => _showControlsTemp(),
-          child: AnimatedBuilder(
-            animation: _controller,
-            builder: (context, _) {
-              final state = _controller.state;
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) async {
+        if (didPop) return;
 
-              if (!state.isInitialized) {
-                return const Center(child: CircularProgressIndicator());
-              }
+        // If in fullscreen, exit fullscreen first
+        if (_controller.state.isFullscreen) {
+          await _controller.toggleFullscreen();
+          return;
+        }
 
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  // Video Layer
-                  if (!state.hasError)
-                    RepaintBoundary(
-                      child: Video(
-                        controller: _controller.videoController,
-                        fit: state.videoFit,
-                        fill: Colors.black,
-                        controls: NoVideoControls,
+        // Otherwise close player
+        if (context.mounted) {
+          context.pop();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: KeyboardListener(
+          focusNode: _focusNode,
+          onKeyEvent: _handleKeyEvent,
+          child: MouseRegion(
+            onHover: (_) => _showControlsTemp(),
+            child: AnimatedBuilder(
+              animation: _controller,
+              builder: (context, _) {
+                final state = _controller.state;
+
+                if (!state.isInitialized) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    // Video Layer
+                    if (!state.hasError)
+                      RepaintBoundary(
+                        child: Video(
+                          controller: _controller.videoController,
+                          fit: state.videoFit,
+                          fill: Colors.black,
+                          controls: NoVideoControls,
+                        ),
+                      )
+                    else
+                      _buildErrorWidget(state.errorMessage),
+
+                    // Buffering Layer
+                    if (state.isBuffering && !state.hasError)
+                      const Center(
+                        child: CircularProgressIndicator(color: Colors.white),
                       ),
-                    )
-                  else
-                    _buildErrorWidget(state.errorMessage),
 
-                  // Buffering Layer
-                  if (state.isBuffering && !state.hasError)
-                    const Center(
-                      child: CircularProgressIndicator(color: Colors.white),
+                    // Gesture Layer
+                    PlayerGestureLayer(
+                      onTap: _toggleControls,
+                      onDoubleTap: _controller.toggleFullscreen,
+                      child: Container(color: Colors.transparent),
                     ),
 
-                  // Gesture Layer
-                  PlayerGestureLayer(
-                    onTap: _toggleControls,
-                    onDoubleTap: _controller.toggleFullscreen,
-                    child: Container(color: Colors.transparent),
-                  ),
-
-                  // Controls Layer
-                  PlayerControls(
-                    controller: _controller,
-                    showControls: _showControls,
-                    onToggleControls: _toggleControls,
-                    showChat: _showChat,
-                    onToggleChat: _toggleChatOverlay,
-                    newChatMessages: _newChatMessages,
-                  ),
-
-                  // Chat Layer
-                  if (_showChat)
-                    Positioned(
-                      top: 0,
-                      bottom: 0,
-                      right: 0,
-                      child: PlayerChatOverlay(
-                        service: _controller.watchPartyService,
-                        onClose: _toggleChatOverlay,
-                      ),
+                    // Controls Layer
+                    PlayerControls(
+                      controller: _controller,
+                      showControls: _showControls,
+                      onToggleControls: _toggleControls,
+                      showChat: _showChat,
+                      onToggleChat: _toggleChatOverlay,
+                      newChatMessages: _newChatMessages,
                     ),
 
-                  // Watch Party UI (Sync Status)
-                  if (_controller.watchPartyService.state ==
-                      WatchPartyState.connected)
-                    _buildWatchPartyFloatingUI(),
-                ],
-              );
-            },
+                    // Chat Layer
+                    if (_showChat)
+                      Positioned(
+                        top: 0,
+                        bottom: 0,
+                        right: 0,
+                        child: PlayerChatOverlay(
+                          service: _controller.watchPartyService,
+                          onClose: _toggleChatOverlay,
+                        ),
+                      ),
+
+                    // Watch Party UI (Sync Status)
+                    if (_controller.watchPartyService.state ==
+                        WatchPartyState.connected)
+                      _buildWatchPartyFloatingUI(),
+                  ],
+                );
+              },
+            ),
           ),
         ),
       ),

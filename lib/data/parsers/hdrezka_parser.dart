@@ -429,6 +429,140 @@ class HDRezkaParser {
     return true;
   }
 
+  static Map<String, dynamic> parseStreamInitParams(String html) {
+    final soup = BeautifulSoup(html);
+    var csrfToken = '';
+    var dataId = '';
+    var translatorId = '';
+    final translators = <String, String>{};
+
+    // Extract CSRF
+    final metaCsrf = soup.find('meta', attrs: {'name': 'csrf-token'});
+    csrfToken = metaCsrf?.attributes['content'] ?? '';
+
+    if (csrfToken.isEmpty) {
+      for (final script in soup.findAll('script')) {
+        final content = script.text;
+        final tokenMatch = RegExp(
+          r'''(?:b_token|csrf_token|_token)\s*[:=]\s*["']([^"']+)["']''',
+        ).firstMatch(content);
+        if (tokenMatch != null) {
+          csrfToken = tokenMatch.group(1) ?? '';
+          break;
+        }
+      }
+    }
+
+    // Extract IDs
+    for (final script in soup.findAll('script')) {
+      final content = script.text;
+      final initMatch = RegExp(
+        r'initCDN(?:Movies|Series)Events\s*\(\s*(\d+)\s*,\s*(\d+)',
+      ).firstMatch(content);
+      if (initMatch != null) {
+        dataId = initMatch.group(1) ?? '';
+        translatorId = initMatch.group(2) ?? '';
+        break;
+      }
+
+      final sofMatch = RegExp(
+        r'sof\.tv\.initCDN\w+Events\s*\(\s*(\d+)\s*,\s*(\d+)',
+      ).firstMatch(content);
+      if (sofMatch != null) {
+        dataId = sofMatch.group(1) ?? '';
+        translatorId = sofMatch.group(2) ?? '';
+        break;
+      }
+    }
+
+    if (dataId.isEmpty) {
+      final playerDiv =
+          soup.find('div', attrs: {'id': 'cdnplayer'}) ??
+          soup.find('div', class_: 'b-player') ??
+          soup.find('div', class_: 'b-content__inline_item') ??
+          soup.find('div', attrs: {'id': 'player'});
+
+      dataId = playerDiv?.attributes['data-id'] ?? '';
+      translatorId =
+          playerDiv?.attributes['data-translator_id'] ?? translatorId;
+    }
+
+    if (translatorId.isEmpty || translatorId == '0') {
+      final firstTranslator = soup.find('li', class_: 'b-translator__item');
+      if (firstTranslator != null) {
+        translatorId = firstTranslator.attributes['data-translator_id'] ?? '';
+      }
+    }
+
+    if (dataId.isEmpty) {
+      final fallback = soup.find('*', attrs: {'data-id': true});
+      if (fallback != null) {
+        dataId = fallback.attributes['data-id'] ?? '';
+        if (translatorId.isEmpty) {
+          translatorId = fallback.attributes['data-translator_id'] ?? '';
+        }
+      }
+    }
+
+    if (translatorId.isEmpty) {
+      translatorId = '238'; // Default
+    }
+
+    // Translators List
+    final translatorsList = soup.find('ul', id: 'translators-list');
+    if (translatorsList != null) {
+      for (final li in translatorsList.findAll('li')) {
+        final tid = li.attributes['data-translator_id'];
+        final tname = li.text.trim();
+        if (tid != null) {
+          translators[tid] = tname;
+        }
+      }
+    } else {
+      // Single translator or none
+      translators[translatorId] = 'Оригінал';
+    }
+
+    return {
+      'csrf_token': csrfToken,
+      'data_id': dataId,
+      'translator_id': translatorId,
+      'translators': translators,
+    };
+  }
+
+  static List<StreamSource> extractStreamSources(Map<String, String> data) {
+    final urlData = data['url'] ?? '';
+    final voiceover = data['voiceover'] ?? '';
+    final sources = <StreamSource>[];
+
+    final decoded = decodeStreamUrl(urlData);
+    final pattern = RegExp(r'\[(\d+)p?\s*[^\]]*\]([^\[]+)');
+    final matches = pattern.allMatches(decoded).toList();
+
+    for (final match in matches) {
+      final quality = match.group(1);
+      var url = match.group(2)?.trim() ?? '';
+
+      // Use parser utilities for cleaning and validation
+      url = normalizeStreamUrl(url);
+
+      if (url.isNotEmpty &&
+          !url.contains('undefined') &&
+          isValidStreamUrl(url)) {
+        sources.add(
+          StreamSource(
+            url: url,
+            quality: parseQuality(quality),
+            voiceover: voiceover,
+            type: url.contains('.m3u8') ? StreamType.hls : StreamType.direct,
+          ),
+        );
+      }
+    }
+    return sources;
+  }
+
   static StreamQuality parseQuality(String? quality) {
     switch (quality) {
       case '360':

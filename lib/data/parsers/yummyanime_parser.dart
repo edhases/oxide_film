@@ -64,7 +64,15 @@ class YummyAnimeParser {
       if (item != null) items.add(item);
     }
 
-    return items;
+    // Deduplicate by ID
+    final uniqueItems = <String, MediaItem>{};
+    for (final item in items) {
+      if (!uniqueItems.containsKey(item.id)) {
+        uniqueItems[item.id] = item;
+      }
+    }
+
+    return uniqueItems.values.toList();
   }
 
   static MediaItem? _parseMovieItem(dynamic card) {

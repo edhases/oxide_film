@@ -328,13 +328,37 @@ class UaflixParser {
   static List<String> extractIframeSrcs(String html) {
     final soup = BeautifulSoup(html);
     final srcs = <String>[];
+
+    // 1. Standard iframes
     final iframes = soup.findAll('iframe');
     for (final iframe in iframes) {
-      final src = iframe.attributes['src'] ?? iframe.attributes['data-src'];
+      var src = iframe.attributes['src'] ?? iframe.attributes['data-src'];
       if (src != null && src.isNotEmpty) {
+        // Fix relative protocol
+        if (src.startsWith('//')) src = 'https:$src';
         srcs.add(_absoluteUrl(src)!);
       }
     }
+
+    // 2. Scripts with Ashdi/PlayerJS
+    final scripts = soup.findAll('script');
+    for (final script in scripts) {
+      final text = script.text;
+
+      // Ashdi
+      if (text.contains('ashdi')) {
+        final match = RegExp(
+          r'src=["\x27](https?://[^"\x27]*ashdi[^"\x27]*)["\x27]',
+        ).firstMatch(text);
+        if (match != null) {
+          srcs.add(match.group(1)!);
+        }
+      }
+
+      // Generic window.location or player logic?
+      // Sometimes player is inserted via JS
+    }
+
     return srcs;
   }
 

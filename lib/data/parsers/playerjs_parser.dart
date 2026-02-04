@@ -133,8 +133,9 @@ class PlayerJsParser {
       }
 
       // Check for quality markers: [720p]url[/720p],[1080p]url[/1080p]
+      // OR [720p]url
       final qualityPattern = RegExp(
-        r'\[(\d+p?)\]([^\[]+)\[/\1\]',
+        r'\[(\d+p?)\]([^,\[\]]+)(?:\[/\1\])?',
         caseSensitive: false,
       );
 

@@ -360,42 +360,56 @@ class _BottomControls extends StatelessWidget {
           animation: controller,
           builder: (context, _) {
             final duration = controller.state.duration;
-            final position = controller.state.position;
 
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                SliderTheme(
-                  data: SliderThemeData(
-                    trackHeight: isCompact ? 3 : 4,
-                    thumbShape: RoundSliderThumbShape(
-                      enabledThumbRadius: isCompact ? 6 : 8,
-                    ),
-                    overlayShape: RoundSliderOverlayShape(
-                      overlayRadius: isCompact ? 12 : 16,
-                    ),
-                    activeTrackColor: AppTheme.primaryColor,
-                    inactiveTrackColor: Colors.white.withValues(alpha: 0.3),
-                    thumbColor: AppTheme.primaryColor,
-                  ),
-                  child: Slider(
-                    value: duration.inMilliseconds > 0
-                        ? (position.inMilliseconds / duration.inMilliseconds)
-                              .clamp(0.0, 1.0)
-                        : 0,
-                    onChanged: (value) {
-                      final seekTo = Duration(
-                        milliseconds: (value * duration.inMilliseconds).toInt(),
-                      );
-                      controller.seek(seekTo);
-                    },
-                  ),
+                ValueListenableBuilder<Duration>(
+                  valueListenable: controller.positionNotifier,
+                  builder: (context, position, _) {
+                    return SliderTheme(
+                      data: SliderThemeData(
+                        trackHeight: isCompact ? 3 : 4,
+                        thumbShape: RoundSliderThumbShape(
+                          enabledThumbRadius: isCompact ? 6 : 8,
+                        ),
+                        overlayShape: RoundSliderOverlayShape(
+                          overlayRadius: isCompact ? 12 : 16,
+                        ),
+                        activeTrackColor: AppTheme.primaryColor,
+                        inactiveTrackColor: Colors.white.withValues(alpha: 0.3),
+                        thumbColor: AppTheme.primaryColor,
+                      ),
+                      child: Slider(
+                        value: duration.inMilliseconds > 0
+                            ? (position.inMilliseconds /
+                                      duration.inMilliseconds)
+                                  .clamp(0.0, 1.0)
+                            : 0,
+                        onChanged: (value) {
+                          final seekTo = Duration(
+                            milliseconds: (value * duration.inMilliseconds)
+                                .toInt(),
+                          );
+                          controller.seek(seekTo);
+                        },
+                      ),
+                    );
+                  },
                 ),
                 Row(
                   children: [
-                    Text(
-                      '${_formatDuration(position)} / ${_formatDuration(duration)}',
-                      style: TextStyle(color: Colors.white, fontSize: fontSize),
+                    ValueListenableBuilder<Duration>(
+                      valueListenable: controller.positionNotifier,
+                      builder: (context, position, _) {
+                        return Text(
+                          '${_formatDuration(position)} / ${_formatDuration(duration)}',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: fontSize,
+                          ),
+                        );
+                      },
                     ),
                     const Spacer(),
                     IconButton(

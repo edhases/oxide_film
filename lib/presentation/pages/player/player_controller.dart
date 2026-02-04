@@ -124,6 +124,9 @@ class PlayerController extends ChangeNotifier {
   PlayerState _state = const PlayerState();
   PlayerState get state => _state;
 
+  // High-frequency updates
+  final ValueNotifier<Duration> positionNotifier = ValueNotifier(Duration.zero);
+
   // Expose player and controller for Video widget
   Player get player => _player;
   VideoController get videoController => _videoController;
@@ -283,7 +286,8 @@ class PlayerController extends ChangeNotifier {
       _player.stream.position.listen((position) {
         if (_isDisposed) return;
         _state = _state.copyWith(position: position);
-        notifyListeners();
+        // Do NOT notifyListeners() here to avoid rebuilding the whole UI 60fps
+        positionNotifier.value = position;
 
         if (_watchPartyService.state == WatchPartyState.connected) {
           _watchPartyService.updateLocalPosition(position);
@@ -513,41 +517,60 @@ class PlayerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool _isTogglingFullscreen = false;
+
   Future<void> toggleFullscreen() async {
-    Logger.d(
-      'Toggle fullscreen: ${_state.isFullscreen ? "Exit" : "Enter"}',
-      tag: _tag,
-    );
-    _state = _state.copyWith(isFullscreen: !_state.isFullscreen);
-    notifyListeners();
+    if (_isTogglingFullscreen) return;
+    _isTogglingFullscreen = true;
 
-    // Desktop
-    if (!kIsWeb &&
-        (defaultTargetPlatform == TargetPlatform.windows ||
-            defaultTargetPlatform == TargetPlatform.linux ||
-            defaultTargetPlatform == TargetPlatform.macOS)) {
-      try {
-        await windowManager.setFullScreen(_state.isFullscreen);
-      } catch (e) {
-        Logger.e('Failed to toggle window fullscreen', tag: _tag, error: e);
+    try {
+      Logger.d(
+        'Toggle fullscreen: ${_state.isFullscreen ? "Exit" : "Enter"}',
+        tag: _tag,
+      );
+
+      // 1. Update state immediately to reflect intent
+      _state = _state.copyWith(isFullscreen: !_state.isFullscreen);
+      notifyListeners();
+
+      // 2. Perform platform-specific switch
+      if (!kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.windows ||
+              defaultTargetPlatform == TargetPlatform.linux ||
+              defaultTargetPlatform == TargetPlatform.macOS)) {
+        try {
+          // Add timeout to prevent indefinite hanging
+          await windowManager
+              .setFullScreen(_state.isFullscreen)
+              .timeout(const Duration(milliseconds: 1000));
+        } catch (e) {
+          Logger.e('Failed to toggle window fullscreen', tag: _tag, error: e);
+          // Revert state on failure
+          _state = _state.copyWith(isFullscreen: !_state.isFullscreen);
+          notifyListeners();
+        }
       }
-    }
 
-    // Mobile
-    if (_state.isFullscreen) {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
-    } else {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-        DeviceOrientation.portraitDown,
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
+      // Mobile handling...
+      if (_state.isFullscreen) {
+        await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+        await SystemChrome.setPreferredOrientations([
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]);
+      } else {
+        await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+        await SystemChrome.setPreferredOrientations([
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.portraitDown,
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]);
+      }
+    } finally {
+      // Debounce slightly to allow window manager to settle
+      await Future.delayed(const Duration(milliseconds: 500));
+      _isTogglingFullscreen = false;
     }
   }
 
@@ -708,9 +731,13 @@ class PlayerController extends ChangeNotifier {
     _saveProgressTimer?.cancel();
     _saveProgress();
 
-    // Stop player
-    _player.stop();
-    _player.dispose();
+    // Stop player safely
+    try {
+      _player.stop();
+      _player.dispose();
+    } catch (e) {
+      Logger.w('Error disposing player: $e', tag: _tag);
+    }
 
     // Restore orientation on Android
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
