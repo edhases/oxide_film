@@ -1,7 +1,7 @@
 name: oxide_film
 description: "Cross-platform media parser for movies, series, cartoons & anime"
 publish_to: 'none'
-version: 20260205.0.0+1
+version: 20260208.0.0+20260208
 
 environment:
   sdk: ^3.10.7
@@ -100,6 +100,7 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^6.0.0
   mocktail: ^1.0.4
+  flutter_launcher_icons: ^0.14.4
   
   # Code generation
   build_runner: ^2.11.0
@@ -112,6 +113,22 @@ dev_dependencies:
 dependency_overrides:
   # Fix for Flutter 3.29 removing Registrar API (needed for peerdart)
   flutter_webrtc: ^0.12.9
+  msix: ^3.16.7
+
+msix_config:
+  display_name: Oxide Film
+  publisher_display_name: Edhases
+  identity_name: Edhases.OxideFilm
+  msix_version: 1.0.0.0
+  logo_path: assets/branding/icon_m3.png
+  store_logo_path: assets/branding/icon_m3.png
+  capabilities:
+    - internetClient
+    - internetClientServer
+    - privateNetworkClientServer
+  languages:
+    - en-US
+    - uk-UA
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

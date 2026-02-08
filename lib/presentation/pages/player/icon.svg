@@ -1,0 +1,32 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="200" fill="#0D1117"/>
+  
+  <!-- Outer Glow Ring (Oxide 'O') -->
+  <circle cx="512" cy="512" r="320" stroke="#00F0FF" stroke-width="40" stroke-dasharray="1500 500" stroke-linecap="round">
+    <animateTransform attributeName="transform" type="rotate" from="0 512 512" to="360 512 512" dur="10s" repeatCount="indefinite"/>
+  </circle>
+  
+  <!-- Inner Glow -->
+  <circle cx="512" cy="512" r="280" stroke="#00F0FF" stroke-width="4" stroke-opacity="0.3"/>
+
+  <!-- Rocket Ship -->
+  <path d="M512 250L560 450H464L512 250Z" fill="white"/>
+  <path d="M512 200C512 200 440 350 440 500C440 600 480 680 512 680C544 680 584 600 584 500C584 350 512 200 512 200Z" fill="white"/>
+  
+  <!-- Rocket Wings -->
+  <path d="M440 550L380 650L445 630L440 550Z" fill="#00F0FF"/>
+  <path d="M584 550L644 650L579 630L584 550Z" fill="#00F0FF"/>
+  
+  <!-- Engine Flame Glow -->
+  <path d="M480 680L512 850L544 680H480Z" fill="url(#flameGradient)">
+    <animate attributeName="opacity" values="0.6;1;0.6" dur="0.2s" repeatCount="indefinite"/>
+  </path>
+  
+  <defs>
+    <linearGradient id="flameGradient" x1="512" y1="680" x2="512" y2="850" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#00F0FF"/>
+      <stop offset="1" stop-color="#00F0FF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+</svg>

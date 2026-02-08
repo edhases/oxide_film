@@ -1,9 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:image_picker/image_picker.dart';
 
+import '../../../core/utils/logger.dart';
 import '../../../data/services/auth_service.dart';
 import '../../../data/services/history_service.dart';
 import '../../../data/services/favorites_service.dart';
@@ -127,6 +130,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Future<void> _pickImage() async {
     try {
+      // Add source selection dialog if needed, for now defaults to gallery
       final XFile? image = await _picker.pickImage(
         source: ImageSource.gallery,
         maxWidth: 512,
@@ -135,18 +139,33 @@ class _ProfilePageState extends State<ProfilePage> {
       );
 
       if (image != null) {
+        Logger.i('Image picked: ${image.path}');
         setState(() => _isLoading = true);
+
+        // Verify file exists before attempting upload
+        final file = File(image.path);
+        if (!await file.exists()) {
+          throw Exception('Файл не знайдено за шляхом: ${image.path}');
+        }
+
         await _authService.updateAvatar(image.path);
         if (mounted) {
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(const SnackBar(content: Text('Аватар оновлено')));
         }
+      } else {
+        Logger.i('Image picking cancelled');
       }
-    } catch (e) {
+    } catch (e, stack) {
+      Logger.e('Error picking/uploading image', error: e, stackTrace: stack);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Помилка завантаження фото: $e')),
+          SnackBar(
+            content: Text('Помилка: $e'),
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(label: 'OK', onPressed: () {}),
+          ),
         );
       }
     } finally {
