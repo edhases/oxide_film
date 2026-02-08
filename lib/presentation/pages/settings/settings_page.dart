@@ -4,15 +4,21 @@ import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:file_picker/file_picker.dart';
 
 import '../../../core/l10n/app_strings.dart';
 import '../../../data/providers/provider_registry.dart';
 import '../../../data/services/settings_service.dart';
 import '../../../data/services/auth_service.dart';
+import '../../../data/services/history_service.dart';
+import '../../../data/services/favorites_service.dart';
 import '../../../data/services/data_transfer_service.dart';
+import '../../../data/services/update_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/custom_titlebar.dart';
 import '../../widgets/settings_widgets.dart';
+import 'dialogs/settings_dialogs.dart';
+import 'dialogs/update_dialog.dart';
 
 /// Settings page with full functionality and localization
 class SettingsPage extends StatefulWidget {
@@ -27,6 +33,9 @@ class _SettingsPageState extends State<SettingsPage> {
   final _settings = GetIt.instance<SettingsService>();
   final _authService = GetIt.instance<AuthService>();
   final _dataTransferService = GetIt.instance<DataTransferService>();
+  final _historyService = GetIt.instance<HistoryService>();
+  final _favoritesService = GetIt.instance<FavoritesService>();
+  final _updateService = GetIt.instance<UpdateService>();
 
   AppStrings get _s => AppStrings.of(context);
 
@@ -44,6 +53,81 @@ class _SettingsPageState extends State<SettingsPage> {
 
   void _onSettingsChanged() {
     if (mounted) setState(() {});
+  }
+
+  Future<void> _syncNow() async {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Синхронізація...')));
+
+    await _historyService.syncNow();
+    await _favoritesService.syncNow();
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Синхронізацію завершено')));
+    }
+  }
+
+  // ... (skipping unchanged parts)
+  void _showSyncInfo() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.darkCard,
+        title: const Text('Синхронізація'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Ваші дані автоматично синхронізуються:'),
+            SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green, size: 20),
+                SizedBox(width: 8),
+                Text('Історія переглядів'),
+              ],
+            ),
+            SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green, size: 20),
+                SizedBox(width: 8),
+                Text('Обране'),
+              ],
+            ),
+            SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green, size: 20),
+                SizedBox(width: 8),
+                Text('Позиція перегляду'),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Зрозуміло'),
+          ),
+          if (_authService.isAuthenticated)
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _syncNow();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryColor,
+              ),
+              child: const Text('Синхронізувати зараз'),
+            ),
+        ],
+      ),
+    );
   }
 
   bool get _isDesktop =>
@@ -84,19 +168,31 @@ class _SettingsPageState extends State<SettingsPage> {
                       icon: Icons.smart_display,
                       title: _s.player,
                       value: _settings.state.playerType.displayName,
-                      onTap: () => _showPlayerTypeDialog(),
+                      onTap: () => SettingsDialogs.showPlayerTypeDialog(
+                        context,
+                        _settings,
+                        _s,
+                      ),
                     ),
                     SettingsTile(
                       icon: Icons.high_quality,
                       title: _s.defaultQuality,
                       value: _settings.state.defaultQuality.displayName,
-                      onTap: () => _showQualityDialog(),
+                      onTap: () => SettingsDialogs.showQualityDialog(
+                        context,
+                        _settings,
+                        _s,
+                      ),
                     ),
                     SettingsTile(
                       icon: Icons.speed,
                       title: _s.defaultSpeed,
                       value: '${_settings.state.defaultSpeed}x',
-                      onTap: () => _showSpeedDialog(),
+                      onTap: () => SettingsDialogs.showSpeedDialog(
+                        context,
+                        _settings,
+                        _s,
+                      ),
                     ),
                     SettingsSwitch(
                       icon: Icons.skip_next,
@@ -132,7 +228,11 @@ class _SettingsPageState extends State<SettingsPage> {
                       title: _s.nextEpisodeDelay,
                       value:
                           '${_settings.state.nextEpisodeDelay} ${_s.nextEpisodeDelayDesc}',
-                      onTap: () => _showNextEpisodeDelayDialog(),
+                      onTap: () => SettingsDialogs.showNextEpisodeDelayDialog(
+                        context,
+                        _settings,
+                        _s,
+                      ),
                     ),
                   ],
                 ),
@@ -159,14 +259,24 @@ class _SettingsPageState extends State<SettingsPage> {
                     SettingsTile(
                       icon: Icons.language,
                       title: _s.language,
-                      value: _settings.state.locale.displayName,
-                      onTap: () => _showLanguageDialog(),
+                      value: _settings.state.locale == AppLocale.uk
+                          ? 'Українська'
+                          : 'English',
+                      onTap: () => SettingsDialogs.showLanguageDialog(
+                        context,
+                        _settings,
+                        _s,
+                      ),
                     ),
                     SettingsTile(
                       icon: Icons.dark_mode,
                       title: _s.theme,
                       value: _settings.state.theme.displayName,
-                      onTap: () => _showThemeDialog(),
+                      onTap: () => SettingsDialogs.showThemeDialog(
+                        context,
+                        _settings,
+                        _s,
+                      ),
                     ),
                     SettingsTile(
                       icon: Icons.tune,
@@ -205,6 +315,22 @@ class _SettingsPageState extends State<SettingsPage> {
                       title: _s.downloads,
                       value: _s.offlineContent,
                       onTap: () => context.push('/downloads'),
+                    ),
+                    SettingsTile(
+                      icon: Icons.folder_open,
+                      title: _s.downloadFolder,
+                      value: _settings.state.downloadPath.isEmpty
+                          ? _s.defaultFolder
+                          : _settings.state.downloadPath,
+                      onTap: () => _pickDownloadFolder(),
+                    ),
+                    SettingsSwitch(
+                      icon: Icons.wifi,
+                      title: _s.onlyWifiDownload,
+                      subtitle: _s.onlyWifiDownloadDesc,
+                      value: _settings.state.onlyWifiDownload,
+                      onChanged: (value) =>
+                          _settings.setOnlyWifiDownload(value),
                     ),
                     SettingsTile(
                       icon: Icons.delete_sweep,
@@ -273,10 +399,16 @@ class _SettingsPageState extends State<SettingsPage> {
                     SettingsTile(
                       icon: Icons.devices,
                       title: _s.deviceTypeOverride,
-                      value: _getDeviceTypeDisplayName(
-                        _settings.state.deviceTypeOverride,
+                      value: _settings.state.deviceTypeOverride == 'auto'
+                          ? _s.system
+                          : _getDeviceTypeName(
+                              _settings.state.deviceTypeOverride,
+                            ),
+                      onTap: () => SettingsDialogs.showDeviceTypeDialog(
+                        context,
+                        _settings,
+                        _s,
                       ),
-                      onTap: () => _showDeviceTypeDialog(),
                     ),
                     SettingsSwitch(
                       icon: Icons.bug_report,
@@ -285,6 +417,18 @@ class _SettingsPageState extends State<SettingsPage> {
                       value: _settings.state.debugMode,
                       onChanged: (value) => _settings.setDebugMode(value),
                     ),
+                    if (_isDesktop)
+                      SettingsTile(
+                        icon: Icons.fullscreen,
+                        title: _s.fullscreenDelay,
+                        value:
+                            '${_settings.state.fullscreenTransitionDelay} ${_s.milliseconds}',
+                        onTap: () => SettingsDialogs.showFullscreenDelayDialog(
+                          context,
+                          _settings,
+                          _s,
+                        ),
+                      ),
                     SettingsTile(
                       icon: Icons.restore,
                       title: _s.resetSettings,
@@ -312,8 +456,18 @@ class _SettingsPageState extends State<SettingsPage> {
                       value: _s.sourceCodeDesc,
                       onTap: () => _openGitHub(),
                     ),
+                    SettingsTile(
+                      icon: Icons.update,
+                      title: _s.checkForUpdates,
+                      value:
+                          '1.0.0', // Current version placeholder or fetch from PackageInfo
+                      onTap: () => UpdateDialog.show(context, _updateService),
+                    ),
                   ],
                 ),
+
+                // Donation section
+                _buildDonationSection(),
 
                 const SizedBox(height: 32),
               ],
@@ -324,11 +478,81 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  Widget _buildDonationSection() {
+    return SettingsSection(
+      title: _s.supportProject,
+      icon: Icons.favorite_border,
+      children: [
+        SettingsTile(
+          icon: Icons.volunteer_activism,
+          title: _s.donateButton,
+          value: _s.donateDesc,
+          onTap: () => _showDonationDialog(),
+        ),
+      ],
+    );
+  }
+
+  void _showDonationDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.darkCard,
+        title: Text(_s.supportProject),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Image.asset(
+                'assets/images/qrcode.png',
+                width: 200,
+                height: 200,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _s.scanQrCode,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _s.donateDesc,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => context.pop(), child: Text(_s.close)),
+          ElevatedButton.icon(
+            onPressed: () {
+              launchUrl(
+                Uri.parse(
+                  'https://www.paypal.com/donate/?hosted_button_id=MUGPMK7UPCYUW',
+                ),
+                mode: LaunchMode.externalApplication,
+              );
+              context.pop();
+            },
+            icon: const Icon(Icons.open_in_new),
+            label: Text(_s.donateButton),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildAppBar() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: AppTheme.surfaceColor,
+        color: Theme.of(context).colorScheme.surface,
         border: Border(
           bottom: BorderSide(color: AppTheme.borderColor, width: 1),
         ),
@@ -356,21 +580,23 @@ class _SettingsPageState extends State<SettingsPage> {
       builder: (context, _) {
         if (_authService.isAuthenticated) {
           return SettingsSection(
-            title: 'Акаунт',
+            title: _s.account,
             icon: Icons.account_circle,
             children: [
               ListTile(
                 leading: CircleAvatar(
                   radius: 20,
-                  backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.2),
+                  backgroundColor: Theme.of(
+                    context,
+                  ).colorScheme.primary.withValues(alpha: 0.2),
                   backgroundImage: _authService.avatarUrl != null
                       ? NetworkImage(_authService.avatarUrl!)
                       : null,
                   child: _authService.avatarUrl == null
                       ? Text(
                           _authService.displayName[0].toUpperCase(),
-                          style: const TextStyle(
-                            color: AppTheme.primaryColor,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
                             fontWeight: FontWeight.bold,
                           ),
                         )
@@ -389,15 +615,15 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               SettingsTile(
                 icon: Icons.sync,
-                title: 'Синхронізація',
-                value: 'Історія та обране в хмарі',
+                title: _s.sync,
+                value: _s.syncCloud,
                 onTap: () => _showSyncInfo(),
               ),
             ],
           );
         } else {
           return SettingsSection(
-            title: 'Акаунт',
+            title: _s.account,
             icon: Icons.account_circle,
             children: [
               Container(
@@ -411,12 +637,13 @@ class _SettingsPageState extends State<SettingsPage> {
                   children: [
                     CircleAvatar(
                       radius: 24,
-                      backgroundColor: AppTheme.primaryColor.withValues(
-                        alpha: 0.2,
-                      ),
-                      child: const Icon(
-                        Icons.person_outline,
-                        color: AppTheme.primaryColor,
+                      backgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.2),
+                      child: Icon(
+                        Icons.person,
+                        size: 32,
+                        color: Theme.of(context).colorScheme.primary,
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -424,15 +651,15 @@ class _SettingsPageState extends State<SettingsPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Увійдіть в акаунт',
-                            style: TextStyle(
+                          Text(
+                            _s.signInPrompt,
+                            style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
                             ),
                           ),
                           Text(
-                            'Синхронізуйте дані між пристроями',
+                            _s.signInDescription,
                             style: TextStyle(
                               color: Colors.white.withValues(alpha: 0.6),
                               fontSize: 12,
@@ -444,9 +671,9 @@ class _SettingsPageState extends State<SettingsPage> {
                     ElevatedButton(
                       onPressed: () => context.push('/login'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.primaryColor,
+                        backgroundColor: Theme.of(context).colorScheme.primary,
                       ),
-                      child: const Text('Увійти'),
+                      child: Text(_s.signIn),
                     ),
                   ],
                 ),
@@ -455,53 +682,6 @@ class _SettingsPageState extends State<SettingsPage> {
           );
         }
       },
-    );
-  }
-
-  void _showSyncInfo() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppTheme.darkCard,
-        title: const Text('Синхронізація'),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Ваші дані автоматично синхронізуються:'),
-            SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.green, size: 20),
-                SizedBox(width: 8),
-                Text('Історія переглядів'),
-              ],
-            ),
-            SizedBox(height: 8),
-            Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.green, size: 20),
-                SizedBox(width: 8),
-                Text('Обране'),
-              ],
-            ),
-            SizedBox(height: 8),
-            Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.green, size: 20),
-                SizedBox(width: 8),
-                Text('Позиція перегляду'),
-              ],
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Зрозуміло'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -568,7 +748,7 @@ class _SettingsPageState extends State<SettingsPage> {
           child: Text(
             'Ці провайдери мають власні розділи в каталозі та за замовчуванням вимкнені в загальному пошуку',
             style: TextStyle(
-              color: AppTheme.textMuted.withOpacity(0.7),
+              color: AppTheme.textMuted.withValues(alpha: 0.7),
               fontSize: 11,
             ),
           ),
@@ -602,125 +782,11 @@ class _SettingsPageState extends State<SettingsPage> {
   // DIALOGS
   // ============================================================================
 
-  void _showLanguageDialog() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppTheme.surfaceColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) => SelectionSheet<AppLocale>(
-        title: _s.selectLanguage,
-        items: AppLocale.values,
-        selectedItem: _settings.state.locale,
-        itemBuilder: (item) => SelectionItem(
-          icon: Icons.language,
-          title: item.displayName,
-          isSelected: item == _settings.state.locale,
-        ),
-        onSelected: (item) {
-          _settings.setLocale(item);
-          Navigator.pop(context);
-        },
-      ),
-    );
-  }
-
-  void _showThemeDialog() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppTheme.surfaceColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) => SelectionSheet<AppThemeMode>(
-        title: _s.selectTheme,
-        items: AppThemeMode.values,
-        selectedItem: _settings.state.theme,
-        itemBuilder: (item) => SelectionItem(
-          icon: _getThemeIcon(item),
-          title: item.displayName,
-          isSelected: item == _settings.state.theme,
-        ),
-        onSelected: (item) {
-          _settings.setTheme(item);
-          Navigator.pop(context);
-        },
-      ),
-    );
-  }
-
-  IconData _getThemeIcon(AppThemeMode theme) {
-    switch (theme) {
-      case AppThemeMode.dark:
-        return Icons.dark_mode;
-      case AppThemeMode.amoled:
-        return Icons.brightness_1;
-      case AppThemeMode.light:
-        return Icons.light_mode;
-      case AppThemeMode.system:
-        return Icons.brightness_auto;
-    }
-  }
-
-  void _showQualityDialog() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppTheme.surfaceColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) => SelectionSheet<DefaultQuality>(
-        title: _s.defaultQuality,
-        items: DefaultQuality.values,
-        selectedItem: _settings.state.defaultQuality,
-        itemBuilder: (item) => SelectionItem(
-          icon: Icons.hd,
-          title: item.displayName,
-          isSelected: item == _settings.state.defaultQuality,
-        ),
-        onSelected: (item) {
-          _settings.setDefaultQuality(item);
-          Navigator.pop(context);
-        },
-      ),
-    );
-  }
-
-  void _showPlayerTypeDialog() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppTheme.surfaceColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) => SelectionSheet<PlayerType>(
-        title: _s.selectPlayer,
-        items: PlayerType.values,
-        selectedItem: _settings.state.playerType,
-        itemBuilder: (item) => SelectionItem(
-          icon: item == PlayerType.internal
-              ? Icons.play_circle_filled
-              : Icons.open_in_new,
-          title: item.displayName,
-          subtitle: item == PlayerType.internal
-              ? _s.builtInPlayer
-              : _s.externalPlayerDesc,
-          isSelected: item == _settings.state.playerType,
-        ),
-        onSelected: (item) {
-          _settings.setPlayerType(item);
-          Navigator.pop(context);
-        },
-      ),
-    );
-  }
-
   void _showClearCacheDialog() {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.surfaceColor,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         title: Text(_s.confirmClearCache),
         content: Text(_s.clearCacheConfirmText),
         actions: [
@@ -758,7 +824,7 @@ class _SettingsPageState extends State<SettingsPage> {
         width: 64,
         height: 64,
         decoration: BoxDecoration(
-          color: AppTheme.primaryColor,
+          color: Theme.of(context).colorScheme.primary,
           borderRadius: BorderRadius.circular(12),
         ),
         child: const Icon(Icons.movie_filter, size: 40, color: Colors.white),
@@ -837,118 +903,21 @@ class _SettingsPageState extends State<SettingsPage> {
     await _showExportDialog();
   }
 
-  String _getDeviceTypeDisplayName(String type) {
-    switch (type) {
-      case 'phone':
-        return _s.devicePhone;
-      case 'tablet':
-        return _s.deviceTablet;
-      case 'desktop':
-        return _s.deviceDesktop;
-      case 'tv':
-        return _s.deviceTV;
-      default:
-        return _s.deviceAuto;
+  Future<void> _pickDownloadFolder() async {
+    try {
+      String? result = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: _s.selectFolder,
+      );
+      if (result != null) {
+        await _settings.setDownloadPath(result);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('${_s.error}: $e')));
+      }
     }
-  }
-
-  void _showSpeedDialog() {
-    final speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppTheme.surfaceColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              margin: const EdgeInsets.only(top: 12),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppTheme.textMuted.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                _s.defaultSpeed,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            ...speeds.map((speed) {
-              final isSelected = speed == _settings.state.defaultSpeed;
-              return ListTile(
-                leading: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? AppTheme.primaryColor.withValues(alpha: 0.15)
-                        : AppTheme.textMuted.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.speed,
-                    color: isSelected
-                        ? AppTheme.primaryColor
-                        : AppTheme.textSecondary,
-                  ),
-                ),
-                title: Text(
-                  '${speed}x',
-                  style: TextStyle(
-                    fontWeight: isSelected
-                        ? FontWeight.bold
-                        : FontWeight.normal,
-                    color: isSelected ? AppTheme.primaryColor : null,
-                  ),
-                ),
-                trailing: isSelected
-                    ? Icon(Icons.check_circle, color: AppTheme.primaryColor)
-                    : null,
-                onTap: () {
-                  _settings.setDefaultSpeed(speed);
-                  Navigator.pop(context);
-                },
-              );
-            }),
-            const SizedBox(height: 16),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showNextEpisodeDelayDialog() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppTheme.surfaceColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) => SelectionSheet<int>(
-        title: _s.nextEpisodeDelay,
-        items: const [0, 5, 10, 15, 30],
-        selectedItem: _settings.state.nextEpisodeDelay,
-        itemBuilder: (item) => SelectionItem(
-          icon: Icons.timer,
-          title: '$item сек',
-          isSelected: item == _settings.state.nextEpisodeDelay,
-        ),
-        onSelected: (item) {
-          _settings.setNextEpisodeDelay(item);
-          Navigator.pop(context);
-        },
-      ),
-    );
   }
 
   void _showWatchPartyNameDialog() {
@@ -958,7 +927,7 @@ class _SettingsPageState extends State<SettingsPage> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.surfaceColor,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         title: Text(_s.watchPartyName),
         content: TextField(
           controller: controller,
@@ -989,93 +958,17 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  void _showDeviceTypeDialog() {
-    final types = ['auto', 'phone', 'tablet', 'desktop', 'tv'];
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppTheme.surfaceColor,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              margin: const EdgeInsets.only(top: 12),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppTheme.textMuted.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                _s.deviceTypeOverride,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            ...types.map((type) {
-              final isSelected = type == _settings.state.deviceTypeOverride;
-              return ListTile(
-                leading: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? AppTheme.primaryColor.withValues(alpha: 0.15)
-                        : AppTheme.textMuted.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    _getDeviceIcon(type),
-                    color: isSelected
-                        ? AppTheme.primaryColor
-                        : AppTheme.textSecondary,
-                  ),
-                ),
-                title: Text(
-                  _getDeviceTypeDisplayName(type),
-                  style: TextStyle(
-                    fontWeight: isSelected
-                        ? FontWeight.bold
-                        : FontWeight.normal,
-                    color: isSelected ? AppTheme.primaryColor : null,
-                  ),
-                ),
-                trailing: isSelected
-                    ? Icon(Icons.check_circle, color: AppTheme.primaryColor)
-                    : null,
-                onTap: () {
-                  _settings.setDeviceTypeOverride(type);
-                  Navigator.pop(context);
-                },
-              );
-            }),
-            const SizedBox(height: 16),
-          ],
-        ),
-      ),
-    );
-  }
-
-  IconData _getDeviceIcon(String type) {
+  String _getDeviceTypeName(String? type) {
+    if (type == null || type == 'auto') return _s.system;
     switch (type) {
-      case 'phone':
-        return Icons.phone_android;
-      case 'tablet':
-        return Icons.tablet_android;
+      case 'mobile':
+        return 'Mobile';
       case 'desktop':
-        return Icons.computer;
+        return 'Desktop';
       case 'tv':
-        return Icons.tv;
+        return 'TV';
       default:
-        return Icons.auto_awesome;
+        return type;
     }
   }
 
@@ -1083,7 +976,7 @@ class _SettingsPageState extends State<SettingsPage> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.surfaceColor,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         title: Text(_s.resetSettings),
         content: Text(_s.resetSettingsConfirm),
         actions: [
@@ -1136,14 +1029,14 @@ class _SeparateProviderTile extends StatelessWidget {
     required this.onSearchEnabledChanged,
   });
 
-  Color get _providerColor {
+  Color _getProviderColor(BuildContext context) {
     switch (providerId) {
       case 'hdrezka':
         return Colors.orange;
       case 'youtube':
         return Colors.red;
       default:
-        return AppTheme.primaryColor;
+        return Theme.of(context).colorScheme.primary;
     }
   }
 
@@ -1160,14 +1053,15 @@ class _SeparateProviderTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final providerColor = _getProviderColor(context);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: AppTheme.surfaceColor,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: isEnabled
-              ? _providerColor.withOpacity(0.3)
+              ? providerColor.withValues(alpha: 0.3)
               : AppTheme.borderColor,
         ),
       ),
@@ -1179,16 +1073,16 @@ class _SeparateProviderTile extends StatelessWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: _providerColor.withOpacity(0.15),
+                color: providerColor.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(_providerIcon, color: _providerColor, size: 22),
+              child: Icon(_providerIcon, color: providerColor, size: 22),
             ),
             title: Text(
               name,
               style: TextStyle(
                 fontWeight: FontWeight.bold,
-                color: isEnabled ? _providerColor : AppTheme.textMuted,
+                color: isEnabled ? providerColor : AppTheme.textMuted,
               ),
             ),
             subtitle: Column(
@@ -1211,7 +1105,7 @@ class _SeparateProviderTile extends StatelessWidget {
             trailing: Switch(
               value: isEnabled,
               onChanged: onEnabledChanged,
-              activeThumbColor: _providerColor,
+              activeThumbColor: providerColor,
             ),
           ),
 
@@ -1220,7 +1114,7 @@ class _SeparateProviderTile extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
-                color: AppTheme.backgroundColor.withOpacity(0.5),
+                color: AppTheme.backgroundColor.withValues(alpha: 0.5),
                 borderRadius: const BorderRadius.only(
                   bottomLeft: Radius.circular(12),
                   bottomRight: Radius.circular(12),
@@ -1242,7 +1136,7 @@ class _SeparateProviderTile extends StatelessWidget {
                   Switch(
                     value: isSearchEnabled,
                     onChanged: onSearchEnabledChanged,
-                    activeThumbColor: _providerColor,
+                    activeThumbColor: providerColor,
                   ),
                 ],
               ),

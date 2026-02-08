@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:image_picker/image_picker.dart';
+
 import '../../../data/services/auth_service.dart';
+import '../../../data/services/history_service.dart';
+import '../../../data/services/favorites_service.dart';
 import '../../theme/app_theme.dart';
 
 /// Profile page for viewing and editing user profile
@@ -15,8 +19,11 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> {
   final _authService = GetIt.instance<AuthService>();
+  final _historyService = GetIt.instance<HistoryService>();
+  final _favoritesService = GetIt.instance<FavoritesService>();
   final _nameController = TextEditingController();
   final _bioController = TextEditingController();
+  final _picker = ImagePicker();
 
   bool _isEditing = false;
   bool _isLoading = false;
@@ -25,6 +32,7 @@ class _ProfilePageState extends State<ProfilePage> {
   void initState() {
     super.initState();
     _loadProfileData();
+    _authService.fetchLinkedProviders();
   }
 
   void _loadProfileData() {
@@ -101,6 +109,176 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
+  Future<void> _syncNow() async {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Синхронізація...')));
+
+    await _historyService.syncNow();
+    await _favoritesService.syncNow();
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Синхронізацію завершено')));
+    }
+  }
+
+  Future<void> _pickImage() async {
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 70,
+      );
+
+      if (image != null) {
+        setState(() => _isLoading = true);
+        await _authService.updateAvatar(image.path);
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Аватар оновлено')));
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Помилка завантаження фото: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _showChangePasswordDialog() async {
+    final oldPassController = TextEditingController();
+    final newPassController = TextEditingController();
+    final confirmPassController = TextEditingController();
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.darkCard,
+        title: const Text('Змінити пароль'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: oldPassController,
+              obscureText: true,
+              decoration: const InputDecoration(labelText: 'Старий пароль'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: newPassController,
+              obscureText: true,
+              decoration: const InputDecoration(labelText: 'Новий пароль'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: confirmPassController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Підтвердіть пароль',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Скасувати'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (newPassController.text != confirmPassController.text) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Паролі не співпадають')),
+                );
+                return;
+              }
+              try {
+                Navigator.pop(context); // Close dialog first
+                setState(() => _isLoading = true);
+
+                await _authService.changePassword(
+                  oldPassController.text,
+                  newPassController.text,
+                  confirmPassController.text,
+                );
+
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Пароль успішно змінено')),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Помилка: ${_authService.error ?? e}'),
+                    ),
+                  );
+                }
+              } finally {
+                if (mounted) setState(() => _isLoading = false);
+              }
+            },
+            child: const Text('Змінити'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteAccount() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.darkCard,
+        title: const Text('Видалити акаунт?'),
+        content: const Text(
+          'Ця дія незворотня! Всі ваші дані на сервері будуть видалені. Локальні дані залишаться.',
+          style: TextStyle(color: Colors.red),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Скасувати'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Видалити назавжди'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      setState(() => _isLoading = true);
+      try {
+        await _authService.deleteAccount();
+        if (mounted) {
+          context.go('/');
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Помилка видалення: ${_authService.error}')),
+          );
+          setState(() => _isLoading = false);
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -110,12 +288,18 @@ class _ProfilePageState extends State<ProfilePage> {
         elevation: 0,
         title: const Text('Профіль'),
         actions: [
-          if (_authService.isAuthenticated && !_isEditing)
+          if (_authService.isAuthenticated && !_isEditing) ...[
+            IconButton(
+              icon: const Icon(Icons.sync),
+              onPressed: _syncNow,
+              tooltip: 'Синхронізувати',
+            ),
             IconButton(
               icon: const Icon(Icons.edit),
               onPressed: () => setState(() => _isEditing = true),
               tooltip: 'Редагувати',
             ),
+          ],
           if (_isEditing)
             IconButton(
               icon: const Icon(Icons.close),
@@ -193,22 +377,46 @@ class _ProfilePageState extends State<ProfilePage> {
       child: Column(
         children: [
           // Avatar
-          CircleAvatar(
-            radius: 50,
-            backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.2),
-            backgroundImage: _authService.avatarUrl != null
-                ? NetworkImage(_authService.avatarUrl!)
-                : null,
-            child: _authService.avatarUrl == null
-                ? Text(
-                    _authService.displayName[0].toUpperCase(),
-                    style: const TextStyle(
-                      fontSize: 40,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.primaryColor,
+          GestureDetector(
+            onTap: _isEditing ? _pickImage : null,
+            child: Stack(
+              children: [
+                CircleAvatar(
+                  radius: 50,
+                  backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.2),
+                  backgroundImage: _authService.avatarUrl != null
+                      ? NetworkImage(_authService.avatarUrl!)
+                      : null,
+                  child: _authService.avatarUrl == null
+                      ? Text(
+                          _authService.displayName[0].toUpperCase(),
+                          style: const TextStyle(
+                            fontSize: 40,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.primaryColor,
+                          ),
+                        )
+                      : null,
+                ),
+                if (_isEditing)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                        color: AppTheme.primaryColor,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.camera_alt,
+                        color: Colors.white,
+                        size: 20,
+                      ),
                     ),
-                  )
-                : null,
+                  ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
 
@@ -301,45 +509,87 @@ class _ProfilePageState extends State<ProfilePage> {
           const SizedBox(height: 32),
 
           // Stats
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _buildStatItem(
-                icon: Icons.history,
-                label: 'Переглянуто',
-                value: profile?['watched_count']?.toString() ?? '0',
-              ),
-              _buildStatItem(
-                icon: Icons.favorite,
-                label: 'Обране',
-                value: profile?['favorites_count']?.toString() ?? '0',
-              ),
-              _buildStatItem(
-                icon: Icons.calendar_today,
-                label: 'З нами з',
-                value: _formatDate(profile?['created_at']),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 32),
-
-          // Logout button
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _signOut,
-              icon: const Icon(Icons.logout, color: Colors.red),
-              label: const Text(
-                'Вийти з акаунту',
-                style: TextStyle(color: Colors.red),
-              ),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Colors.red),
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
+          ListenableBuilder(
+            listenable: Listenable.merge([_historyService, _favoritesService]),
+            builder: (context, _) => Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                FutureBuilder<int>(
+                  future: _historyService.count,
+                  initialData: 0,
+                  builder: (context, snapshot) => _buildStatItem(
+                    icon: Icons.history,
+                    label: 'Переглянуто',
+                    value: snapshot.data?.toString() ?? '0',
+                  ),
+                ),
+                FutureBuilder<int>(
+                  future: _favoritesService.count,
+                  initialData: 0,
+                  builder: (context, snapshot) => _buildStatItem(
+                    icon: Icons.favorite,
+                    label: 'Обране',
+                    value: snapshot.data?.toString() ?? '0',
+                  ),
+                ),
+                _buildStatItem(
+                  icon: Icons.calendar_today,
+                  label: 'З нами з',
+                  value: _formatDate(profile?['created_at']),
+                ),
+              ],
             ),
           ),
+
+          const SizedBox(height: 24),
+
+          // Account Actions
+          if (_isEditing) ...[
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _showChangePasswordDialog,
+                icon: const Icon(Icons.lock_reset),
+                label: const Text('Змінити пароль'),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _deleteAccount,
+                icon: const Icon(Icons.delete_forever, color: Colors.red),
+                label: const Text(
+                  'Видалити акаунт',
+                  style: TextStyle(color: Colors.red),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.red),
+                ),
+              ),
+            ),
+          ] else ...[
+            const SizedBox(height: 24),
+            _buildLinkedAccounts(),
+            const SizedBox(height: 32),
+            // Logout button (only shown when not editing to keep it clean)
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _signOut,
+                icon: const Icon(Icons.logout, color: Colors.red),
+                label: const Text(
+                  'Вийти з акаунту',
+                  style: TextStyle(color: Colors.red),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.red),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -367,6 +617,124 @@ class _ProfilePageState extends State<ProfilePage> {
         ),
       ],
     );
+  }
+
+  Widget _buildLinkedAccounts() {
+    final linked = _authService.linkedProviders;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Підключені соцмережі',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 12),
+        _buildProviderTile(
+          'google',
+          'Google',
+          Icons.login,
+          linked.contains('google'),
+        ),
+        /*
+        _buildProviderTile(
+          'discord',
+          'Discord',
+          Icons.chat,
+          linked.contains('discord'),
+        ),
+        */
+      ],
+    );
+  }
+
+  Widget _buildProviderTile(
+    String id,
+    String name,
+    IconData icon,
+    bool isLinked,
+  ) {
+    return Card(
+      color: AppTheme.darkCard,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: Icon(icon, color: isLinked ? Colors.green : Colors.grey),
+        title: Text(name),
+        trailing: isLinked
+            ? TextButton(
+                onPressed: () => _handleUnlink(id),
+                child: const Text(
+                  'Відключити',
+                  style: TextStyle(color: Colors.red),
+                ),
+              )
+            : TextButton(
+                onPressed: () => _handleLink(id),
+                child: const Text('Підключити'),
+              ),
+      ),
+    );
+  }
+
+  Future<void> _handleLink(String provider) async {
+    setState(() => _isLoading = true);
+    try {
+      await _authService.linkSocialAccount(provider);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Акаунт $provider підключено')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Помилка підключення: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _handleUnlink(String provider) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppTheme.darkCard,
+        title: Text('Відключити $provider?'),
+        content: const Text('Ви більше не зможете входити через цей акаунт.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Скасувати'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Відключити'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      setState(() => _isLoading = true);
+      try {
+        await _authService.unlinkSocialAccount(provider);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Акаунт $provider відключено')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Помилка відключення: $e')));
+        }
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
+      }
+    }
   }
 
   String _formatDate(String? isoDate) {

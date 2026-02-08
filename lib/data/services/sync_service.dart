@@ -1,8 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
-import 'package:flutter/foundation.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -137,7 +138,9 @@ class SyncService extends ChangeNotifier {
         jsonString = await file.readAsString();
       }
 
-      final data = jsonDecode(jsonString) as Map<String, dynamic>;
+      final data =
+          await Isolate.run(() => jsonDecode(jsonString))
+              as Map<String, dynamic>;
 
       // Validate format
       if (data['app'] != 'OxideFilm') {
@@ -186,7 +189,9 @@ class SyncService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final data = jsonDecode(jsonString) as Map<String, dynamic>;
+      final data =
+          await Isolate.run(() => jsonDecode(jsonString))
+              as Map<String, dynamic>;
 
       if (data['app'] != 'OxideFilm') {
         throw Exception('Invalid backup format');

@@ -2431,6 +2431,39 @@ class $DownloadsTable extends Downloads
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _headersMeta = const VerificationMeta(
+    'headers',
+  );
+  @override
+  late final GeneratedColumn<String> headers = GeneratedColumn<String>(
+    'headers',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _localPosterPathMeta = const VerificationMeta(
+    'localPosterPath',
+  );
+  @override
+  late final GeneratedColumn<String> localPosterPath = GeneratedColumn<String>(
+    'local_poster_path',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _durationMeta = const VerificationMeta(
+    'duration',
+  );
+  @override
+  late final GeneratedColumn<int> duration = GeneratedColumn<int>(
+    'duration',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -2476,6 +2509,9 @@ class $DownloadsTable extends Downloads
     progress,
     fileSizeBytes,
     downloadedBytes,
+    headers,
+    localPosterPath,
+    duration,
     createdAt,
     completedAt,
   ];
@@ -2628,6 +2664,27 @@ class $DownloadsTable extends Downloads
         ),
       );
     }
+    if (data.containsKey('headers')) {
+      context.handle(
+        _headersMeta,
+        headers.isAcceptableOrUnknown(data['headers']!, _headersMeta),
+      );
+    }
+    if (data.containsKey('local_poster_path')) {
+      context.handle(
+        _localPosterPathMeta,
+        localPosterPath.isAcceptableOrUnknown(
+          data['local_poster_path']!,
+          _localPosterPathMeta,
+        ),
+      );
+    }
+    if (data.containsKey('duration')) {
+      context.handle(
+        _durationMeta,
+        duration.isAcceptableOrUnknown(data['duration']!, _durationMeta),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -2738,6 +2795,18 @@ class $DownloadsTable extends Downloads
         DriftSqlType.int,
         data['${effectivePrefix}downloaded_bytes'],
       )!,
+      headers: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}headers'],
+      ),
+      localPosterPath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}local_poster_path'],
+      ),
+      duration: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}duration'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -2779,6 +2848,9 @@ class Download extends DataClass implements Insertable<Download> {
   final double progress;
   final int fileSizeBytes;
   final int downloadedBytes;
+  final String? headers;
+  final String? localPosterPath;
+  final int? duration;
   final DateTime createdAt;
   final DateTime? completedAt;
   const Download({
@@ -2802,6 +2874,9 @@ class Download extends DataClass implements Insertable<Download> {
     required this.progress,
     required this.fileSizeBytes,
     required this.downloadedBytes,
+    this.headers,
+    this.localPosterPath,
+    this.duration,
     required this.createdAt,
     this.completedAt,
   });
@@ -2848,6 +2923,15 @@ class Download extends DataClass implements Insertable<Download> {
     map['progress'] = Variable<double>(progress);
     map['file_size_bytes'] = Variable<int>(fileSizeBytes);
     map['downloaded_bytes'] = Variable<int>(downloadedBytes);
+    if (!nullToAbsent || headers != null) {
+      map['headers'] = Variable<String>(headers);
+    }
+    if (!nullToAbsent || localPosterPath != null) {
+      map['local_poster_path'] = Variable<String>(localPosterPath);
+    }
+    if (!nullToAbsent || duration != null) {
+      map['duration'] = Variable<int>(duration);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     if (!nullToAbsent || completedAt != null) {
       map['completed_at'] = Variable<DateTime>(completedAt);
@@ -2891,6 +2975,15 @@ class Download extends DataClass implements Insertable<Download> {
       progress: Value(progress),
       fileSizeBytes: Value(fileSizeBytes),
       downloadedBytes: Value(downloadedBytes),
+      headers: headers == null && nullToAbsent
+          ? const Value.absent()
+          : Value(headers),
+      localPosterPath: localPosterPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(localPosterPath),
+      duration: duration == null && nullToAbsent
+          ? const Value.absent()
+          : Value(duration),
       createdAt: Value(createdAt),
       completedAt: completedAt == null && nullToAbsent
           ? const Value.absent()
@@ -2924,6 +3017,9 @@ class Download extends DataClass implements Insertable<Download> {
       progress: serializer.fromJson<double>(json['progress']),
       fileSizeBytes: serializer.fromJson<int>(json['fileSizeBytes']),
       downloadedBytes: serializer.fromJson<int>(json['downloadedBytes']),
+      headers: serializer.fromJson<String?>(json['headers']),
+      localPosterPath: serializer.fromJson<String?>(json['localPosterPath']),
+      duration: serializer.fromJson<int?>(json['duration']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       completedAt: serializer.fromJson<DateTime?>(json['completedAt']),
     );
@@ -2952,6 +3048,9 @@ class Download extends DataClass implements Insertable<Download> {
       'progress': serializer.toJson<double>(progress),
       'fileSizeBytes': serializer.toJson<int>(fileSizeBytes),
       'downloadedBytes': serializer.toJson<int>(downloadedBytes),
+      'headers': serializer.toJson<String?>(headers),
+      'localPosterPath': serializer.toJson<String?>(localPosterPath),
+      'duration': serializer.toJson<int?>(duration),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'completedAt': serializer.toJson<DateTime?>(completedAt),
     };
@@ -2978,6 +3077,9 @@ class Download extends DataClass implements Insertable<Download> {
     double? progress,
     int? fileSizeBytes,
     int? downloadedBytes,
+    Value<String?> headers = const Value.absent(),
+    Value<String?> localPosterPath = const Value.absent(),
+    Value<int?> duration = const Value.absent(),
     DateTime? createdAt,
     Value<DateTime?> completedAt = const Value.absent(),
   }) => Download(
@@ -3001,6 +3103,11 @@ class Download extends DataClass implements Insertable<Download> {
     progress: progress ?? this.progress,
     fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
     downloadedBytes: downloadedBytes ?? this.downloadedBytes,
+    headers: headers.present ? headers.value : this.headers,
+    localPosterPath: localPosterPath.present
+        ? localPosterPath.value
+        : this.localPosterPath,
+    duration: duration.present ? duration.value : this.duration,
     createdAt: createdAt ?? this.createdAt,
     completedAt: completedAt.present ? completedAt.value : this.completedAt,
   );
@@ -3036,6 +3143,11 @@ class Download extends DataClass implements Insertable<Download> {
       downloadedBytes: data.downloadedBytes.present
           ? data.downloadedBytes.value
           : this.downloadedBytes,
+      headers: data.headers.present ? data.headers.value : this.headers,
+      localPosterPath: data.localPosterPath.present
+          ? data.localPosterPath.value
+          : this.localPosterPath,
+      duration: data.duration.present ? data.duration.value : this.duration,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       completedAt: data.completedAt.present
           ? data.completedAt.value
@@ -3066,6 +3178,9 @@ class Download extends DataClass implements Insertable<Download> {
           ..write('progress: $progress, ')
           ..write('fileSizeBytes: $fileSizeBytes, ')
           ..write('downloadedBytes: $downloadedBytes, ')
+          ..write('headers: $headers, ')
+          ..write('localPosterPath: $localPosterPath, ')
+          ..write('duration: $duration, ')
           ..write('createdAt: $createdAt, ')
           ..write('completedAt: $completedAt')
           ..write(')'))
@@ -3094,6 +3209,9 @@ class Download extends DataClass implements Insertable<Download> {
     progress,
     fileSizeBytes,
     downloadedBytes,
+    headers,
+    localPosterPath,
+    duration,
     createdAt,
     completedAt,
   ]);
@@ -3121,6 +3239,9 @@ class Download extends DataClass implements Insertable<Download> {
           other.progress == this.progress &&
           other.fileSizeBytes == this.fileSizeBytes &&
           other.downloadedBytes == this.downloadedBytes &&
+          other.headers == this.headers &&
+          other.localPosterPath == this.localPosterPath &&
+          other.duration == this.duration &&
           other.createdAt == this.createdAt &&
           other.completedAt == this.completedAt);
 }
@@ -3146,6 +3267,9 @@ class DownloadsCompanion extends UpdateCompanion<Download> {
   final Value<double> progress;
   final Value<int> fileSizeBytes;
   final Value<int> downloadedBytes;
+  final Value<String?> headers;
+  final Value<String?> localPosterPath;
+  final Value<int?> duration;
   final Value<DateTime> createdAt;
   final Value<DateTime?> completedAt;
   const DownloadsCompanion({
@@ -3169,6 +3293,9 @@ class DownloadsCompanion extends UpdateCompanion<Download> {
     this.progress = const Value.absent(),
     this.fileSizeBytes = const Value.absent(),
     this.downloadedBytes = const Value.absent(),
+    this.headers = const Value.absent(),
+    this.localPosterPath = const Value.absent(),
+    this.duration = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.completedAt = const Value.absent(),
   });
@@ -3193,6 +3320,9 @@ class DownloadsCompanion extends UpdateCompanion<Download> {
     this.progress = const Value.absent(),
     this.fileSizeBytes = const Value.absent(),
     this.downloadedBytes = const Value.absent(),
+    this.headers = const Value.absent(),
+    this.localPosterPath = const Value.absent(),
+    this.duration = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.completedAt = const Value.absent(),
   }) : mediaId = Value(mediaId),
@@ -3223,6 +3353,9 @@ class DownloadsCompanion extends UpdateCompanion<Download> {
     Expression<double>? progress,
     Expression<int>? fileSizeBytes,
     Expression<int>? downloadedBytes,
+    Expression<String>? headers,
+    Expression<String>? localPosterPath,
+    Expression<int>? duration,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? completedAt,
   }) {
@@ -3247,6 +3380,9 @@ class DownloadsCompanion extends UpdateCompanion<Download> {
       if (progress != null) 'progress': progress,
       if (fileSizeBytes != null) 'file_size_bytes': fileSizeBytes,
       if (downloadedBytes != null) 'downloaded_bytes': downloadedBytes,
+      if (headers != null) 'headers': headers,
+      if (localPosterPath != null) 'local_poster_path': localPosterPath,
+      if (duration != null) 'duration': duration,
       if (createdAt != null) 'created_at': createdAt,
       if (completedAt != null) 'completed_at': completedAt,
     });
@@ -3273,6 +3409,9 @@ class DownloadsCompanion extends UpdateCompanion<Download> {
     Value<double>? progress,
     Value<int>? fileSizeBytes,
     Value<int>? downloadedBytes,
+    Value<String?>? headers,
+    Value<String?>? localPosterPath,
+    Value<int?>? duration,
     Value<DateTime>? createdAt,
     Value<DateTime?>? completedAt,
   }) {
@@ -3297,6 +3436,9 @@ class DownloadsCompanion extends UpdateCompanion<Download> {
       progress: progress ?? this.progress,
       fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
       downloadedBytes: downloadedBytes ?? this.downloadedBytes,
+      headers: headers ?? this.headers,
+      localPosterPath: localPosterPath ?? this.localPosterPath,
+      duration: duration ?? this.duration,
       createdAt: createdAt ?? this.createdAt,
       completedAt: completedAt ?? this.completedAt,
     );
@@ -3367,6 +3509,15 @@ class DownloadsCompanion extends UpdateCompanion<Download> {
     if (downloadedBytes.present) {
       map['downloaded_bytes'] = Variable<int>(downloadedBytes.value);
     }
+    if (headers.present) {
+      map['headers'] = Variable<String>(headers.value);
+    }
+    if (localPosterPath.present) {
+      map['local_poster_path'] = Variable<String>(localPosterPath.value);
+    }
+    if (duration.present) {
+      map['duration'] = Variable<int>(duration.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -3399,6 +3550,9 @@ class DownloadsCompanion extends UpdateCompanion<Download> {
           ..write('progress: $progress, ')
           ..write('fileSizeBytes: $fileSizeBytes, ')
           ..write('downloadedBytes: $downloadedBytes, ')
+          ..write('headers: $headers, ')
+          ..write('localPosterPath: $localPosterPath, ')
+          ..write('duration: $duration, ')
           ..write('createdAt: $createdAt, ')
           ..write('completedAt: $completedAt')
           ..write(')'))
@@ -5868,6 +6022,9 @@ typedef $$DownloadsTableCreateCompanionBuilder =
       Value<double> progress,
       Value<int> fileSizeBytes,
       Value<int> downloadedBytes,
+      Value<String?> headers,
+      Value<String?> localPosterPath,
+      Value<int?> duration,
       Value<DateTime> createdAt,
       Value<DateTime?> completedAt,
     });
@@ -5893,6 +6050,9 @@ typedef $$DownloadsTableUpdateCompanionBuilder =
       Value<double> progress,
       Value<int> fileSizeBytes,
       Value<int> downloadedBytes,
+      Value<String?> headers,
+      Value<String?> localPosterPath,
+      Value<int?> duration,
       Value<DateTime> createdAt,
       Value<DateTime?> completedAt,
     });
@@ -6004,6 +6164,21 @@ class $$DownloadsTableFilterComposer
 
   ColumnFilters<int> get downloadedBytes => $composableBuilder(
     column: $table.downloadedBytes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get headers => $composableBuilder(
+    column: $table.headers,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get localPosterPath => $composableBuilder(
+    column: $table.localPosterPath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get duration => $composableBuilder(
+    column: $table.duration,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -6127,6 +6302,21 @@ class $$DownloadsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get headers => $composableBuilder(
+    column: $table.headers,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get localPosterPath => $composableBuilder(
+    column: $table.localPosterPath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get duration => $composableBuilder(
+    column: $table.duration,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -6217,6 +6407,17 @@ class $$DownloadsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get headers =>
+      $composableBuilder(column: $table.headers, builder: (column) => column);
+
+  GeneratedColumn<String> get localPosterPath => $composableBuilder(
+    column: $table.localPosterPath,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get duration =>
+      $composableBuilder(column: $table.duration, builder: (column) => column);
+
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -6274,6 +6475,9 @@ class $$DownloadsTableTableManager
                 Value<double> progress = const Value.absent(),
                 Value<int> fileSizeBytes = const Value.absent(),
                 Value<int> downloadedBytes = const Value.absent(),
+                Value<String?> headers = const Value.absent(),
+                Value<String?> localPosterPath = const Value.absent(),
+                Value<int?> duration = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime?> completedAt = const Value.absent(),
               }) => DownloadsCompanion(
@@ -6297,6 +6501,9 @@ class $$DownloadsTableTableManager
                 progress: progress,
                 fileSizeBytes: fileSizeBytes,
                 downloadedBytes: downloadedBytes,
+                headers: headers,
+                localPosterPath: localPosterPath,
+                duration: duration,
                 createdAt: createdAt,
                 completedAt: completedAt,
               ),
@@ -6322,6 +6529,9 @@ class $$DownloadsTableTableManager
                 Value<double> progress = const Value.absent(),
                 Value<int> fileSizeBytes = const Value.absent(),
                 Value<int> downloadedBytes = const Value.absent(),
+                Value<String?> headers = const Value.absent(),
+                Value<String?> localPosterPath = const Value.absent(),
+                Value<int?> duration = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime?> completedAt = const Value.absent(),
               }) => DownloadsCompanion.insert(
@@ -6345,6 +6555,9 @@ class $$DownloadsTableTableManager
                 progress: progress,
                 fileSizeBytes: fileSizeBytes,
                 downloadedBytes: downloadedBytes,
+                headers: headers,
+                localPosterPath: localPosterPath,
+                duration: duration,
                 createdAt: createdAt,
                 completedAt: completedAt,
               ),

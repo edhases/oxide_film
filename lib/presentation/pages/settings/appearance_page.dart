@@ -4,7 +4,6 @@ import 'package:get_it/get_it.dart';
 
 import '../../../data/services/settings_service.dart';
 import '../../../domain/entities/ui_settings.dart';
-import '../../theme/app_theme.dart';
 import '../../widgets/custom_titlebar.dart';
 
 /// Appearance customization page
@@ -56,10 +55,32 @@ class _AppearancePageState extends State<AppearancePage> {
 
                 const SizedBox(height: 24),
 
+                // Theme section
+                _buildSectionTitle('Тема оформлення'),
+                const SizedBox(height: 12),
+                _buildThemeSelector(),
+
+                const SizedBox(height: 24),
+
                 // Poster size section
                 _buildSectionTitle('Розмір постерів'),
                 const SizedBox(height: 12),
                 _buildPosterSizeSelector(),
+
+                const SizedBox(height: 24),
+
+                // Grid columns section
+                _buildSectionTitle('Кількість колонок'),
+                const SizedBox(height: 4),
+                Text(
+                  'Залиште 0 для автоматичного підбору за розміром постерів',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).textTheme.bodySmall?.color,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _buildGridColumnsSelector(),
 
                 const SizedBox(height: 24),
 
@@ -127,10 +148,10 @@ class _AppearancePageState extends State<AppearancePage> {
   Widget _buildSectionTitle(String title) {
     return Text(
       title,
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 16,
         fontWeight: FontWeight.w600,
-        color: AppTheme.textPrimary,
+        color: Theme.of(context).textTheme.titleLarge?.color,
       ),
     );
   }
@@ -142,9 +163,9 @@ class _AppearancePageState extends State<AppearancePage> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppTheme.darkCard,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.borderColor),
+        border: Border.all(color: Theme.of(context).dividerColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -157,7 +178,7 @@ class _AppearancePageState extends State<AppearancePage> {
                 'Попередній перегляд',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
-                  color: AppTheme.textPrimary,
+                  color: null, // Uses default text color
                 ),
               ),
             ],
@@ -166,8 +187,14 @@ class _AppearancePageState extends State<AppearancePage> {
           LayoutBuilder(
             builder: (context, constraints) {
               final screenWidth = MediaQuery.of(context).size.width;
-              final columnCount = ui.posterSize.getColumnCount(screenWidth);
+              final columnCount = ui.gridColumns > 0
+                  ? ui.gridColumns
+                  : ui.posterSize.getColumnCount(screenWidth);
               final spacing = ui.gridSpacing.crossAxisSpacing;
+
+              final previewColumnCount = columnCount > 6
+                  ? 6
+                  : columnCount; // Limit preview columns
 
               // Calculate item width exactly as GridView would
               // Available width for items = total width - (total spacing)
@@ -184,12 +211,14 @@ class _AppearancePageState extends State<AppearancePage> {
                 height: itemHeight,
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: List.generate(columnCount, (index) {
+                  children: List.generate(previewColumnCount, (index) {
                     return Expanded(
                       child: Padding(
                         padding: EdgeInsets.only(
                           left: index == 0 ? 0 : spacing / 2,
-                          right: index == columnCount - 1 ? 0 : spacing / 2,
+                          right: index == previewColumnCount - 1
+                              ? 0
+                              : spacing / 2,
                         ),
                         child: _buildPreviewPoster(index, accentColor),
                       ),
@@ -327,7 +356,7 @@ class _AppearancePageState extends State<AppearancePage> {
                         years[dataIndex],
                         style: TextStyle(
                           fontSize: 9,
-                          color: AppTheme.textMuted,
+                          color: Theme.of(context).textTheme.bodySmall?.color,
                         ),
                       ),
                   ],
@@ -337,6 +366,42 @@ class _AppearancePageState extends State<AppearancePage> {
         ],
       ),
     );
+  }
+
+  Widget _buildThemeSelector() {
+    final currentTheme = _settings.state.theme;
+
+    return Row(
+      children: AppThemeMode.values.map((mode) {
+        final isSelected = mode == currentTheme;
+        return Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(
+              right: mode != AppThemeMode.values.last ? 8 : 0,
+            ),
+            child: _OptionButton(
+              label: mode.displayName,
+              icon: _getThemeIcon(mode),
+              isSelected: isSelected,
+              onTap: () => _settings.setTheme(mode),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  IconData _getThemeIcon(AppThemeMode theme) {
+    switch (theme) {
+      case AppThemeMode.dark:
+        return Icons.dark_mode;
+      case AppThemeMode.amoled:
+        return Icons.smartphone;
+      case AppThemeMode.light:
+        return Icons.light_mode;
+      case AppThemeMode.system:
+        return Icons.settings_brightness;
+    }
   }
 
   Widget _buildPosterSizeSelector() {
@@ -371,6 +436,28 @@ class _AppearancePageState extends State<AppearancePage> {
       case PosterSize.large:
         return Icons.view_agenda;
     }
+  }
+
+  Widget _buildGridColumnsSelector() {
+    final currentColumns = _settings.uiSettings.gridColumns;
+    final options = [0, 2, 3, 4, 5, 6];
+
+    return Row(
+      children: options.map((cols) {
+        final isSelected = cols == currentColumns;
+        return Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(right: cols != options.last ? 8 : 0),
+            child: _OptionButton(
+              label: cols == 0 ? 'Авто' : cols.toString(),
+              icon: cols == 0 ? Icons.auto_awesome : Icons.grid_on,
+              isSelected: isSelected,
+              onTap: () => _settings.setGridColumns(cols),
+            ),
+          ),
+        );
+      }).toList(),
+    );
   }
 
   Widget _buildGridSpacingSelector() {
@@ -496,9 +583,9 @@ class _AppearancePageState extends State<AppearancePage> {
 
     return Container(
       decoration: BoxDecoration(
-        color: AppTheme.darkCard,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.borderColor),
+        border: Border.all(color: Theme.of(context).dividerColor),
       ),
       child: Column(
         children: [
@@ -560,7 +647,7 @@ class _OptionButton extends StatelessWidget {
     return Material(
       color: isSelected
           ? accentColor.withValues(alpha: 0.2)
-          : AppTheme.darkCard,
+          : Theme.of(context).cardColor,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
@@ -570,7 +657,7 @@ class _OptionButton extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isSelected ? accentColor : AppTheme.borderColor,
+              color: isSelected ? accentColor : Theme.of(context).dividerColor,
               width: isSelected ? 2 : 1,
             ),
           ),
@@ -579,7 +666,9 @@ class _OptionButton extends StatelessWidget {
             children: [
               Icon(
                 icon,
-                color: isSelected ? accentColor : AppTheme.textSecondary,
+                color: isSelected
+                    ? accentColor
+                    : Theme.of(context).textTheme.bodySmall?.color,
                 size: 28,
               ),
               const SizedBox(height: 8),
@@ -588,7 +677,9 @@ class _OptionButton extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                  color: isSelected ? accentColor : AppTheme.textPrimary,
+                  color: isSelected
+                      ? accentColor
+                      : Theme.of(context).textTheme.bodyMedium?.color,
                 ),
               ),
             ],
@@ -669,11 +760,17 @@ class _SwitchTile extends StatelessWidget {
     final accentColor = Color(settings.uiSettings.accentColor.colorValue);
 
     return ListTile(
-      leading: Icon(icon, color: AppTheme.textSecondary),
-      title: Text(title, style: const TextStyle(color: AppTheme.textPrimary)),
+      leading: Icon(icon, color: Theme.of(context).textTheme.bodySmall?.color),
+      title: Text(
+        title,
+        style: TextStyle(color: Theme.of(context).textTheme.bodyMedium?.color),
+      ),
       subtitle: Text(
         subtitle,
-        style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
+        style: TextStyle(
+          fontSize: 12,
+          color: Theme.of(context).textTheme.bodySmall?.color,
+        ),
       ),
       trailing: Switch(
         value: value,

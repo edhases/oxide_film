@@ -7,6 +7,11 @@ class AppConfig {
   static const String appName = 'Oxide Film';
   static const String appVersion = '1.0.0';
 
+  // PocketBase backend
+  static const String backendUrl =
+      'https://oxide.skystreamua.space'; // Production server
+  static String get adminUrl => '$backendUrl/_/';
+
   // TMDB API (user should set their own key)
   static const String tmdbBaseUrl = 'https://api.themoviedb.org/3';
   static const String tmdbImageBaseUrl = 'https://image.tmdb.org/t/p';

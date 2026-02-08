@@ -4,7 +4,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:media_kit/media_kit.dart';
-import '../../helpers/fake_player.dart';
 
 import 'package:oxide_film/data/services/settings_service.dart';
 import 'package:oxide_film/domain/entities/entities.dart';

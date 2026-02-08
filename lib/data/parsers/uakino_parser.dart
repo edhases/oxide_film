@@ -112,6 +112,10 @@ class UakinoParser {
               type: _detectType(href),
               genres: genres,
               country: country,
+              originalTitle: card
+                  .find('div', class_: 'movie-title-orig')
+                  ?.text
+                  .trim(),
             ),
           );
         } catch (e) {
@@ -272,58 +276,133 @@ class UakinoParser {
       }
     }
 
-    // Info Table
-    final infoTable = soup.find('div', class_: 'flist');
+    // Info Table - Revised for new structure
+    final infoTable =
+        soup.find('div', class_: 'film-info') ??
+        soup.find('div', class_: 'flist');
     String? director;
     List<String>? actors;
     List<String>? genres;
     List<String>? countries;
     int? year;
+    String? originalTitle;
+    double? imdbRating;
+    double? siteRating;
+
+    // Try Schema.org first (accurate and structured)
+    final directorMeta = soup.find('meta', attrs: {'itemprop': 'director'});
+    if (directorMeta != null) director = directorMeta.attributes['content'];
+
+    final genreMeta = soup.find('meta', attrs: {'itemprop': 'genre'});
+    if (genreMeta != null) {
+      genres = genreMeta.attributes['content']
+          ?.split(',')
+          .map((e) => e.trim())
+          .toList();
+    }
+
+    final dateMeta = soup.find('meta', attrs: {'itemprop': 'dateCreated'});
+    if (dateMeta != null) {
+      final dateStr = dateMeta.attributes['content'];
+      if (dateStr != null && dateStr.length >= 4) {
+        year = int.tryParse(dateStr.substring(0, 4));
+      }
+    }
+
+    final actorsMeta = soup.find('meta', attrs: {'itemprop': 'actors'});
+    if (actorsMeta != null) {
+      actors = actorsMeta.attributes['content']
+          ?.split(',')
+          .map((e) => e.trim())
+          .toList();
+    }
+
+    // Original Title
+    final originTitleEl =
+        soup.find('span', class_: 'origintitle') ??
+        soup.find('meta', attrs: {'itemprop': 'alternateName'});
+    originalTitle =
+        originTitleEl?.text.trim() ??
+        originTitleEl?.attributes['content']?.trim();
+    if (originalTitle != null) {
+      originalTitle = originalTitle
+          .replaceFirst(RegExp(r'\d+\s+season.*$', caseSensitive: false), '')
+          .trim();
+    }
 
     if (infoTable != null) {
-      final rows = infoTable.findAll('li');
+      final rows =
+          infoTable.findAll('div', class_: 'fi-item-s') +
+          infoTable.findAll('li') +
+          infoTable.findAll('div', class_: 'fi-item');
       for (final row in rows) {
-        final text = row.text.toLowerCase();
-        if (text.contains('режисер')) {
-          director =
-              row.find('a')?.text.trim() ?? row.text.split(':').last.trim();
-        } else if (text.contains('актор')) {
-          actors = row.findAll('a').map((a) => a.text.trim()).toList();
-          if (actors.isEmpty) {
-            actors = row.text
-                .split(':')
-                .last
-                .split(',')
-                .map((s) => s.trim())
-                .where((s) => s.isNotEmpty)
-                .toList();
+        final label =
+            row.find('div', class_: 'fi-label')?.text.toLowerCase() ??
+            row.text.toLowerCase().split(':').first;
+        final desc = row.find('div', class_: 'fi-desc') ?? row;
+
+        if (label.contains('режисер')) {
+          director ??=
+              desc.find('a')?.text.trim() ?? desc.text.split(':').last.trim();
+        } else if (label.contains('актор')) {
+          if (actors == null || actors.isEmpty) {
+            actors = desc.findAll('a').map((a) => a.text.trim()).toList();
+            if (actors.isEmpty) {
+              actors = desc.text
+                  .split(':')
+                  .last
+                  .split(',')
+                  .map((s) => s.trim())
+                  .where((s) => s.isNotEmpty)
+                  .toList();
+            }
           }
-        } else if (text.contains('жанр')) {
-          genres = row.findAll('a').map((a) => a.text.trim()).toList();
-        } else if (text.contains('країна')) {
-          countries = row.findAll('a').map((a) => a.text.trim()).toList();
-        } else if (text.contains('рік')) {
-          final yearStr =
-              row.find('a')?.text.trim() ??
-              row.text.replaceAll(RegExp(r'\D'), '');
-          year = int.tryParse(yearStr);
+        } else if (label.contains('жанр')) {
+          if (genres == null || genres.isEmpty) {
+            genres = desc.findAll('a').map((a) => a.text.trim()).toList();
+          }
+        } else if (label.contains('країна')) {
+          countries = desc.findAll('a').map((a) => a.text.trim()).toList();
+        } else if (label.contains('рік')) {
+          year ??= int.tryParse(
+            desc.find('a')?.text.trim() ??
+                desc.text.replaceAll(RegExp(r'\D'), ''),
+          );
+        } else if (row.find('img[src*="imdb"]') != null) {
+          final imdbText = desc.text.trim();
+          final match = RegExp(r'(\d+\.?\d*)').firstMatch(imdbText);
+          if (match != null) {
+            imdbRating = double.tryParse(match.group(1)!);
+          }
         }
       }
-    } else {
-      final fullText = soup.text;
-      final yearMatch = RegExp(r'Рік:\s*(\d{4})').firstMatch(fullText);
-      if (yearMatch != null) {
-        year = int.tryParse(yearMatch.group(1) ?? '');
+    }
+
+    // Site Rating
+    final siteRatingEl = soup.find('span', attrs: {'data-likes-id': true});
+    if (siteRatingEl != null) {
+      final likes = int.tryParse(siteRatingEl.text.trim()) ?? 0;
+      final dislikesEl = soup.find('span', attrs: {'data-dislikes-id': true});
+      final dislikes = int.tryParse(dislikesEl?.text.trim() ?? '0') ?? 0;
+      if (likes + dislikes > 0) {
+        siteRating = (likes / (likes + dislikes)) * 10;
       }
-      final countryMatch = RegExp(
-        r'Країна:\s*([^<\n\r]+)',
-      ).firstMatch(fullText);
-      if (countryMatch != null) {
-        countries = countryMatch
-            .group(1)!
-            .split(',')
-            .map((s) => s.trim())
-            .where((s) => s.isNotEmpty)
+    }
+
+    // Actors fallback via regex (from Python analyzer findings)
+    if (actors == null || actors.isEmpty) {
+      final bodyText = soup.text;
+      final actorsMatch = RegExp(
+        r'(?:Актор[иы]|Актёр[иы]|В ролях|Actors?)[:\s]+([^\n]+)',
+        caseSensitive: false,
+      ).firstMatch(bodyText);
+      if (actorsMatch != null) {
+        final actorsText = actorsMatch.group(1)!.trim();
+        actors = actorsText
+            .split(RegExp(r'[,]'))
+            .map((a) => a.trim())
+            .where((a) => a.isNotEmpty && a.length < 50)
+            .take(10)
             .toList();
       }
     }
@@ -339,12 +418,18 @@ class UakinoParser {
         description: description,
         country: countries?.firstOrNull,
         genres: genres,
+        rating: siteRating ?? imdbRating,
+        ratingSource: siteRating != null
+            ? 'Сайт' // Shorter label for cleaner UI
+            : (imdbRating != null ? 'IMDb' : null),
+        originalTitle: originalTitle,
       ),
       fullDescription: description,
       director: director,
       actors: actors,
       genres: genres,
       countries: countries,
+      imdbRating: imdbRating,
     );
   }
 
@@ -580,6 +665,7 @@ class UakinoParser {
       }
     }
 
+    // Check specific high qualities first
     if (lowerUrl.contains('4k') || lowerUrl.contains('2160')) {
       return StreamQuality.q4k;
     }
@@ -588,6 +674,14 @@ class UakinoParser {
     }
     if (lowerUrl.contains('1080')) return StreamQuality.q1080p;
     if (lowerUrl.contains('720')) return StreamQuality.q720p;
+
+    // For HLS (.m3u8), if we haven't found HD+, assume Auto/Unknown
+    // even if we see 480/360, as it's likely an adaptive stream
+    // and the URL might just point to a distinct path.
+    if (lowerUrl.contains('.m3u8')) {
+      return StreamQuality.unknown;
+    }
+
     if (lowerUrl.contains('480')) return StreamQuality.q480p;
     if (lowerUrl.contains('360')) return StreamQuality.q360p;
 

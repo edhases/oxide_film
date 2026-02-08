@@ -1,15 +1,20 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:oxide_film/core/network/api_client.dart';
 import 'package:oxide_film/data/providers/hdrezka_provider.dart';
+import 'package:mocktail/mocktail.dart';
+import '../helpers/mock_services.dart';
 
 void main() {
   group('Integration: HdrezkaProvider', () {
     late HdrezkaProvider provider;
     late ApiClient client;
+    late MockUserAgentService mockUaService;
 
     setUp(() {
       client = ApiClient();
-      provider = HdrezkaProvider(client);
+      mockUaService = MockUserAgentService();
+      when(() => mockUaService.getChromeUserAgent()).thenReturn('Chrome/Mock');
+      provider = HdrezkaProvider(client, mockUaService);
     });
 
     test('search should return items', () async {

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
 
-/// Rating badge showing a rating from a specific source (IMDb, TMDB, Site, etc.)
+/// Rating badge showing a rating from a specific source (IMDb, TMDB, Сайт, etc.)
 class RatingBadge extends StatelessWidget {
   final double? rating;
   final String? source;
@@ -27,25 +26,32 @@ class RatingBadge extends StatelessWidget {
         ? (rating! / 10).clamp(0.0, 10.0)
         : rating!;
 
-    final badgeColor = color ?? _getRatingColor(displayRating);
-    final sourceLabel = source?.toUpperCase();
+    final badgeColor = color ?? _getRatingColor(context, displayRating);
+    final sourceLabel = source;
 
+    // Use InfoChip-like styling for consistency
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: compact ? 4 : 6, vertical: 2),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 8 : 12,
+        vertical: compact ? 4 : 6,
+      ),
       decoration: BoxDecoration(
-        color: badgeColor,
-        borderRadius: BorderRadius.circular(4),
+        color: badgeColor.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: badgeColor.withValues(alpha: 0.3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (sourceLabel != null && !compact) ...[
+          Icon(Icons.star_rounded, size: compact ? 14 : 16, color: badgeColor),
+          const SizedBox(width: 4),
+          if (sourceLabel != null && sourceLabel.isNotEmpty && !compact) ...[
             Text(
               sourceLabel,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.7),
-                fontSize: 8,
-                fontWeight: FontWeight.w600,
+                color: badgeColor,
+                fontSize: compact ? 10 : 12,
+                fontWeight: FontWeight.w500,
               ),
             ),
             const SizedBox(width: 4),
@@ -53,8 +59,8 @@ class RatingBadge extends StatelessWidget {
           Text(
             displayRating.toStringAsFixed(1),
             style: TextStyle(
-              color: Colors.white,
-              fontSize: compact ? 10 : 11,
+              color: badgeColor,
+              fontSize: compact ? 10 : 12,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -63,9 +69,9 @@ class RatingBadge extends StatelessWidget {
     );
   }
 
-  Color _getRatingColor(double rating) {
-    if (rating >= 7.0) return AppTheme.successColor;
+  Color _getRatingColor(BuildContext context, double rating) {
+    if (rating >= 7.0) return Colors.green;
     if (rating >= 5.0) return Colors.orange;
-    return AppTheme.errorColor;
+    return Theme.of(context).colorScheme.error;
   }
 }

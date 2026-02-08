@@ -3,9 +3,11 @@ import 'package:flutter/foundation.dart';
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'dart:io';
 
 import '../../../data/database/app_database.dart';
 import '../../../data/services/history_service.dart';
+import '../../../data/services/download_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/custom_titlebar.dart';
 import '../../widgets/tv/focusable_card.dart';
@@ -162,12 +164,37 @@ class _HistoryPageState extends State<HistoryPage> {
   }
 
   void _openDetails(WatchHistoryData item) {
+    // Local files don't have details page
+    if (item.providerId == 'local') {
+      _playItem(item);
+      return;
+    }
+
     final encodedId = Uri.encodeComponent(item.mediaId);
     context.push('/details/${item.providerId}/$encodedId');
   }
 
   void _playItem(WatchHistoryData item) {
-    if (item.lastStreamUrl != null) {
+    // Check if this is a local file
+    if (item.providerId == 'local') {
+      // Verify file exists
+      final file = File(item.mediaId);
+      if (!file.existsSync()) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Файл не знайдено')));
+        return;
+      }
+
+      context.push(
+        '/player',
+        extra: {
+          'url': 'file://${item.mediaId}',
+          'title': item.title,
+          'isOffline': true,
+        },
+      );
+    } else if (item.lastStreamUrl != null) {
       context.push(
         '/player',
         extra: {
@@ -271,15 +298,29 @@ class _ContinueWatchingCard extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             // Background image
-            if (item.posterUrl != null)
-              CachedNetworkImage(
-                imageUrl: item.posterUrl!,
-                fit: BoxFit.cover,
-                color: Colors.black54,
-                colorBlendMode: BlendMode.darken,
-              )
-            else
-              Container(color: AppTheme.backgroundColor),
+            Builder(
+              builder: (context) {
+                final localPath = GetIt.I<DownloadService>().getLocalPosterPath(
+                  item.mediaId,
+                  item.providerId,
+                );
+                return localPath != null
+                    ? Image.file(
+                        File(localPath),
+                        fit: BoxFit.cover,
+                        color: Colors.black54,
+                        colorBlendMode: BlendMode.darken,
+                      )
+                    : item.posterUrl != null
+                    ? CachedNetworkImage(
+                        imageUrl: item.posterUrl!,
+                        fit: BoxFit.cover,
+                        color: Colors.black54,
+                        colorBlendMode: BlendMode.darken,
+                      )
+                    : Container(color: AppTheme.backgroundColor);
+              },
+            ),
 
             // Content
             Padding(
@@ -380,14 +421,37 @@ class _HistoryTile extends StatelessWidget {
               child: SizedBox(
                 width: 60,
                 height: 80,
-                child: item.posterUrl != null
-                    ? CachedNetworkImage(
-                        imageUrl: item.posterUrl!,
-                        fit: BoxFit.cover,
-                      )
-                    : Container(
+                child: item.providerId == 'local'
+                    ? Container(
                         color: AppTheme.backgroundColor,
-                        child: Icon(Icons.movie, color: AppTheme.textMuted),
+                        child: Icon(
+                          Icons.folder_open,
+                          color: AppTheme.primaryColor,
+                          size: 32,
+                        ),
+                      )
+                    : Builder(
+                        builder: (context) {
+                          final localPath = GetIt.I<DownloadService>()
+                              .getLocalPosterPath(
+                                item.mediaId,
+                                item.providerId,
+                              );
+                          return localPath != null
+                              ? Image.file(File(localPath), fit: BoxFit.cover)
+                              : item.posterUrl != null
+                              ? CachedNetworkImage(
+                                  imageUrl: item.posterUrl!,
+                                  fit: BoxFit.cover,
+                                )
+                              : Container(
+                                  color: AppTheme.backgroundColor,
+                                  child: Icon(
+                                    Icons.movie,
+                                    color: AppTheme.textMuted,
+                                  ),
+                                );
+                        },
                       ),
               ),
             ),

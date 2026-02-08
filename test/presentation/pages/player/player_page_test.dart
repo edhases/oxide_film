@@ -2,7 +2,6 @@
 // Reference detailed specs in test/specs/player/
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter/material.dart';
 
 void main() {
   group('PlayerPage widget tests (skeleton)', () {

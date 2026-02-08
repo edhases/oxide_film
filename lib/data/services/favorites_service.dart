@@ -1,13 +1,18 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:pocketbase/pocketbase.dart';
 import '../../core/utils/logger.dart';
 import '../../domain/entities/entities.dart';
 import '../database/app_database.dart';
 import '../database/dao/favorites_dao.dart';
+import 'pocketbase_service.dart';
+import 'auth_service.dart';
 
-/// Service for managing favorites
+/// Service for managing favorites with cloud sync
 class FavoritesService extends ChangeNotifier {
   final FavoritesDao _dao;
+  final PocketBaseService _pocketBase;
+  final AuthService _authService;
 
   List<Favorite> _favorites = [];
   List<Favorite> get favorites => _favorites;
@@ -15,9 +20,20 @@ class FavoritesService extends ChangeNotifier {
   final bool _isLoading = false;
   bool get isLoading => _isLoading;
 
-  StreamSubscription<List<Favorite>>? _subscription;
+  bool _isSyncing = false;
+  bool get isSyncing => _isSyncing;
 
-  FavoritesService(AppDatabase database) : _dao = FavoritesDao(database) {
+  StreamSubscription<List<Favorite>>? _subscription;
+  Timer? _syncTimer;
+  UnsubscribeFunc? _realtimeSub; // PocketBase realtime subscription
+
+  FavoritesService({
+    required AppDatabase database,
+    required PocketBaseService pocketBase,
+    required AuthService authService,
+  }) : _dao = FavoritesDao(database),
+       _pocketBase = pocketBase,
+       _authService = authService {
     _init();
   }
 
@@ -28,6 +44,17 @@ class FavoritesService extends ChangeNotifier {
       _favorites = items;
       notifyListeners();
     });
+
+    // Pull from cloud on startup (1 раз)
+    _pullFromCloud();
+
+    // Setup periodic sync every 5 minutes (не щосекунди!)
+    _syncTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      _syncToCloud();
+    });
+
+    // Subscribe to realtime updates
+    _subscribeToRealtime();
   }
 
   /// Check if item is in favorites
@@ -37,9 +64,11 @@ class FavoritesService extends ChangeNotifier {
     );
   }
 
-  /// Toggle favorite status
+  /// Toggle favorite status (offline-first)
   Future<bool> toggle(MediaItem item) async {
     Logger.d('toggle: ${item.id} (${item.title})', tag: 'Favorites');
+
+    // Save to local DB first (fast)
     final result = await _dao.toggle(
       mediaId: item.id,
       providerId: item.providerId,
@@ -48,12 +77,18 @@ class FavoritesService extends ChangeNotifier {
       year: item.year,
       mediaType: item.type.name,
     );
+
     Logger.d('toggle result: $result', tag: 'Favorites');
+
+    // Sync to cloud in background
+    _syncSingleItem(item.id, item.providerId, result);
+
     return result;
   }
 
-  /// Add to favorites
+  /// Add to favorites (offline-first)
   Future<void> add(MediaItem item) async {
+    // Save to local DB first
     await _dao.add(
       mediaId: item.id,
       providerId: item.providerId,
@@ -62,11 +97,18 @@ class FavoritesService extends ChangeNotifier {
       year: item.year,
       mediaType: item.type.name,
     );
+
+    // Sync to cloud in background
+    _syncSingleItem(item.id, item.providerId, true);
   }
 
-  /// Remove from favorites
+  /// Remove from favorites (offline-first)
   Future<void> remove(String mediaId, String providerId) async {
+    // Remove from local DB first
     await _dao.remove(mediaId, providerId);
+
+    // Sync to cloud in background
+    _syncSingleItem(mediaId, providerId, false);
   }
 
   /// Get favorites by type
@@ -80,6 +122,8 @@ class FavoritesService extends ChangeNotifier {
   /// Clear all favorites
   Future<void> clearAll() async {
     await _dao.clearAll();
+    // Sync deletion to cloud
+    _syncToCloud();
   }
 
   /// Watch favorite status for specific item
@@ -87,9 +131,230 @@ class FavoritesService extends ChangeNotifier {
     return _dao.watchIsFavorite(mediaId, providerId);
   }
 
+  // ==================== Cloud Sync Methods ====================
+
+  /// Pull favorites from cloud and merge with local (called on startup)
+  Future<void> _pullFromCloud() async {
+    if (!_authService.isAuthenticated) return;
+
+    try {
+      final user = _authService.currentUser;
+      if (user == null) return;
+
+      debugPrint('[Favorites] Pulling from cloud...');
+
+      final records = await _pocketBase.pb
+          .collection('favorites')
+          .getFullList(filter: 'userId = "${user.id}"');
+
+      debugPrint('[Favorites] Found ${records.length} cloud favorites');
+
+      // Merge with local favorites (newer timestamp wins)
+      for (final record in records) {
+        final cloudData = record.data;
+        final mediaId = cloudData['mediaId'] as String;
+        final providerId = cloudData['providerId'] as String;
+
+        // Check if exists locally
+        final localExists = await _dao.isFavorite(mediaId, providerId);
+
+        if (!localExists) {
+          // Add from cloud to local
+          await _dao.add(
+            mediaId: mediaId,
+            providerId: providerId,
+            title: cloudData['title'] as String,
+            posterUrl: cloudData['posterUrl'] as String?,
+            year: cloudData['year'] as int?,
+            mediaType: cloudData['mediaType'] as String,
+          );
+        }
+      }
+
+      debugPrint('[Favorites] Cloud pull complete');
+    } catch (e) {
+      debugPrint('[Favorites] Pull error: $e');
+    }
+  }
+
+  /// Subscribe to realtime updates from PocketBase
+  Future<void> _subscribeToRealtime() async {
+    if (!_authService.isAuthenticated) return;
+
+    final user = _authService.currentUser;
+    if (user == null) return;
+
+    try {
+      _realtimeSub = await _pocketBase.pb
+          .collection('favorites')
+          .subscribe(
+            '*',
+            (e) => _handleRealtimeEvent(e),
+            filter: 'userId = "${user.id}"',
+          );
+
+      Logger.d('✓ Subscribed to realtime updates', tag: 'Favorites');
+    } catch (e) {
+      Logger.d('Realtime subscription failed: $e', tag: 'Favorites');
+      // Not critical - periodic sync will handle updates
+    }
+  }
+
+  /// Handle realtime events from PocketBase
+  void _handleRealtimeEvent(RecordSubscriptionEvent e) {
+    final record = e.record;
+    if (record == null) return;
+
+    Logger.d('Realtime event: ${e.action} for ${record.id}', tag: 'Favorites');
+
+    switch (e.action) {
+      case 'create':
+      case 'update':
+        _mergeCloudRecord(record);
+        break;
+      case 'delete':
+        _removeCloudRecord(record);
+        break;
+    }
+  }
+
+  /// Merge a single cloud record into local DB
+  Future<void> _mergeCloudRecord(RecordModel record) async {
+    try {
+      final data = record.data;
+      await _dao.add(
+        mediaId: data['media_id'] as String,
+        providerId: data['provider_id'] as String,
+        title: data['title'] as String,
+        posterUrl: data['poster_url'] as String?,
+        year: data['year'] as int?,
+        mediaType: data['media_type'] as String,
+        rating: (data['rating'] as num?)?.toDouble(),
+        ratingSource: data['rating_source'] as String?,
+      );
+      Logger.d('✓ Merged cloud record: ${data['title']}', tag: 'Favorites');
+    } catch (e) {
+      Logger.d('Failed to merge cloud record: $e', tag: 'Favorites');
+    }
+  }
+
+  /// Remove a record that was deleted in the cloud
+  Future<void> _removeCloudRecord(RecordModel record) async {
+    try {
+      final data = record.data;
+      await _dao.remove(
+        data['media_id'] as String,
+        data['provider_id'] as String,
+      );
+      Logger.d('✓ Removed deleted cloud record', tag: 'Favorites');
+    } catch (e) {
+      Logger.d('Failed to remove cloud record: $e', tag: 'Favorites');
+    }
+  }
+
+  /// Sync local favorites to cloud (periodic)
+  Future<void> _syncToCloud() async {
+    if (!_authService.isAuthenticated || _isSyncing) return;
+
+    try {
+      _isSyncing = true;
+      notifyListeners();
+
+      final user = _authService.currentUser;
+      if (user == null) return;
+
+      final localFavs = await _dao.getAll();
+      debugPrint('[Favorites] Syncing ${localFavs.length} favorites to cloud');
+
+      for (final fav in localFavs) {
+        await _syncSingleItemToCloud(fav, true);
+      }
+
+      debugPrint('[Favorites] Sync to cloud complete');
+    } catch (e) {
+      debugPrint('[Favorites] Sync error: $e');
+    } finally {
+      _isSyncing = false;
+      notifyListeners();
+    }
+  }
+
+  /// Sync single item to cloud in background
+  void _syncSingleItem(String mediaId, String providerId, bool isFavorite) {
+    if (!_authService.isAuthenticated) return;
+
+    // Run in background (don't await)
+    Future.microtask(() async {
+      try {
+        final localFav = await _dao.get(mediaId, providerId);
+        await _syncSingleItemToCloud(localFav, isFavorite);
+      } catch (e) {
+        debugPrint('[Favorites] Single item sync error: $e');
+      }
+    });
+  }
+
+  /// Helper to sync single favorite to cloud
+  Future<void> _syncSingleItemToCloud(Favorite? fav, bool isFavorite) async {
+    final user = _authService.currentUser;
+    if (user == null) return;
+
+    try {
+      if (isFavorite && fav != null) {
+        // Create or update in cloud
+        final existing = await _pocketBase.pb
+            .collection('favorites')
+            .getFullList(
+              filter:
+                  'userId = "${user.id}" && mediaId = "${fav.mediaId}" && providerId = "${fav.providerId}"',
+            );
+
+        final data = {
+          'userId': user.id,
+          'mediaId': fav.mediaId,
+          'providerId': fav.providerId,
+          'title': fav.title,
+          'posterUrl': fav.posterUrl,
+          'year': fav.year,
+          'mediaType': fav.mediaType,
+          'addedAt': fav.addedAt.toIso8601String(),
+        };
+
+        if (existing.isEmpty) {
+          await _pocketBase.pb.collection('favorites').create(body: data);
+        } else {
+          await _pocketBase.pb
+              .collection('favorites')
+              .update(existing.first.id, body: data);
+        }
+      } else if (fav != null) {
+        // Remove from cloud
+        final existing = await _pocketBase.pb
+            .collection('favorites')
+            .getFullList(
+              filter:
+                  'userId = "${user.id}" && mediaId = "${fav.mediaId}" && providerId = "${fav.providerId}"',
+            );
+
+        for (final record in existing) {
+          await _pocketBase.pb.collection('favorites').delete(record.id);
+        }
+      }
+    } catch (e) {
+      debugPrint('[Favorites] Cloud sync error: $e');
+    }
+  }
+
+  /// Manual sync trigger (для користувача)
+  Future<void> syncNow() async {
+    await _syncToCloud();
+  }
+
   @override
   void dispose() {
+    _realtimeSub?.call(); // Unsubscribe from realtime
     _subscription?.cancel();
+    _syncTimer?.cancel();
     super.dispose();
   }
 }

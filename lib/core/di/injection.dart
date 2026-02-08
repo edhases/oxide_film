@@ -7,7 +7,7 @@ import '../../data/providers/uakino_provider.dart';
 import '../../data/providers/hdrezka_provider.dart';
 import '../../data/providers/youtube_provider.dart';
 import '../../data/providers/eneyida_provider.dart';
-import '../../data/providers/yummyanime_provider.dart';
+// import '../../data/providers/yummyanime_provider.dart';  // Disabled - not working properly
 import '../../data/providers/uaflix_provider.dart';
 import '../../data/providers/uaserials_provider.dart';
 import '../../data/database/app_database.dart';
@@ -18,12 +18,17 @@ import '../../data/services/sync_service.dart';
 import '../../data/services/download_service.dart';
 import '../../data/services/stats_service.dart';
 import '../../data/services/episode_update_service.dart';
+import '../../data/services/video_player_service.dart';
 import '../../data/services/watch_party_service.dart';
 import '../../data/services/auth_service.dart';
+import '../../data/services/pocketbase_service.dart';
 import '../../data/services/search_service.dart';
 import '../../data/services/url_resolver_service.dart';
+import '../../data/services/recommendation_service.dart';
 import '../../data/services/smart_search/smart_search_service.dart';
 import '../../data/services/data_transfer_service.dart';
+import '../../data/services/user_agent_service.dart';
+import '../../data/services/update_service.dart';
 import '../../data/database/dao/search_history_dao.dart';
 import '../../data/database/dao/history_dao.dart';
 import '../../data/database/dao/favorites_dao.dart';
@@ -45,12 +50,19 @@ Future<void> configureDependencies() async {
   final prefs = await SharedPreferences.getInstance();
   getIt.registerSingleton<SharedPreferences>(prefs);
 
+  // PocketBase backend service
+  getIt.registerSingleton<PocketBaseService>(PocketBaseService(prefs));
+
   // Database (must be early)
   final database = AppDatabase();
   getIt.registerSingleton<AppDatabase>(database);
 
-  // Core services - register ApiClient first
-  getIt.registerLazySingleton<ApiClient>(() => ApiClient());
+  // Core services - register UserAgentService and ApiClient
+  final uaService = UserAgentService(prefs: prefs);
+  await uaService.initialize();
+  getIt.registerSingleton<UserAgentService>(uaService);
+
+  getIt.registerLazySingleton<ApiClient>(() => ApiClient(uaService: uaService));
 
   // URL Resolver for auto-detecting domain changes
   getIt.registerLazySingleton<UrlResolverService>(
@@ -58,20 +70,43 @@ Future<void> configureDependencies() async {
   );
 
   // Auth service (must be early as others may depend on it)
-  getIt.registerLazySingleton<AuthService>(() => AuthService());
+  getIt.registerLazySingleton<AuthService>(
+    () => AuthService(getIt<PocketBaseService>()),
+  );
 
   // Services
   getIt.registerLazySingleton<SettingsService>(() => SettingsService(database));
-  getIt.registerLazySingleton<FavoritesService>(
-    () => FavoritesService(database),
+  getIt.registerLazySingleton<UpdateService>(
+    () => UpdateService(getIt<SettingsService>()),
   );
-  getIt.registerLazySingleton<HistoryService>(() => HistoryService(database));
+  getIt.registerLazySingleton<FavoritesService>(
+    () => FavoritesService(
+      database: database,
+      pocketBase: getIt<PocketBaseService>(),
+      authService: getIt<AuthService>(),
+    ),
+  );
+  getIt.registerLazySingleton<HistoryService>(
+    () => HistoryService(
+      database: database,
+      pocketBase: getIt<PocketBaseService>(),
+      authService: getIt<AuthService>(),
+    ),
+  );
   getIt.registerLazySingleton<SyncService>(() => SyncService(database));
   getIt.registerLazySingleton<DownloadService>(
-    () => DownloadService(database, getIt<ApiClient>()),
+    () =>
+        DownloadService(database, getIt<ApiClient>(), getIt<SettingsService>()),
   );
+  getIt.registerLazySingleton<VideoPlayerService>(() => VideoPlayerService());
   getIt.registerLazySingleton<StatsService>(() => StatsService(database));
-  getIt.registerLazySingleton<WatchPartyService>(() => WatchPartyService());
+  getIt.registerLazySingleton<WatchPartyService>(
+    () => WatchPartyService(
+      pocketBase: getIt<PocketBaseService>(),
+      settings: getIt<SettingsService>(),
+    ),
+  );
+
   getIt.registerLazySingleton<DataTransferService>(
     () =>
         DataTransferService(getIt<HistoryService>(), getIt<FavoritesService>()),
@@ -116,6 +151,16 @@ Future<void> configureDependencies() async {
     () => EpisodeUpdateService(database, getIt<ProviderRegistry>()),
   );
 
+  // Recommendation service (depends on history, favorites, registry)
+  getIt.registerLazySingleton<RecommendationService>(
+    () => RecommendationService(
+      historyService: getIt<HistoryService>(),
+      favoritesService: getIt<FavoritesService>(),
+      providerRegistry: getIt<ProviderRegistry>(),
+      mediaItemsDao: MediaItemsDao(database),
+    ),
+  );
+
   // Unified Repository
   getIt.registerLazySingleton<UnifiedContentRepository>(
     () => UnifiedContentRepositoryImpl(
@@ -138,11 +183,11 @@ void _registerProviders() {
   registry.register(UaserialsProvider(apiClient));
 
   // Anime providers (shown on home page)
-  registry.register(YummyAnimeProvider(apiClient));
+  // registry.register(YummyAnimeProvider(apiClient));  // Disabled - not working properly
 
   // Separate providers (NOT shown on home page - have dedicated buttons)
   // HDRezka: Multi-language, fixed streams (can't change quality/voiceover after start)
-  registry.register(HdrezkaProvider(apiClient));
+  registry.register(HdrezkaProvider(apiClient, getIt<UserAgentService>()));
   // YouTube: Embed-only (ToS compliant, no direct stream extraction)
   registry.register(YouTubeProvider(apiClient));
 }

@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:get_it/get_it.dart';
@@ -6,6 +7,7 @@ import '../core/l10n/app_strings.dart';
 import '../data/services/settings_service.dart';
 import 'theme/app_theme.dart';
 import 'router/app_router.dart';
+import 'widgets/update_guard.dart';
 
 // Re-export for convenience
 export '../data/services/settings_service.dart' show AppThemeMode;
@@ -49,6 +51,7 @@ class _OxideFilmAppState extends State<OxideFilmApp> {
       title: 'Oxide Film',
       debugShowCheckedModeBanner: false,
       routerConfig: AppRouter.router,
+      scrollBehavior: const _AppScrollBehavior(),
       theme: AppTheme.lightTheme,
       darkTheme: isAmoled
           ? AppTheme.buildAmoledTheme(accent: accentColor)
@@ -56,6 +59,9 @@ class _OxideFilmAppState extends State<OxideFilmApp> {
       themeMode: themeMode,
       locale: locale.locale,
       supportedLocales: const [Locale('uk'), Locale('en')],
+      builder: (context, child) {
+        return UpdateGuard(child: child!);
+      },
       localizationsDelegates: [
         AppStringsDelegate(locale: locale),
         GlobalMaterialLocalizations.delegate,
@@ -64,4 +70,16 @@ class _OxideFilmAppState extends State<OxideFilmApp> {
       ],
     );
   }
+}
+
+/// Custom scroll behavior to enable mouse dragging for horizontal lists
+class _AppScrollBehavior extends MaterialScrollBehavior {
+  const _AppScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+    PointerDeviceKind.touch,
+    PointerDeviceKind.mouse,
+    PointerDeviceKind.trackpad,
+  };
 }

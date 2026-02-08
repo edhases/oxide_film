@@ -3,9 +3,10 @@
 // final db = createTestAppDatabase();
 // final historyDao = HistoryDao(db);
 
-import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
-import '../../lib/data/database/app_database.dart' as appdb show AppDatabase;
+import 'package:oxide_film/data/database/app_database.dart'
+    as appdb
+    show AppDatabase;
 
 /// Creates an in-memory AppDatabase instance suitable for unit tests.
 appdb.AppDatabase createTestAppDatabase() {

@@ -2,14 +2,22 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:oxide_film/core/network/api_client.dart';
 import 'package:oxide_film/data/providers/hdrezka_provider.dart';
 import 'package:dio/dio.dart';
+import 'package:mocktail/mocktail.dart';
+import '../helpers/mock_services.dart';
 
 void main() {
   late ApiClient client;
   late HdrezkaProvider hdrezka;
+  late MockUserAgentService mockUaService;
 
   setUpAll(() {
     client = ApiClient();
-    hdrezka = HdrezkaProvider(client);
+    mockUaService = MockUserAgentService();
+    // Stub the method needed by the repository
+    when(() => mockUaService.getChromeUserAgent()).thenReturn(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    );
+    hdrezka = HdrezkaProvider(client, mockUaService);
   });
 
   test(

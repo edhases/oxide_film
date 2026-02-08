@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart';
+import 'dart:convert';
 import '../app_database.dart';
 
 /// Data Access Object for downloads
@@ -89,6 +90,9 @@ class DownloadsDao {
     required String localPath,
     required String quality,
     String? voiceover,
+    Map<String, String>? headers,
+    String? localPosterPath,
+    int? duration,
   }) async {
     return _db
         .into(_db.downloads)
@@ -107,6 +111,9 @@ class DownloadsDao {
             localPath: localPath,
             quality: quality,
             voiceover: Value(voiceover),
+            headers: Value(headers != null ? jsonEncode(headers) : null),
+            localPosterPath: Value(localPosterPath),
+            duration: Value(duration),
           ),
           mode: InsertMode.replace,
         );

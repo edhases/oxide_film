@@ -49,7 +49,11 @@ class UaflixRepository {
       String category = _typeToCategory(type);
       final url = '$baseUrl/$category/page/$page/';
       final html = await _client.get(url);
-      return compute(UaflixParser.parseSearchResults, html);
+      final items = await compute(UaflixParser.parseSearchResults, html);
+      if (type == ContentType.dorama) {
+        return items.map((e) => e.copyWith(type: ContentType.dorama)).toList();
+      }
+      return items;
     } catch (e, stack) {
       Logger.e('Get popular failed', tag: _tag, error: e, stackTrace: stack);
       return [];
@@ -77,7 +81,11 @@ class UaflixRepository {
     try {
       final url = '$baseUrl/$category/page/$page/';
       final html = await _client.get(url);
-      return compute(UaflixParser.parseSearchResults, html);
+      final items = await compute(UaflixParser.parseSearchResults, html);
+      if (category == 'dorama') {
+        return items.map((e) => e.copyWith(type: ContentType.dorama)).toList();
+      }
+      return items;
     } catch (e, stack) {
       Logger.e(
         'Get by category failed',
@@ -166,6 +174,8 @@ class UaflixRepository {
         return 'cartoons';
       case ContentType.anime:
         return 'anime';
+      case ContentType.dorama:
+        return 'dorama';
       default:
         return 'film';
     }

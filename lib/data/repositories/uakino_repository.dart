@@ -94,6 +94,7 @@ class UakinoRepository {
     int page = 1,
   }) async {
     try {
+      if (categorySlug.isEmpty) return [];
       final encodedCategory = Uri.encodeComponent(categorySlug);
       final section = _getSection(type);
       final url = section.isEmpty

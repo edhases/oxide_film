@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 import '../../../data/services/watch_party_service.dart';
+import '../../../core/l10n/app_strings.dart';
 
 /// Page for creating or joining a watch party
 class WatchPartyPage extends StatefulWidget {
@@ -101,49 +102,50 @@ class _WatchPartyPageState extends State<WatchPartyPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final s = AppStrings.of(context);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Спільний перегляд'),
+        title: Text(s.watchParty),
         actions: [
           if (_service.state == WatchPartyState.connected)
             IconButton(
               icon: const Icon(Icons.exit_to_app),
-              tooltip: 'Вийти з кімнати',
+              tooltip: s.leaveRoom,
               onPressed: () async {
                 await _service.leaveRoom();
               },
             ),
         ],
       ),
-      body: _buildBody(theme),
+      body: _buildBody(theme, s),
     );
   }
 
-  Widget _buildBody(ThemeData theme) {
+  Widget _buildBody(ThemeData theme, AppStrings s) {
     switch (_service.state) {
       case WatchPartyState.idle:
-        return _buildIdleState(theme);
+        return _buildIdleState(theme, s);
       case WatchPartyState.hosting:
       case WatchPartyState.joining:
-        return const Center(
+        return Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Підключення...'),
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text(s.connecting),
             ],
           ),
         );
       case WatchPartyState.connected:
-        return _buildConnectedState(theme);
+        return _buildConnectedState(theme, s);
       case WatchPartyState.error:
-        return _buildErrorState(theme);
+        return _buildErrorState(theme, s);
     }
   }
 
-  Widget _buildIdleState(ThemeData theme) {
+  Widget _buildIdleState(ThemeData theme, AppStrings s) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -333,7 +335,7 @@ class _WatchPartyPageState extends State<WatchPartyPage> {
     );
   }
 
-  Widget _buildConnectedState(ThemeData theme) {
+  Widget _buildConnectedState(ThemeData theme, AppStrings s) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isMobile = constraints.maxWidth < 600;
@@ -398,12 +400,12 @@ class _WatchPartyPageState extends State<WatchPartyPage> {
     final statusBadge = Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: _service.backendType == WatchPartyBackendType.supabase
+        color: _service.backendType == WatchPartyBackendType.pocketbase
             ? Colors.blue.withValues(alpha: 0.1)
             : Colors.green.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: _service.backendType == WatchPartyBackendType.supabase
+          color: _service.backendType == WatchPartyBackendType.pocketbase
               ? Colors.blue.withValues(alpha: 0.3)
               : Colors.green.withValues(alpha: 0.3),
         ),
@@ -412,21 +414,21 @@ class _WatchPartyPageState extends State<WatchPartyPage> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            _service.backendType == WatchPartyBackendType.supabase
+            _service.backendType == WatchPartyBackendType.pocketbase
                 ? Icons.cloud
                 : Icons.hub,
             size: 14,
-            color: _service.backendType == WatchPartyBackendType.supabase
+            color: _service.backendType == WatchPartyBackendType.pocketbase
                 ? Colors.blue
                 : Colors.green,
           ),
           const SizedBox(width: 4),
           Text(
-            _service.backendType == WatchPartyBackendType.supabase
+            _service.backendType == WatchPartyBackendType.pocketbase
                 ? 'Cloud'
                 : 'P2P',
             style: theme.textTheme.labelSmall?.copyWith(
-              color: _service.backendType == WatchPartyBackendType.supabase
+              color: _service.backendType == WatchPartyBackendType.pocketbase
                   ? Colors.blue
                   : Colors.green,
               fontWeight: FontWeight.bold,
@@ -780,7 +782,7 @@ class _WatchPartyPageState extends State<WatchPartyPage> {
     );
   }
 
-  Widget _buildErrorState(ThemeData theme) {
+  Widget _buildErrorState(ThemeData theme, AppStrings s) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -789,10 +791,10 @@ class _WatchPartyPageState extends State<WatchPartyPage> {
           children: [
             Icon(Icons.error_outline, size: 64, color: theme.colorScheme.error),
             const SizedBox(height: 16),
-            Text('Помилка підключення', style: theme.textTheme.titleLarge),
+            Text(s.connectionError, style: theme.textTheme.titleLarge),
             const SizedBox(height: 8),
             Text(
-              _service.error ?? 'Невідома помилка',
+              _service.error ?? s.unknownError,
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(color: Colors.grey),
             ),
@@ -802,7 +804,7 @@ class _WatchPartyPageState extends State<WatchPartyPage> {
                 await _service.leaveRoom();
               },
               icon: const Icon(Icons.refresh),
-              label: const Text('Спробувати знову'),
+              label: Text(s.retry),
             ),
           ],
         ),

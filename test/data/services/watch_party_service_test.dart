@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:get_it/get_it.dart';
 import 'package:oxide_film/data/services/services.dart';
 import 'package:oxide_film/data/services/watch_party_service.dart';
+import 'package:oxide_film/data/services/pocketbase_service.dart'; // Added import
 // ignore: depend_on_referenced_packages
 // For list equality if needed
 
@@ -54,20 +55,29 @@ class MockSettingsService extends Fake implements SettingsService {
   }
 }
 
+class MockPocketBaseService extends Fake implements PocketBaseService {}
+
 void main() {
   late WatchPartyService service;
   late MockWatchPartyBackend mockBackend;
   late MockSettingsService mockSettings;
+  late MockPocketBaseService mockPocketBase;
 
   setUp(() {
     GetIt.I.reset();
     mockSettings = MockSettingsService();
+    mockPocketBase = MockPocketBaseService();
     GetIt.I.registerSingleton<SettingsService>(mockSettings);
+    GetIt.I.registerSingleton<PocketBaseService>(mockPocketBase);
 
     mockBackend = MockWatchPartyBackend();
 
     // Inject factory to return our mock backend
-    service = WatchPartyService(backendFactory: (_) => mockBackend);
+    service = WatchPartyService(
+      pocketBase: mockPocketBase,
+      settings: mockSettings,
+      backendFactory: (_) => mockBackend,
+    );
   });
 
   group('WatchPartyService Connection', () {
@@ -132,6 +142,62 @@ void main() {
       expect(service.chatMessages.length, 1);
       expect(service.chatMessages.first.message, 'Hello World');
     });
+
+    test('Handles userLeft message', () async {
+      await service.joinRoom('ROOM');
+
+      // First, add a user
+      final joinMsg = WatchPartyMessage(
+        type: WatchPartyMessageType.userJoined,
+        senderId: 'user2',
+        senderName: 'Alice',
+      );
+      mockBackend.onMessageCallback?.call(joinMsg);
+      expect(service.participants.length, 2);
+
+      // Now remove user
+      final leftMsg = WatchPartyMessage(
+        type: WatchPartyMessageType.userLeft,
+        senderId: 'user2',
+        senderName: 'Alice',
+      );
+      mockBackend.onMessageCallback?.call(leftMsg);
+
+      expect(service.participants.length, 1);
+      expect(service.participants.any((p) => p.id == 'user2'), isFalse);
+    });
+
+    test('Multiple participants management', () async {
+      await service.joinRoom('ROOM');
+
+      // Add multiple users
+      for (final name in ['Alice', 'Bob', 'Charlie']) {
+        mockBackend.onMessageCallback?.call(
+          WatchPartyMessage(
+            type: WatchPartyMessageType.userJoined,
+            senderId: 'user_$name',
+            senderName: name,
+          ),
+        );
+      }
+
+      expect(service.participants.length, 4); // Me + 3 others
+      expect(
+        service.participants.map((p) => p.name).toList(),
+        containsAll(['Alice', 'Bob', 'Charlie']),
+      );
+    });
+
+    test('leaveRoom calls disconnect and resets state', () async {
+      await service.joinRoom('ROOM');
+      expect(service.state, WatchPartyState.connected);
+
+      await service.leaveRoom();
+
+      expect(service.state, WatchPartyState.idle);
+      expect(service.currentRoomCode, isNull);
+      expect(mockBackend.log, contains('disconnect'));
+    });
   });
 
   group('WatchPartyService Sync Logic', () {
@@ -172,9 +238,9 @@ void main() {
       mockBackend.onMessageCallback?.call(msg);
     }
 
-    test('Drift < 2s (ignore threshold) - No Correction', () {
-      // Host at 10s, Me at 10.5s (Drift 500ms)
-      service.updateLocalPosition(const Duration(milliseconds: 10500));
+    test('Drift < 5s (ignore threshold) - No Correction', () {
+      // Host at 10s, Me at 12s (Drift 2000ms, less than 5s threshold)
+      service.updateLocalPosition(const Duration(milliseconds: 12000));
       simulateSyncMessage(hostPosMs: 10000, speed: 1.0);
 
       expect(service.correctionMode, SyncCorrectionMode.none);
@@ -182,46 +248,41 @@ void main() {
       expect(lastSeek, isNull); // No seek
     });
 
-    test('Drift 3s (behind) - Smooth Correction (Speed Up)', () {
-      // Host at 13s, Me at 10s (Drift -3000ms)
+    test('Drift 7s (behind) - Smooth Correction (Speed Up)', () {
+      // Host at 17s, Me at 10s (Drift -7000ms, between 5s and 10s)
       service.updateLocalPosition(const Duration(milliseconds: 10000));
-      simulateSyncMessage(hostPosMs: 13000, speed: 1.0);
+      simulateSyncMessage(hostPosMs: 17000, speed: 1.0);
 
       expect(service.correctionMode, SyncCorrectionMode.speedUp);
       expect(lastSpeed, closeTo(1.1, 0.01)); // 1.1x speed
     });
 
-    test('Drift 3s (ahead) - Smooth Correction (Slow Down)', () {
-      // Host at 10s, Me at 13s (Drift +3000ms)
-      service.updateLocalPosition(const Duration(milliseconds: 13000));
+    test('Drift 7s (ahead) - Smooth Correction (Slow Down)', () {
+      // Host at 10s, Me at 17s (Drift +7000ms, between 5s and 10s)
+      service.updateLocalPosition(const Duration(milliseconds: 17000));
       simulateSyncMessage(hostPosMs: 10000, speed: 1.0);
 
       expect(service.correctionMode, SyncCorrectionMode.slowDown);
       expect(lastSpeed, closeTo(0.9, 0.01)); // 0.9x speed
     });
 
-    test('Drift 7s (behind) - Fast Correction (Speed Up)', () {
-      // Host at 17s, Me at 10s (Drift -7000ms)
+    test('Drift 12s (behind) - Fast Correction (Speed Up)', () {
+      // Host at 22s, Me at 10s (Drift -12000ms, between 10s and 15s)
       service.updateLocalPosition(const Duration(milliseconds: 10000));
-      simulateSyncMessage(hostPosMs: 17000, speed: 1.0);
+      simulateSyncMessage(hostPosMs: 22000, speed: 1.0);
 
       expect(service.correctionMode, SyncCorrectionMode.speedUp);
       expect(lastSpeed, closeTo(1.2, 0.01)); // 1.2x speed
     });
 
-    test('Drift 15s (behind) - Hard Seek', () {
-      // Host at 25s, Me at 10s (Drift -15000ms)
+    test('Drift 20s (behind) - Hard Seek', () {
+      // Host at 30s, Me at 10s (Drift -20000ms, > 15s threshold)
       service.updateLocalPosition(const Duration(milliseconds: 10000));
-      simulateSyncMessage(hostPosMs: 25000, speed: 1.0);
+      simulateSyncMessage(hostPosMs: 30000, speed: 1.0);
 
       expect(service.correctionMode, SyncCorrectionMode.hardSeek);
       expect(lastSeek, isNotNull);
-      // Wait, calculation includes Network Delay. Sync payload has timestamp.
-      // In simulateSync, we use DateTime.now().
-      // _handleSync logic: networkDelay = DateTime.now().difference(hostTimestamp);
-      // Since executed immediately, delay ~0.
-      // adjustedHostPos = 25000 + 0 = 25000.
-      expect(lastSeek!.inMilliseconds, 25000);
+      expect(lastSeek!.inMilliseconds, 30000);
     });
   });
 }

@@ -7,6 +7,7 @@ import 'package:get_it/get_it.dart';
 import 'package:oxide_film/domain/entities/entities.dart';
 import 'package:oxide_film/presentation/widgets/media_card.dart';
 import 'package:oxide_film/presentation/widgets/rating_badge.dart';
+import 'package:oxide_film/data/services/settings_service.dart';
 import '../../helpers/mock_services.dart';
 import 'package:mocktail/mocktail.dart';
 

@@ -1,17 +1,22 @@
 import 'package:flutter/material.dart';
+import '../../../core/l10n/app_strings.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:skeletonizer/skeletonizer.dart';
 
 import '../../../data/providers/provider_registry.dart';
 import '../../../data/services/favorites_service.dart';
+import '../../../data/services/download_service.dart';
 import '../../../domain/entities/entities.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/custom_titlebar.dart';
-import '../../widgets/common/skeleton.dart';
+import '../../widgets/common/skeleton.dart' as custom;
 import '../../widgets/tv/focusable_card.dart';
 import '../../widgets/rating_badge.dart';
+import '../../widgets/details/similar_content_section.dart';
 
 /// Media details page with improved layout
 class DetailsPage extends StatefulWidget {
@@ -157,7 +162,11 @@ class _DetailsPageState extends State<DetailsPage> {
 
   Widget _buildContent() {
     if (_isLoading) {
-      return _buildSkeleton();
+      // Use Skeletonizer instead of custom skeleton
+      return Skeletonizer(
+        enabled: true,
+        child: _isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
+      );
     }
 
     if (_error != null) {
@@ -205,7 +214,10 @@ class _DetailsPageState extends State<DetailsPage> {
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(12),
-                    child: _buildPoster(),
+                    child: Hero(
+                      tag: 'media_poster_${widget.mediaId}',
+                      child: _buildPoster(),
+                    ),
                   ),
                 ),
               ),
@@ -217,7 +229,19 @@ class _DetailsPageState extends State<DetailsPage> {
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
-            child: _buildInfo(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildInfo(),
+                const SizedBox(height: 32),
+                if (_details != null)
+                  SimilarContentSection(
+                    providerId: widget.providerId,
+                    details: _details!,
+                  ),
+                const SizedBox(height: 32),
+              ],
+            ),
           ),
         ),
       ],
@@ -251,6 +275,17 @@ class _DetailsPageState extends State<DetailsPage> {
             child: _buildInfo(),
           ),
         ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+            child: _details != null
+                ? SimilarContentSection(
+                    providerId: widget.providerId,
+                    details: _details!,
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ),
       ],
     );
   }
@@ -260,20 +295,28 @@ class _DetailsPageState extends State<DetailsPage> {
       return CachedNetworkImage(
         imageUrl: _details!.item.posterUrl!,
         fit: BoxFit.contain,
-        placeholder: (context, url) => const Skeleton(
+        placeholder: (context, url) => const custom.Skeleton(
           width: double.infinity,
           height: double.infinity,
           borderRadius: 0,
         ),
         errorWidget: (context, url, error) => Container(
-          color: AppTheme.darkCard,
-          child: const Icon(Icons.movie, size: 64, color: Colors.grey),
+          color: Theme.of(context).cardColor,
+          child: Icon(
+            Icons.movie,
+            size: 64,
+            color: Theme.of(context).textTheme.bodySmall?.color,
+          ),
         ),
       );
     }
     return Container(
-      color: AppTheme.darkCard,
-      child: const Icon(Icons.movie, size: 64, color: Colors.grey),
+      color: Theme.of(context).cardColor,
+      child: Icon(
+        Icons.movie,
+        size: 64,
+        color: Theme.of(context).textTheme.bodySmall?.color,
+      ),
     );
   }
 
@@ -282,9 +325,12 @@ class _DetailsPageState extends State<DetailsPage> {
       return Stack(
         fit: StackFit.expand,
         children: [
-          CachedNetworkImage(
-            imageUrl: _details!.item.posterUrl!,
-            fit: BoxFit.cover,
+          Hero(
+            tag: 'media_poster_${widget.mediaId}',
+            child: CachedNetworkImage(
+              imageUrl: _details!.item.posterUrl!,
+              fit: BoxFit.cover,
+            ),
           ),
           Container(
             decoration: BoxDecoration(
@@ -301,7 +347,7 @@ class _DetailsPageState extends State<DetailsPage> {
         ],
       );
     }
-    return Container(color: AppTheme.darkCard);
+    return Container(color: Theme.of(context).cardColor);
   }
 
   Widget _buildInfo() {
@@ -311,10 +357,11 @@ class _DetailsPageState extends State<DetailsPage> {
         // Title (desktop only, mobile shows in app bar)
         if (_isDesktop) ...[
           Text(
-            _details!.item.title,
-            style: Theme.of(
-              context,
-            ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
+            _details?.item.title ?? 'Movie Title Placeholder',
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: Theme.of(context).textTheme.titleLarge?.color,
+            ),
           ),
           const SizedBox(height: 16),
         ],
@@ -329,12 +376,43 @@ class _DetailsPageState extends State<DetailsPage> {
           const SizedBox(height: 16),
         ],
 
+        // Region block warning
+        if (_streams.isEmpty && widget.providerId == 'hdrezka') ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.orange.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded, color: Colors.orange),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    AppStrings.of(context).regionBlocked,
+                    style: const TextStyle(color: Colors.orange),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+        ],
+
         // Play button + Favorite button + Watch Party
         Row(
           children: [
             Expanded(
               child: ElevatedButton.icon(
-                onPressed: _streams.isNotEmpty ? () => _playStream() : null,
+                onPressed: _streams.isNotEmpty
+                    ? () {
+                        HapticFeedback.lightImpact();
+                        _playStream();
+                      }
+                    : null,
                 icon: const Icon(Icons.play_arrow),
                 label: Text(_streams.isNotEmpty ? 'Дивитися' : 'Немає джерел'),
                 style: ElevatedButton.styleFrom(
@@ -345,35 +423,58 @@ class _DetailsPageState extends State<DetailsPage> {
             ),
             const SizedBox(width: 12),
             IconButton.filled(
-              onPressed: _streams.isNotEmpty ? _startWatchParty : null,
+              onPressed: _streams.isNotEmpty
+                  ? () {
+                      HapticFeedback.lightImpact();
+                      _startWatchParty();
+                    }
+                  : null,
               icon: const Icon(Icons.groups),
               style: IconButton.styleFrom(
-                backgroundColor: AppTheme.darkCard,
+                backgroundColor: Theme.of(context).cardColor,
                 padding: const EdgeInsets.all(16),
               ),
               tooltip: 'Спільний перегляд',
             ),
             const SizedBox(width: 12),
             IconButton.filled(
-              onPressed: _toggleFavorite,
+              onPressed: () {
+                HapticFeedback.lightImpact();
+                _toggleFavorite();
+              },
               icon: Icon(
                 _isFavorite ? Icons.favorite : Icons.favorite_border,
                 color: _isFavorite ? Colors.red : null,
               ),
               style: IconButton.styleFrom(
-                backgroundColor: AppTheme.darkCard,
+                backgroundColor: Theme.of(context).cardColor,
                 padding: const EdgeInsets.all(16),
               ),
               tooltip: _isFavorite
                   ? 'Видалити з обраного'
                   : 'Додати до обраного',
             ),
+            const SizedBox(width: 12),
+            IconButton.filled(
+              onPressed: _streams.isNotEmpty && widget.providerId == 'hdrezka'
+                  ? () {
+                      HapticFeedback.lightImpact();
+                      _downloadContent();
+                    }
+                  : null,
+              icon: const Icon(Icons.download),
+              style: IconButton.styleFrom(
+                backgroundColor: Theme.of(context).cardColor,
+                padding: const EdgeInsets.all(16),
+              ),
+              tooltip: 'Завантажити',
+            ),
           ],
         ),
         const SizedBox(height: 24),
 
         // Description
-        if (_details!.fullDescription != null &&
+        if (_details?.fullDescription != null &&
             _details!.fullDescription!.isNotEmpty) ...[
           Text(
             'Опис',
@@ -390,7 +491,7 @@ class _DetailsPageState extends State<DetailsPage> {
         ],
 
         // Director
-        if (_details!.director != null && _details!.director!.isNotEmpty) ...[
+        if (_details?.director != null && _details!.director!.isNotEmpty) ...[
           _buildDetailSection(
             icon: Icons.movie_creation,
             title: 'Режисер',
@@ -400,7 +501,7 @@ class _DetailsPageState extends State<DetailsPage> {
         ],
 
         // All Genres
-        if (_details!.genres != null && _details!.genres!.isNotEmpty) ...[
+        if (_details?.genres != null && _details!.genres!.isNotEmpty) ...[
           Text(
             'Жанри',
             style: Theme.of(
@@ -415,9 +516,13 @@ class _DetailsPageState extends State<DetailsPage> {
               return Chip(
                 avatar: const Icon(Icons.category, size: 16),
                 label: Text(genre),
-                backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.15),
+                backgroundColor: Theme.of(
+                  context,
+                ).colorScheme.primary.withValues(alpha: 0.15),
                 side: BorderSide(
-                  color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.primary.withValues(alpha: 0.3),
                 ),
               );
             }).toList(),
@@ -426,7 +531,7 @@ class _DetailsPageState extends State<DetailsPage> {
         ],
 
         // Cast
-        if (_details!.actors != null && _details!.actors!.isNotEmpty) ...[
+        if (_details?.actors != null && _details!.actors!.isNotEmpty) ...[
           Text(
             'Актори',
             style: Theme.of(
@@ -450,7 +555,7 @@ class _DetailsPageState extends State<DetailsPage> {
         ],
 
         // Seasons & Episodes (for series)
-        if (_details!.isSeries) ...[
+        if (_details?.isSeries == true) ...[
           _buildSeasonsSection(),
           const SizedBox(height: 24),
         ],
@@ -594,13 +699,13 @@ class _DetailsPageState extends State<DetailsPage> {
                   ),
                   decoration: BoxDecoration(
                     color: isSelected
-                        ? AppTheme.accentColor
-                        : AppTheme.darkBackground,
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.surface,
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
                       color: isSelected
-                          ? AppTheme.accentColor
-                          : AppTheme.borderColor,
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).dividerColor,
                     ),
                   ),
                   child: Text(
@@ -646,9 +751,9 @@ class _DetailsPageState extends State<DetailsPage> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppTheme.darkCard,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.borderColor),
+        border: Border.all(color: Theme.of(context).dividerColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -742,6 +847,21 @@ class _DetailsPageState extends State<DetailsPage> {
 
   Widget _buildInfoRow() {
     final items = <Widget>[];
+
+    // Safety check for skeleton loading
+    if (_details == null) {
+      // Return a skeleton-friendly placeholder structure
+      return Wrap(
+        spacing: 12,
+        runSpacing: 8,
+        children: [
+          _buildInfoChip(Icons.movie, 'Movie Type'),
+          _buildInfoChip(Icons.calendar_today, '2024'),
+          _buildInfoChip(Icons.star, '8.5'),
+          _buildInfoChip(Icons.access_time, '2h 30m'),
+        ],
+      );
+    }
 
     // Content type
     items.add(
@@ -914,6 +1034,56 @@ class _DetailsPageState extends State<DetailsPage> {
     );
   }
 
+  Future<void> _downloadContent() async {
+    if (_streams.isEmpty || _details == null) return;
+
+    final stream = _selectedStream ?? _streams.first;
+
+    try {
+      final downloadService = GetIt.I<DownloadService>();
+
+      // For series, we need to pass season/episode
+      await downloadService.downloadContent(
+        item: _details!.item,
+        source: stream,
+        season: _selectedSeason,
+        episode: _selectedEpisode,
+        episodeTitle: _details!.seasons != null && _selectedSeason != null
+            ? _details!.seasons!
+                  .firstWhere(
+                    (s) => s.number == _selectedSeason,
+                    orElse: () => _details!.seasons!.first,
+                  )
+                  .episodes
+                  .firstWhere(
+                    (e) => e.number == _selectedEpisode,
+                    orElse: () => _details!.seasons!.first.episodes.first,
+                  )
+                  .title
+            : null,
+        duration: _details!.duration?.inSeconds,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Завантаження розпочато'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Помилка завантаження: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   void _playStream({StreamSource? stream}) {
     final source = stream ?? _selectedStream ?? _streams.first;
     final title = _details?.item.title ?? '';
@@ -929,6 +1099,10 @@ class _DetailsPageState extends State<DetailsPage> {
         'mediaId': widget.mediaId,
         'providerId': widget.providerId,
         'posterUrl': _details?.item.posterUrl,
+        'mediaType': _details?.item.type,
+        'season': source.season ?? _selectedSeason,
+        'episode': source.episode ?? _selectedEpisode,
+        'episodeTitle': source.episodeTitle,
       },
     );
   }
@@ -946,6 +1120,9 @@ class _DetailsPageState extends State<DetailsPage> {
   }
 
   Widget _buildSeasonsSection() {
+    if (_details == null || _details!.seasons == null) {
+      return const SizedBox.shrink();
+    }
     final seasons = _details!.seasons!;
 
     // Auto-select first season if not selected
@@ -1123,98 +1300,5 @@ class _DetailsPageState extends State<DetailsPage> {
         'episode': episode,
       },
     );
-  }
-
-  Widget _buildSkeleton() {
-    if (_isDesktop) {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Poster skeleton
-          SizedBox(
-            width: 350,
-            child: Column(
-              children: [
-                const SizedBox(height: 16 + 48), // Spacer for back button row
-                const Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    child: Skeleton(borderRadius: 12),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Info skeleton
-          const Expanded(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Skeleton(width: 300, height: 32),
-                  SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Skeleton(width: 80, height: 24),
-                      SizedBox(width: 8),
-                      Skeleton(width: 60, height: 24),
-                      SizedBox(width: 8),
-                      Skeleton(width: 100, height: 24),
-                    ],
-                  ),
-                  SizedBox(height: 24),
-                  Skeleton(
-                    width: double.infinity,
-                    height: 48,
-                  ), // Play button area
-                  SizedBox(height: 24),
-                  Skeleton(width: 100, height: 20),
-                  SizedBox(height: 8),
-                  Skeleton(width: double.infinity, height: 100),
-                ],
-              ),
-            ),
-          ),
-        ],
-      );
-    } else {
-      return CustomScrollView(
-        slivers: [
-          const SliverAppBar(
-            expandedHeight: 300,
-            pinned: true,
-            flexibleSpace: FlexibleSpaceBar(
-              background: Skeleton(borderRadius: 0),
-            ),
-          ),
-          const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Skeleton(width: 250, height: 28),
-                  SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Skeleton(width: 70, height: 24),
-                      SizedBox(width: 8),
-                      Skeleton(width: 90, height: 24),
-                    ],
-                  ),
-                  SizedBox(height: 24),
-                  Skeleton(width: double.infinity, height: 48),
-                  SizedBox(height: 24),
-                  Skeleton(width: 80, height: 20),
-                  SizedBox(height: 8),
-                  Skeleton(width: double.infinity, height: 120),
-                ],
-              ),
-            ),
-          ),
-        ],
-      );
-    }
   }
 }

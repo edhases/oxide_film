@@ -71,13 +71,17 @@ class _FocusableCardState extends State<FocusableCard> {
         if (event is KeyDownEvent &&
             (event.logicalKey == LogicalKeyboardKey.select ||
                 event.logicalKey == LogicalKeyboardKey.enter)) {
+          HapticFeedback.selectionClick();
           widget.onTap?.call();
           return KeyEventResult.handled;
         }
         return KeyEventResult.ignored;
       },
       child: GestureDetector(
-        onTap: widget.onTap,
+        onTap: () {
+          HapticFeedback.selectionClick();
+          widget.onTap?.call();
+        },
         child: AnimatedContainer(
           duration: animationsEnabled
               ? const Duration(milliseconds: 200)

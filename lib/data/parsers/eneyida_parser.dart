@@ -161,31 +161,15 @@ class EneyidaParser {
     String? posterUrl;
     final images = soup.findAll('img');
     for (final img in images) {
-      final src = img.attributes['src'];
-      final dataSrc = img.attributes['data-src'];
-      final dataOrig = img.attributes['data-original'];
-
-      if (src != null && src.contains('/uploads/posts/')) {
+      final src =
+          img.attributes['src'] ??
+          img.attributes['data-src'] ??
+          img.attributes['data-original'];
+      if (src != null &&
+          (src.contains('/uploads/posts/') || src.contains('/posters/'))) {
         posterUrl = src;
         break;
       }
-      if (dataSrc != null && dataSrc.contains('/uploads/posts/')) {
-        posterUrl = dataSrc;
-        break;
-      }
-      if (dataOrig != null && dataOrig.contains('/uploads/posts/')) {
-        posterUrl = dataOrig;
-        break;
-      }
-    }
-
-    // Fallback
-    if (posterUrl == null) {
-      final posterEl = soup.find('div', class_: 'full_poster');
-      final posterImg = posterEl?.find('img');
-      posterUrl =
-          posterImg?.attributes['src'] ?? posterImg?.attributes['data-src'];
-      posterUrl ??= posterImg?.attributes['data-original'];
     }
 
     // Info
@@ -196,6 +180,49 @@ class EneyidaParser {
     List<String>? countries;
     int? year;
     Duration? duration;
+    double? siteRating;
+    double? imdbRating;
+
+    // Try Schema.org first (accurate and structured)
+    final directorMeta = soup.find('meta', attrs: {'itemprop': 'director'});
+    if (directorMeta != null) director = directorMeta.attributes['content'];
+
+    final genreMeta = soup.find('meta', attrs: {'itemprop': 'genre'});
+    if (genreMeta != null) {
+      genres = genreMeta.attributes['content']
+          ?.split(',')
+          .map((e) => e.trim())
+          .toList();
+    }
+
+    final dateMeta = soup.find('meta', attrs: {'itemprop': 'dateCreated'});
+    if (dateMeta != null) {
+      final dateStr = dateMeta.attributes['content'];
+      if (dateStr != null && dateStr.length >= 4) {
+        year = int.tryParse(dateStr.substring(0, 4));
+      }
+    }
+
+    final actorsMeta = soup.find('meta', attrs: {'itemprop': 'actors'});
+    if (actorsMeta != null) {
+      actors = actorsMeta.attributes['content']
+          ?.split(',')
+          .map((e) => e.trim())
+          .toList();
+    }
+
+    // Original Title from Schema.org or page
+    final originTitleEl =
+        soup.find('div', class_: 'full_orig-title') ??
+        soup.find('meta', attrs: {'itemprop': 'alternateName'});
+    originalTitle =
+        originTitleEl?.text.trim() ??
+        originTitleEl?.attributes['content']?.trim();
+    if (originalTitle != null) {
+      originalTitle = originalTitle
+          .replaceFirst(RegExp(r'\d+\s+season.*$', caseSensitive: false), '')
+          .trim();
+    }
 
     if (infoBlock != null) {
       for (final row in infoBlock.findAll('div', class_: 'full_info-item')) {
@@ -204,17 +231,18 @@ class EneyidaParser {
         final value = row.find('span', class_: 'fi-value');
 
         if (label.contains('режис')) {
-          director = value?.text.trim();
+          director ??= value?.text.trim();
         } else if (label.contains('актор')) {
-          actors = value?.findAll('a').map((a) => a.text.trim()).toList();
-          if (actors?.isEmpty ?? true) {
-            actors = value?.text.split(',').map((s) => s.trim()).toList();
+          if (actors == null || actors.isEmpty) {
+            actors = value?.findAll('a').map((a) => a.text.trim()).toList();
+            if (actors?.isEmpty ?? true) {
+              actors = value?.text.split(',').map((s) => s.trim()).toList();
+            }
           }
         } else if (label.contains('жанр')) {
-          genres = value?.findAll('a').map((a) => a.text.trim()).toList();
+          genres ??= value?.findAll('a').map((a) => a.text.trim()).toList();
         } else if (label.contains('країн')) {
-          countries = value?.findAll('a').map((a) => a.text.trim()).toList();
-          // Fallback: parse plain text if no links
+          countries ??= value?.findAll('a').map((a) => a.text.trim()).toList();
           if (countries == null || countries.isEmpty) {
             final text = value?.text.trim();
             if (text != null && text.isNotEmpty) {
@@ -222,7 +250,7 @@ class EneyidaParser {
             }
           }
         } else if (label.contains('рік')) {
-          year = int.tryParse(value?.text.trim() ?? '');
+          year ??= int.tryParse(value?.text.trim() ?? '');
         } else if (label.contains('трива')) {
           final durMatch = RegExp(r'(\d+)').firstMatch(value?.text ?? '');
           if (durMatch != null) {
@@ -235,36 +263,82 @@ class EneyidaParser {
     // Fallback year
     if (year == null) {
       final yearMatch = RegExp(r'Рік:\s*(\d{4})').firstMatch(soup.text);
-      if (yearMatch != null) {
-        year = int.tryParse(yearMatch.group(1) ?? '');
+      if (yearMatch != null) year = int.tryParse(yearMatch.group(1) ?? '');
+    }
+
+    // Improve genres parsing - split by •separator (from Python analyzer findings)
+    if (genres != null && genres.isNotEmpty) {
+      final improvedGenres = <String>[];
+      for (final genre in genres) {
+        // Split by bullet points or other separators
+        final parts = genre
+            .split(RegExp(r'[•]'))
+            .map((g) => g.trim())
+            .where((g) => g.isNotEmpty);
+        improvedGenres.addAll(parts);
+      }
+      if (improvedGenres.isNotEmpty) {
+        genres = improvedGenres;
+      }
+    }
+
+    // Regex fallbacks for missing metadata (from Python analyzer findings)
+    final bodyText = soup.text;
+
+    // Actors fallback via regex
+    if (actors == null || actors.isEmpty) {
+      final actorsMatch = RegExp(
+        r'(?:Актор[иы]|Актёр[иы]|В ролях|Actors?)[:\s]+([^\n]+)',
+        caseSensitive: false,
+      ).firstMatch(bodyText);
+      if (actorsMatch != null) {
+        final actorsText = actorsMatch.group(1)!.trim();
+        actors = actorsText
+            .split(RegExp(r'[,]'))
+            .map((a) => a.trim())
+            .where((a) => a.isNotEmpty && a.length < 50)
+            .take(10)
+            .toList();
       }
     }
 
     // Description
     final descEl = soup.find('div', class_: 'full_text');
     var description = descEl?.text.trim();
-
     if (description == null || description.isEmpty) {
-      final metaDesc = soup.find('meta', attrs: {'property': 'og:description'});
-      description = metaDesc?.attributes['content']?.trim();
-    }
-
-    if (description == null || description.isEmpty) {
-      final metaDesc = soup.find('meta', attrs: {'name': 'description'});
+      final metaDesc =
+          soup.find('meta', attrs: {'property': 'og:description'}) ??
+          soup.find('meta', attrs: {'name': 'description'});
       description = metaDesc?.attributes['content']?.trim();
     }
 
     // Rating
-    double? rating;
-    String? ratingSource;
     final ratingEl = soup.find('span', class_: 'full_rating');
     if (ratingEl != null) {
       final ratingMatch = RegExp(r'([\d.]+)').firstMatch(ratingEl.text);
       if (ratingMatch != null) {
-        rating = double.tryParse(ratingMatch.group(1) ?? '');
-        ratingSource = ratingEl.text.toLowerCase().contains('imdb')
-            ? 'IMDb'
-            : 'Site';
+        final val = double.tryParse(ratingMatch.group(1) ?? '');
+        if (ratingEl.text.toLowerCase().contains('imdb')) {
+          imdbRating = val;
+        } else {
+          siteRating = val;
+        }
+      }
+    }
+
+    // JSON-LD Rating Fallback
+    if (imdbRating == null) {
+      final jsonLd = soup.find(
+        'script',
+        attrs: {'type': 'application/ld+json'},
+      );
+      if (jsonLd != null) {
+        final ratingMatch = RegExp(
+          r'"ratingValue":\s*"([\d.]+)"',
+        ).firstMatch(jsonLd.text);
+        if (ratingMatch != null) {
+          imdbRating = double.tryParse(ratingMatch.group(1)!);
+        }
       }
     }
 
@@ -285,8 +359,10 @@ class EneyidaParser {
         originalTitle: originalTitle,
         posterUrl: _absoluteUrl(posterUrl),
         year: year,
-        rating: rating,
-        ratingSource: ratingSource,
+        rating: imdbRating ?? siteRating,
+        ratingSource: imdbRating != null
+            ? 'IMDb'
+            : (siteRating != null ? 'Сайт' : null),
         type: type,
       ),
       fullDescription: description,
@@ -469,19 +545,33 @@ class EneyidaParser {
   }
 
   static ContentType _detectContentType(String url) {
-    if (url.contains('/films/') || url.contains('films/')) {
+    final urlLower = url.toLowerCase();
+
+    // Check URL patterns
+    if (urlLower.contains('/films/') ||
+        urlLower.contains('films/') ||
+        urlLower.contains('/filmy/') ||
+        urlLower.contains('film')) {
       return ContentType.movie;
     }
-    if (url.contains('/series/') || url.contains('series/')) {
+    if (urlLower.contains('/series/') ||
+        urlLower.contains('series/') ||
+        urlLower.contains('/serialy/') ||
+        urlLower.contains('serial')) {
       return ContentType.series;
     }
-    if (url.contains('/cartoon/') || url.contains('cartoon/')) {
+    if (urlLower.contains('/cartoon/') ||
+        urlLower.contains('cartoon/') ||
+        urlLower.contains('/multfilmy/') ||
+        urlLower.contains('multfilm')) {
       return ContentType.cartoon;
     }
-    if (url.contains('/anime/') || url.contains('anime/')) {
+    if (urlLower.contains('/anime/') || urlLower.contains('anime/')) {
       return ContentType.anime;
     }
-    return ContentType.unknown;
+
+    // Default to movie for Eneyida as most content is movies
+    return ContentType.movie;
   }
 
   static ContentType _detectContentTypeFromHtml(

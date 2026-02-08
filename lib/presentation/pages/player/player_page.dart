@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get_it/get_it.dart';
@@ -5,15 +6,15 @@ import 'package:go_router/go_router.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../../core/utils/logger.dart';
-import '../../../data/services/history_service.dart';
-import '../../../data/services/settings_service.dart';
+import '../../../data/services/video_player_service.dart';
 import '../../../data/services/watch_party_service.dart';
 import '../../../domain/entities/entities.dart';
-import '../../theme/app_theme.dart';
 import 'player_chat_overlay.dart';
 import 'player_controller.dart';
 import 'player_controls.dart';
 import 'player_gesture_layer.dart';
+import '../../widgets/player/pip_controls.dart';
+import '../../widgets/common/app_error_widget.dart';
 
 /// Video player page with full controls
 class PlayerPage extends StatefulWidget {
@@ -24,6 +25,11 @@ class PlayerPage extends StatefulWidget {
   final String? mediaId;
   final String? providerId;
   final String? posterUrl;
+  final ContentType? mediaType;
+  final int? season;
+  final int? episode;
+  final String? episodeTitle;
+  final bool isOffline;
 
   const PlayerPage({
     super.key,
@@ -34,6 +40,11 @@ class PlayerPage extends StatefulWidget {
     this.mediaId,
     this.providerId,
     this.posterUrl,
+    this.mediaType,
+    this.season,
+    this.episode,
+    this.episodeTitle,
+    this.isOffline = false,
   });
 
   @override
@@ -41,7 +52,7 @@ class PlayerPage extends StatefulWidget {
 }
 
 class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
-  late final PlayerController _controller;
+  late final VideoPlayerService _videoPlayerService;
   final FocusNode _focusNode = FocusNode();
 
   // UI State managed by Page, not Controller (purely visual toggles)
@@ -49,32 +60,64 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   bool _showChat = false;
   int _newChatMessages = 0;
   int _lastSeenMessageCount = 0;
+  bool _shouldMinimize = true;
+  Timer? _hideControlsTimer; // Timer for auto-hiding controls
+  DateTime? _lastManualHideTime; // Cooldown for auto-showing
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _videoPlayerService = GetIt.I<VideoPlayerService>();
+    _videoPlayerService.addListener(_onServiceUpdate);
 
-    _controller = PlayerController(
-      initialUrl: widget.url,
-      historyService: GetIt.instance<HistoryService>(),
-      settingsService: GetIt.instance<SettingsService>(),
-      watchPartyService: GetIt.instance<WatchPartyService>(),
-      title: widget.title,
-      mediaId: widget.mediaId,
-      providerId: widget.providerId,
-      posterUrl: widget.posterUrl,
-      streams: widget.streams,
-    );
+    _initPlayer();
 
-    _controller.initialize();
+    _focusNode.requestFocus();
+    _scheduleHideControls();
+  }
 
-    // UI Callbacks
-    _controller.onPlaybackCompleted = () {
+  Future<void> _initPlayer() async {
+    final currentController = _videoPlayerService.controller;
+
+    // Check if we can reuse the existing controller
+    if (currentController != null &&
+        currentController.mediaId == widget.mediaId &&
+        currentController.providerId == widget.providerId &&
+        currentController.initialUrl == widget.url) {
+      // Already playing this content, just maximize
+      _videoPlayerService.maximize();
+      _setupControllerCallbacks(currentController);
+    } else {
+      // New content
+      await _videoPlayerService.open(
+        url: widget.url,
+        title: widget.title,
+        streams: widget.streams,
+        mediaId: widget.mediaId,
+        providerId: widget.providerId,
+        posterUrl: widget.posterUrl,
+        mediaType: widget.mediaType,
+        season: widget.season,
+        episode: widget.episode,
+        episodeTitle: widget.episodeTitle,
+        isOffline: widget.isOffline,
+      );
+
+      if (_videoPlayerService.controller != null) {
+        _setupControllerCallbacks(_videoPlayerService.controller!);
+      }
+    }
+  }
+
+  void _setupControllerCallbacks(PlayerController controller) {
+    controller.onPlaybackCompleted = () {
+      _shouldMinimize = false;
+      _videoPlayerService.close();
       if (mounted) context.pop(true);
     };
 
-    _controller.onPositionResumed = (pos) {
+    controller.onPositionResumed = (pos) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -85,7 +128,7 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       }
     };
 
-    _controller.onQualityReduced = (quality) {
+    controller.onQualityReduced = (quality) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -97,18 +140,22 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
     };
 
     // Watch Party Listener for Chat
-    _controller.watchPartyService.addListener(_onWatchPartyUpdate);
+    controller.watchPartyService.addListener(_onWatchPartyUpdate);
+  }
 
-    _focusNode.requestFocus();
-    _scheduleHideControls();
+  void _onServiceUpdate() {
+    if (mounted) setState(() {});
   }
 
   @override
   void didChangeMetrics() {
     Logger.d('PlayerPage: didChangeMetrics called', tag: 'PlayerPage');
 
+    final controller = _videoPlayerService.controller;
+    if (controller == null) return;
+
     // FLOOD PREVENTION: Skip heavy rebuilds while the window is animating
-    if (_controller.isTogglingFullscreen) {
+    if (controller.isTogglingFullscreen) {
       Logger.d(
         'PlayerPage: Skipping rebuild during fullscreen transition',
         tag: 'PlayerPage',
@@ -132,8 +179,11 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
 
   void _onWatchPartyUpdate() {
     if (!mounted) return;
+    final controller = _videoPlayerService.controller;
+    if (controller == null) return;
+
     // Track new messages when chat is closed
-    final totalMessages = _controller.watchPartyService.chatMessages.length;
+    final totalMessages = controller.watchPartyService.chatMessages.length;
     if (!_showChat && totalMessages > _lastSeenMessageCount) {
       if (mounted) {
         setState(() {
@@ -144,59 +194,117 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   }
 
   void _toggleControls() {
-    setState(() => _showControls = !_showControls);
+    _hideControlsTimer?.cancel();
+    setState(() {
+      _showControls = !_showControls;
+      if (!_showControls) {
+        _lastManualHideTime = DateTime.now();
+      } else {
+        _lastManualHideTime = null; // Reset when manually shown
+      }
+    });
+
     if (_showControls) {
       _scheduleHideControls();
     }
   }
 
   void _scheduleHideControls() {
-    Future.delayed(const Duration(seconds: 4), () {
-      if (mounted && _controller.state.isPlaying && _showControls) {
-        setState(() => _showControls = false);
+    _hideControlsTimer?.cancel();
+    _hideControlsTimer = Timer(const Duration(seconds: 5), () {
+      final controller = _videoPlayerService.controller;
+      if (mounted &&
+          _showControls &&
+          controller != null &&
+          !controller.state.isBuffering) {
+        if (controller.state.isPlaying) {
+          setState(() => _showControls = false);
+        }
       }
     });
   }
 
   void _toggleChatOverlay() {
+    final controller = _videoPlayerService.controller;
+    if (controller == null) return;
+
     setState(() {
       _showChat = !_showChat;
       if (_showChat) {
         _newChatMessages = 0;
         _lastSeenMessageCount =
-            _controller.watchPartyService.chatMessages.length;
+            controller.watchPartyService.chatMessages.length;
       }
     });
   }
 
   @override
   void dispose() {
+    _hideControlsTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
-    _controller.watchPartyService.removeListener(_onWatchPartyUpdate);
-    _controller.dispose();
+    _videoPlayerService.removeListener(_onServiceUpdate);
+
+    final controller = _videoPlayerService.controller;
+    if (controller != null) {
+      controller.watchPartyService.removeListener(_onWatchPartyUpdate);
+
+      // Leave Watch Party room when exiting player
+      if (controller.watchPartyService.state == WatchPartyState.connected ||
+          controller.watchPartyService.state == WatchPartyState.hosting) {
+        controller.watchPartyService.leaveRoom();
+      }
+    }
+
+    // Minimize player instead of disposing
+    if (_shouldMinimize) {
+      _videoPlayerService.minimize();
+    }
+
     _focusNode.dispose();
     super.dispose();
   }
 
   void _handleKeyEvent(KeyEvent event) {
+    final controller = _videoPlayerService.controller;
+    if (controller == null) return;
+
+    final FocusNode? currentFocus = FocusManager.instance.primaryFocus;
+    if (_showChat ||
+        (currentFocus != null &&
+            currentFocus.context?.widget is EditableText)) {
+      return;
+    }
+
     if (event is KeyDownEvent) {
       switch (event.logicalKey) {
         case LogicalKeyboardKey.space:
         case LogicalKeyboardKey.enter:
-          _controller.playOrPause();
+          controller.playOrPause();
           _showControlsTemp();
           break;
         case LogicalKeyboardKey.arrowRight:
-          _controller.seekForward();
+          controller.seekForward();
           _showControlsTemp();
           break;
         case LogicalKeyboardKey.arrowLeft:
-          _controller.seekBackward();
+          controller.seekBackward();
+          _showControlsTemp();
+          break;
+        case LogicalKeyboardKey.keyJ:
+          controller.seekBackward();
+          _showControlsTemp();
+          break;
+        case LogicalKeyboardKey.keyK:
+          controller.playOrPause();
+          _showControlsTemp();
+          break;
+        case LogicalKeyboardKey.keyL:
+          controller.seekForward();
           _showControlsTemp();
           break;
         case LogicalKeyboardKey.escape:
-          if (_controller.state.isFullscreen) {
-            _controller.toggleFullscreen();
+          if (controller.state.isFullscreen) {
+            controller.toggleFullscreen();
           } else {
             context.pop();
           }
@@ -207,9 +315,16 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
 
   void _showControlsTemp() {
     if (!_showControls) {
+      // If manually hidden, only show again automatically after 3 seconds
+      if (_lastManualHideTime != null) {
+        final now = DateTime.now();
+        if (now.difference(_lastManualHideTime!) < const Duration(seconds: 3)) {
+          return;
+        }
+      }
       setState(() => _showControls = true);
-      _scheduleHideControls();
     }
+    _scheduleHideControls();
   }
 
   String _formatDuration(Duration duration) {
@@ -224,24 +339,31 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final controller = _videoPlayerService.controller;
+
+    if (controller == null) {
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     Logger.d(
-      'PlayerPage: build called. isFullscreen: ${_controller.state.isFullscreen}',
+      'PlayerPage: build called. isFullscreen: ${controller.state.isFullscreen}',
       tag: 'PlayerPage',
     );
     return PopScope(
       canPop: false,
-      onPopInvoked: (didPop) async {
+      onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
 
-        // If in fullscreen, exit fullscreen first
-        if (_controller.state.isFullscreen) {
-          await _controller.toggleFullscreen();
+        if (controller.state.isFullscreen) {
+          await controller.toggleFullscreen();
           return;
         }
 
-        // Otherwise close player
         if (context.mounted) {
-          context.pop();
+          context.pop(result);
         }
       },
       child: Scaffold(
@@ -252,11 +374,10 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
           child: MouseRegion(
             onHover: (_) => _showControlsTemp(),
             child: AnimatedBuilder(
-              animation: _controller,
+              animation: controller,
               builder: (context, _) {
-                final state = _controller.state;
+                final state = controller.state;
 
-                // Video Layer
                 if (!state.isInitialized) {
                   return const Center(child: CircularProgressIndicator());
                 }
@@ -264,13 +385,35 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                 return Stack(
                   fit: StackFit.expand,
                   children: [
-                    // Video Layer - simple approach, let media_kit handle resizing
+                    // Video Layer
                     if (!state.hasError)
-                      Video(
-                        controller: _controller.videoController,
-                        fit: state.videoFit,
-                        fill: Colors.black,
-                        controls: NoVideoControls,
+                      Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (!state.isTransitioning)
+                            Video(
+                              key: ValueKey('video_${state.textureKey}'),
+                              controller: controller.videoController,
+                              fit: state.videoFit,
+                              fill: Colors.black,
+                              controls: NoVideoControls,
+                            )
+                          else
+                            Builder(
+                              builder: (context) {
+                                WidgetsBinding.instance.addPostFrameCallback((
+                                  _,
+                                ) {
+                                  Future.microtask(() {
+                                    controller.notifyUIUpdated();
+                                  });
+                                });
+                                return const SizedBox.expand(
+                                  child: ColoredBox(color: Colors.black),
+                                );
+                              },
+                            ),
+                        ],
                       )
                     else
                       _buildErrorWidget(state.errorMessage),
@@ -282,21 +425,25 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                       ),
 
                     // Gesture Layer
-                    PlayerGestureLayer(
-                      onTap: _toggleControls,
-                      onDoubleTap: _controller.toggleFullscreen,
-                      child: Container(color: Colors.transparent),
-                    ),
+                    if (!_videoPlayerService.isNativePiP)
+                      PlayerGestureLayer(
+                        controller: controller,
+                        onTap: _toggleControls,
+                        onDoubleTap: controller.toggleFullscreen,
+                        child: Container(color: Colors.transparent),
+                      ),
 
                     // Controls Layer
-                    PlayerControls(
-                      controller: _controller,
-                      showControls: _showControls,
-                      onToggleControls: _toggleControls,
-                      showChat: _showChat,
-                      onToggleChat: _toggleChatOverlay,
-                      newChatMessages: _newChatMessages,
-                    ),
+                    if (!_videoPlayerService.isNativePiP)
+                      PlayerControls(
+                        controller: controller,
+                        showControls: _showControls,
+                        onToggleControls: _toggleControls,
+                        showChat: _showChat,
+                        onToggleChat: _toggleChatOverlay,
+                        newChatMessages: _newChatMessages,
+                        onEnterPiP: _videoPlayerService.enterNativePiP,
+                      ),
 
                     // Chat Layer
                     if (_showChat)
@@ -305,15 +452,47 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
                         bottom: 0,
                         right: 0,
                         child: PlayerChatOverlay(
-                          service: _controller.watchPartyService,
+                          service: controller.watchPartyService,
                           onClose: _toggleChatOverlay,
                         ),
                       ),
 
                     // Watch Party UI (Sync Status)
-                    if (_controller.watchPartyService.state ==
-                        WatchPartyState.connected)
+                    if (!_videoPlayerService.isNativePiP &&
+                        controller.watchPartyService.state ==
+                            WatchPartyState.connected)
                       _buildWatchPartyFloatingUI(),
+
+                    // Visibility Toggle
+                    if (!_videoPlayerService.isNativePiP)
+                      Positioned(
+                        top: 60 + MediaQuery.paddingOf(context).top,
+                        right: 16,
+                        child: IconButton(
+                          onPressed: _toggleControls,
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.black.withValues(
+                              alpha: 0.4,
+                            ),
+                            foregroundColor: Colors.white,
+                          ),
+                          icon: Icon(
+                            _showControls
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                          ),
+                          tooltip: _showControls
+                              ? 'Сховати інтерфейс'
+                              : 'Показати інтерфейс',
+                        ),
+                      ),
+
+                    // Desktop PiP Controls
+                    if (_videoPlayerService.isDesktopPiP)
+                      PiPControls(
+                        controller: controller,
+                        videoPlayerService: _videoPlayerService,
+                      ),
                   ],
                 );
               },
@@ -325,89 +504,29 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
   }
 
   Widget _buildErrorWidget(String? error) {
+    final controller = _videoPlayerService.controller;
+    if (controller == null) return const SizedBox();
+
     return Container(
       color: Colors.black,
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.error_outline, color: Colors.red, size: 64),
-              const SizedBox(height: 16),
-              const Text(
-                'Помилка відтворення',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                error ?? 'Не вдалося завантажити відео',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.7),
-                  fontSize: 14,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ElevatedButton.icon(
-                    onPressed: _controller.retryPlayback,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Спробувати знову'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.primaryColor,
-                      foregroundColor: Colors.white,
+      child: AppErrorWidget.playback(
+        message: error,
+        onRetry: controller.retryPlayback,
+        onBack: () => context.pop(),
+        alternativeActions: widget.streams != null && widget.streams!.length > 1
+            ? widget.streams!
+                  .where((s) => s.url != controller.state.currentUrl)
+                  .take(3)
+                  .map(
+                    (stream) => ActionChip(
+                      label: Text(
+                        stream.voiceover ?? stream.quality.displayName,
+                      ),
+                      onPressed: () => controller.switchStreamWithRetry(stream),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  OutlinedButton.icon(
-                    onPressed: () => context.pop(),
-                    icon: const Icon(Icons.arrow_back),
-                    label: const Text('Назад'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      side: const BorderSide(color: Colors.white54),
-                    ),
-                  ),
-                ],
-              ),
-              if (widget.streams != null && widget.streams!.length > 1) ...[
-                const SizedBox(height: 24),
-                Text(
-                  'Або спробуйте інший потік:',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.6),
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: widget.streams!
-                      .where((s) => s.url != _controller.state.currentUrl)
-                      .take(3)
-                      .map(
-                        (stream) => ActionChip(
-                          label: Text(
-                            stream.voiceover ?? stream.quality.displayName,
-                          ),
-                          onPressed: () =>
-                              _controller.switchStreamWithRetry(stream),
-                        ),
-                      )
-                      .toList(),
-                ),
-              ],
-            ],
-          ),
-        ),
+                  )
+                  .toList()
+            : null,
       ),
     );
   }
@@ -419,17 +538,16 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildSyncIndicator(),
-          const SizedBox(height: 8),
-          _buildChatFAB(),
-        ],
+        children: [_buildSyncIndicator()],
       ),
     );
   }
 
   Widget _buildSyncIndicator() {
-    final service = _controller.watchPartyService;
+    final controller = _videoPlayerService.controller;
+    if (controller == null) return const SizedBox();
+
+    final service = controller.watchPartyService;
     final mode = service.correctionMode;
 
     if (service.isHost) {
@@ -486,25 +604,6 @@ class _PlayerPageState extends State<PlayerPage> with WidgetsBindingObserver {
           shape: BoxShape.circle,
         ),
         child: Icon(icon, color: iconColor, size: 20),
-      ),
-    );
-  }
-
-  Widget _buildChatFAB() {
-    return FloatingActionButton(
-      heroTag: 'chat_fab',
-      mini: true,
-      backgroundColor: _showChat
-          ? AppTheme.primaryColor
-          : Colors.black.withValues(alpha: 0.7),
-      onPressed: _toggleChatOverlay,
-      child: Badge(
-        isLabelVisible: _newChatMessages > 0 && !_showChat,
-        label: Text('$_newChatMessages'),
-        child: Icon(
-          _showChat ? Icons.chat : Icons.chat_bubble_outline,
-          color: Colors.white,
-        ),
       ),
     );
   }

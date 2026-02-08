@@ -6,19 +6,23 @@ import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:dio_smart_retry/dio_smart_retry.dart';
 import '../config/app_config.dart';
 import '../error/exceptions.dart';
+import '../../data/services/user_agent_service.dart';
 
 /// HTTP client wrapper with retry logic, cookies, and error handling
 class ApiClient {
   late final Dio _dio;
   final CookieJar _cookieJar = CookieJar();
+  late final UserAgentService _uaService;
 
-  ApiClient() {
+  ApiClient({UserAgentService? uaService}) {
+    _uaService = uaService ?? UserAgentService(prefs: null as dynamic);
+
     _dio = Dio(
       BaseOptions(
         connectTimeout: AppConfig.connectTimeout,
         receiveTimeout: AppConfig.receiveTimeout,
         headers: {
-          'User-Agent': AppConfig.userAgent,
+          'User-Agent': _uaService.getRandomUA(),
           'Accept':
               'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'Accept-Language': _buildAcceptLanguage(),

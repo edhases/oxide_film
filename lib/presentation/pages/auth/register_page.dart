@@ -52,12 +52,9 @@ class _RegisterPageState extends State<RegisterPage> {
       );
 
       if (mounted) {
-        // Check if email confirmation is required
-        if (_authService.currentUser?.emailConfirmedAt == null) {
-          setState(() => _success = true);
-        } else {
-          context.go('/');
-        }
+        // PocketBase automatically handles email verification
+        // Show success message and redirect
+        setState(() => _success = true);
       }
     } catch (e) {
       setState(() => _error = _authService.error ?? e.toString());

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:isolate';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
@@ -166,156 +167,227 @@ class YummyAnimeRepository {
         YummyAnimeParser.extractEpisodeItems,
         html,
       );
-      String? dataId;
-      String? playerParams;
 
-      // Find matching episode
-      // If we only found a single player (no proper episodes list), we use that if episode is 1
+      final voiceoverMap = await compute(
+        YummyAnimeParser.extractVoiceovers,
+        html,
+      );
+
+      // Find ALL matching episodes/players
+      final matchingItems = <Map<String, String>>[];
+
+      // ... existing matching logic ...
       if (episodeItems.length == 1 &&
-          episodeItems.first['player_params'] != null) {
-        if (episodeNum == 1) {
-          playerParams = episodeItems.first['player_params'];
-          dataId = episodeItems.first['id'];
-        }
+          episodeItems.first['player_params'] != null &&
+          episodeNum == 1) {
+        matchingItems.add(episodeItems.first);
       } else {
         for (final item in episodeItems) {
           if (item['episode'] == episodeNum.toString()) {
-            dataId = item['id'];
-            playerParams =
-                item['player_params']; // Might be null for standard list items
-            break;
+            matchingItems.add(item);
           }
         }
       }
 
-      // If we have player_params, use controller.php to get the iframe
-      if (playerParams != null) {
-        try {
-          // Parse params to map
-          final paramsMap = Uri.splitQueryString(playerParams);
+      for (final item in matchingItems) {
+        final dataId = item['id'];
+        final playerParams = item['player_params'];
 
-          final response = await _client.getJson(
-            '$baseUrl/engine/ajax/controller.php',
-            queryParameters: paramsMap,
-            headers: {
-              ..._browserHeaders,
-              'X-Requested-With': 'XMLHttpRequest',
-              'Referer': url,
-            },
-          );
+        // If we have player_params, use controller.php to get the iframe
+        if (playerParams != null) {
+          try {
+            // Parse params to map
+            final paramsMap = Uri.splitQueryString(playerParams);
 
-          if (response['success'] == true && response['data'] != null) {
-            final iframeUrl = response['data'].toString();
-            // This is usually a Kodik or Ashdi URL.
-            // We return it as a direct source, but typed as HLS/Embed so PlayerPage can extract it.
-            // Actually, better to mark it as StreamType.youtubeEmbed or similar if it needs extraction?
-            // Standard StreamType.direct with a known provider URL usually triggers extractor.
-            // Or better, let's process it if it's Kodik.
-
-            if (iframeUrl.contains('kodik')) {
-              sources.add(
-                StreamSource(
-                  url: iframeUrl,
-                  quality: StreamQuality.unknown, // Kodik handles quality
-                  type: StreamType
-                      .direct, // Needs extraction but marked as direct for now
-                  sourceName: 'Kodik',
-                ),
-              );
-            } else {
-              sources.add(
-                StreamSource(
-                  url: iframeUrl,
-                  quality: StreamQuality.unknown,
-                  type: StreamType.direct,
-                ),
-              );
-            }
-          }
-        } catch (e) {
-          Logger.w(
-            'Failed to fetch player from controller',
-            tag: _tag,
-            error: e,
-          );
-        }
-      }
-
-      Map<String, dynamic>? episodeData;
-
-      if (dataId != null && playerParams == null) {
-        // Fetch via API (Legacy/Standard flow)
-        try {
-          final response = await _client.dio.get<String>(
-            '$baseUrl/api/episode/$dataId',
-            options: Options(
+            final response = await _client.getJson(
+              '$baseUrl/engine/ajax/controller.php',
+              queryParameters: paramsMap,
               headers: {
                 ..._browserHeaders,
                 'X-Requested-With': 'XMLHttpRequest',
+                'Referer': url,
               },
-            ),
-          );
-          if (response.data != null) {
-            episodeData = jsonDecode(response.data!);
-          }
-        } catch (e) {
-          Logger.w('Failed to get episode API data', tag: _tag);
-        }
-      }
-
-      // Fallback API call
-      if (episodeData == null && playerParams == null) {
-        try {
-          final response = await _client.dio.get<String>(
-            '$baseUrl/api/anime/$id/episode/$episodeNum',
-            options: Options(
-              headers: {
-                ..._browserHeaders,
-                'X-Requested-With': 'XMLHttpRequest',
-              },
-            ),
-          );
-          if (response.data != null) {
-            episodeData = jsonDecode(response.data!);
-          }
-        } catch (e) {
-          Logger.w('Failed to get fallback episode API data', tag: _tag);
-        }
-      }
-
-      if (episodeData != null) {
-        // Parse basic sources
-        final initialSources = await compute(
-          YummyAnimeParser.parseEpisodeSources,
-          episodeData,
-        );
-
-        // Process sources to resolve embeds
-        for (final source in initialSources) {
-          var processed = false;
-          // Check if it's an embed URL we need to fetch
-          if (source.url.contains('ashdi') ||
-              source.url.contains('kodik') ||
-              source.url.contains('aniboom')) {
-            final embedSources = await _fetchEmbed(
-              source.url,
-              source.voiceover,
             );
-            if (embedSources.isNotEmpty) {
-              sources.addAll(embedSources);
-              processed = true;
-            }
-          }
 
-          // If not processed or we just want to keep the original (e.g. might be direct link)
-          // Usually we keep unless we replaced it. But here we add found streams.
-          if (!processed) {
-            sources.add(source);
+            if (response['success'] == true && response['data'] != null) {
+              final iframeUrl = response['data'].toString();
+
+              // Extract metadata from playerParams for merging
+              final voiceId = paramsMap['voice'] ?? paramsMap['name'];
+              final voiceName = voiceId != null
+                  ? (voiceoverMap[voiceId] ?? voiceId)
+                  : null;
+              final epFromParams = int.tryParse(paramsMap['episode'] ?? '');
+
+              var sourceName = 'Default';
+              if (iframeUrl.contains('kodik') ||
+                  playerParams.contains('kodik')) {
+                sourceName = 'Kodik';
+              } else if (iframeUrl.contains('ashdi') ||
+                  playerParams.contains('ashdi')) {
+                sourceName = 'Ashdi';
+              } else if (iframeUrl.contains('alloha') ||
+                  playerParams.contains('alloha')) {
+                sourceName = 'Alloha';
+              } else if (playerParams.contains('parlorate')) {
+                sourceName = 'Yummy';
+              }
+
+              if (voiceName != null) {
+                sourceName = '$sourceName ($voiceName)';
+              }
+
+              final embedSources = await _fetchEmbed(iframeUrl, voiceName);
+
+              // Filter embed sources by requested episode
+              for (final s in embedSources) {
+                final sEpisode = s.episode ?? epFromParams;
+                final sSeason = s.season ?? season;
+
+                // If we have a specific target episode, only add matching ones
+                if (episode != null && sEpisode != episode) continue;
+                if (season != null && sSeason != season) continue;
+
+                sources.add(
+                  s.copyWith(
+                    sourceName: sourceName,
+                    season: sSeason,
+                    episode: sEpisode,
+                    voiceover: voiceName ?? s.voiceover,
+                  ),
+                );
+              }
+
+              if (embedSources.isEmpty) {
+                sources.add(
+                  StreamSource(
+                    url: iframeUrl,
+                    quality: StreamQuality.unknown,
+                    type: StreamType.direct,
+                    sourceName: sourceName,
+                    season: season,
+                    episode: episode ?? epFromParams,
+                    voiceover: voiceName,
+                  ),
+                );
+              }
+            }
+          } catch (e) {
+            Logger.w(
+              'Failed to fetch player from controller',
+              tag: _tag,
+              error: e,
+            );
+          }
+        }
+
+        Map<String, dynamic>? episodeData;
+        // ... rest of the method handles API-based streams ...
+
+        if (dataId != null && playerParams == null) {
+          // Fetch via API (Legacy/Standard flow)
+          try {
+            final response = await _client.dio.get<String>(
+              '$baseUrl/api/episode/$dataId',
+              options: Options(
+                headers: {
+                  ..._browserHeaders,
+                  'X-Requested-With': 'XMLHttpRequest',
+                },
+              ),
+            );
+            if (response.data != null) {
+              episodeData = await Isolate.run(
+                () => jsonDecode(response.data!) as Map<String, dynamic>,
+              );
+            }
+          } catch (e) {
+            Logger.w('Failed to get episode API data', tag: _tag);
+          }
+        }
+
+        // Fallback API call
+        if (episodeData == null && playerParams == null) {
+          try {
+            final response = await _client.dio.get<String>(
+              '$baseUrl/api/anime/$id/episode/$episodeNum',
+              options: Options(
+                headers: {
+                  ..._browserHeaders,
+                  'X-Requested-With': 'XMLHttpRequest',
+                },
+              ),
+            );
+            if (response.data != null) {
+              episodeData = await Isolate.run(
+                () => jsonDecode(response.data!) as Map<String, dynamic>,
+              );
+            }
+          } catch (e) {
+            Logger.w('Failed to get fallback episode API data', tag: _tag);
+          }
+        }
+
+        if (episodeData != null) {
+          // Parse basic sources
+          final initialSources = await compute(
+            YummyAnimeParser.parseEpisodeSources,
+            episodeData,
+          );
+
+          // Process sources to resolve embeds
+          for (final source in initialSources) {
+            var processed = false;
+            if (source.url.contains('ashdi') ||
+                source.url.contains('kodik') ||
+                source.url.contains('aniboom')) {
+              final embedSources = await _fetchEmbed(
+                source.url,
+                source.voiceover,
+              );
+              for (final s in embedSources) {
+                final sEpisode = s.episode ?? episodeNum;
+                final sSeason = s.season ?? season;
+
+                if (episode != null && sEpisode != episode) continue;
+                if (season != null && sSeason != season) continue;
+
+                sources.add(
+                  s.copyWith(
+                    season: sSeason,
+                    episode: sEpisode,
+                    voiceover: source.voiceover ?? s.voiceover,
+                  ),
+                );
+                processed = true;
+              }
+            }
+
+            if (!processed) {
+              final sEpisode = source.episode ?? episodeNum;
+              final sSeason = source.season ?? season;
+
+              if (episode != null && sEpisode != episode) continue;
+              if (season != null && sSeason != season) continue;
+
+              sources.add(source.copyWith(season: sSeason, episode: sEpisode));
+            }
           }
         }
       }
 
-      return _deduplicateSources(sources);
+      // Deduplicate and sort: prioritize HLS/Direct over generic iframes
+      final result = _deduplicateSources(sources);
+      for (final s in result) {
+        Logger.d('Found stream: ${s.url} (${s.type})', tag: _tag);
+      }
+      result.sort((a, b) {
+        if (a.type == StreamType.hls && b.type != StreamType.hls) return -1;
+        if (a.type != StreamType.hls && b.type == StreamType.hls) return 1;
+        return 0;
+      });
+
+      return result;
     } catch (e, stack) {
       Logger.e('Get streams failed', tag: _tag, error: e, stackTrace: stack);
       return [];

@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../domain/entities/entities.dart';
@@ -17,165 +18,222 @@ import '../pages/watch_party/watch_party_page.dart';
 import '../pages/auth/login_page.dart';
 import '../pages/auth/register_page.dart';
 import '../pages/auth/profile_page.dart';
+import '../widgets/player/mini_player_overlay.dart';
 
 /// Application router configuration
 class AppRouter {
   static final GoRouter router = GoRouter(
     initialLocation: '/',
     routes: [
-      // Home
-      GoRoute(
-        path: '/',
-        name: 'home',
-        builder: (context, state) => const HomePage(),
-      ),
-
-      // Auth routes
-      GoRoute(
-        path: '/login',
-        name: 'login',
-        builder: (context, state) => const LoginPage(),
-      ),
-      GoRoute(
-        path: '/register',
-        name: 'register',
-        builder: (context, state) => const RegisterPage(),
-      ),
-      GoRoute(
-        path: '/profile',
-        name: 'profile',
-        builder: (context, state) => const ProfilePage(),
-      ),
-
-      // Categories/Browse
-      GoRoute(
-        path: '/category',
-        name: 'category',
-        builder: (context, state) {
-          final typeStr = state.uri.queryParameters['type'];
-          ContentType? type;
-          if (typeStr != null) {
-            type = ContentType.values.firstWhere(
-              (t) => t.name == typeStr,
-              orElse: () => ContentType.movie,
-            );
-          }
-          return CategoryPage(initialType: type);
+      ShellRoute(
+        builder: (context, state, child) {
+          return MiniPlayerOverlay(child: child);
         },
-      ),
+        routes: [
+          // Home
+          GoRoute(
+            path: '/',
+            name: 'home',
+            builder: (context, state) => const HomePage(),
+          ),
 
-      // Single provider page (HDRezka, YouTube)
-      GoRoute(
-        path: '/provider/:providerId',
-        name: 'provider',
-        builder: (context, state) {
-          final providerId = state.pathParameters['providerId']!;
-          return ProviderPage(providerId: providerId);
-        },
-      ),
+          // Auth routes
+          GoRoute(
+            path: '/login',
+            name: 'login',
+            builder: (context, state) => const LoginPage(),
+          ),
+          GoRoute(
+            path: '/register',
+            name: 'register',
+            builder: (context, state) => const RegisterPage(),
+          ),
+          GoRoute(
+            path: '/profile',
+            name: 'profile',
+            builder: (context, state) => const ProfilePage(),
+          ),
 
-      // Media details - mediaId is URL-encoded to handle slashes
-      GoRoute(
-        path: '/details/:providerId/:mediaId',
-        name: 'details',
-        builder: (context, state) {
-          final providerId = state.pathParameters['providerId']!;
-          final mediaId = Uri.decodeComponent(state.pathParameters['mediaId']!);
-          return DetailsPage(providerId: providerId, mediaId: mediaId);
-        },
-      ),
+          // Deep link handler for OAuth2 redirect
+          GoRoute(
+            path: '/auth',
+            name: 'oauth_callback',
+            builder: (context, state) => const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            ),
+          ),
 
-      // Video player - supports both query params and extra data
-      GoRoute(
-        path: '/player',
-        name: 'player',
-        builder: (context, state) {
-          // Support both query params and extra data
-          final extra = state.extra as Map<String, dynamic>?;
-          final url = extra?['url'] ?? state.uri.queryParameters['url']!;
-          final title = extra?['title'] ?? state.uri.queryParameters['title'];
-          final subtitle =
-              extra?['subtitle'] ?? state.uri.queryParameters['subtitle'];
-          final streams = extra?['streams'] as List<StreamSource>?;
-          final mediaId = extra?['mediaId'] as String?;
-          final providerId = extra?['providerId'] as String?;
-          final posterUrl = extra?['posterUrl'] as String?;
-          return PlayerPage(
-            url: url,
-            title: title,
-            subtitle: subtitle,
-            streams: streams,
-            mediaId: mediaId,
-            providerId: providerId,
-            posterUrl: posterUrl,
-          );
-        },
-      ),
+          // Categories/Browse
+          GoRoute(
+            path: '/category',
+            name: 'category',
+            builder: (context, state) {
+              final typeStr = state.uri.queryParameters['type'];
+              ContentType? type;
+              if (typeStr != null) {
+                type = ContentType.values.firstWhere(
+                  (t) => t.name == typeStr,
+                  orElse: () => ContentType.movie,
+                );
+              }
+              return CategoryPage(initialType: type);
+            },
+          ),
 
-      // Search
-      GoRoute(
-        path: '/search',
-        name: 'search',
-        builder: (context, state) {
-          final query = state.uri.queryParameters['q'];
-          return SearchPage(initialQuery: query);
-        },
-      ),
+          // Single provider page (HDRezka, YouTube)
+          GoRoute(
+            path: '/provider/:providerId',
+            name: 'provider',
+            builder: (context, state) {
+              final providerId = state.pathParameters['providerId']!;
+              return ProviderPage(providerId: providerId);
+            },
+          ),
 
-      // Settings
-      GoRoute(
-        path: '/settings',
-        name: 'settings',
-        builder: (context, state) => const SettingsPage(),
-      ),
+          // Media details - mediaId is URL-encoded to handle slashes
+          GoRoute(
+            path: '/details/:providerId/:mediaId',
+            name: 'details',
+            pageBuilder: (context, state) {
+              final providerId = state.pathParameters['providerId']!;
+              final mediaId = Uri.decodeComponent(
+                state.pathParameters['mediaId']!,
+              );
+              return _buildPageWithThemeTransition(
+                context: context,
+                state: state,
+                child: DetailsPage(providerId: providerId, mediaId: mediaId),
+              );
+            },
+          ),
 
-      // Appearance settings
-      GoRoute(
-        path: '/appearance',
-        name: 'appearance',
-        builder: (context, state) => const AppearancePage(),
-      ),
+          // Video player - supports both query params and extra data
+          GoRoute(
+            path: '/player',
+            name: 'player',
+            builder: (context, state) {
+              // Support both query params and extra data
+              final extra = state.extra as Map<String, dynamic>?;
+              final url = extra?['url'] ?? state.uri.queryParameters['url']!;
+              final title =
+                  extra?['title'] ?? state.uri.queryParameters['title'];
+              final subtitle =
+                  extra?['subtitle'] ?? state.uri.queryParameters['subtitle'];
+              final streams = extra?['streams'] as List<StreamSource>?;
+              final mediaId = extra?['mediaId'] as String?;
+              final providerId = extra?['providerId'] as String?;
+              final posterUrl = extra?['posterUrl'] as String?;
+              final mediaType = extra?['mediaType'] as ContentType?;
+              final isOffline =
+                  (extra?['isOffline'] as bool?) ??
+                  state.uri.queryParameters['offline'] == 'true';
+              final season = extra?['season'] as int?;
+              final episode = extra?['episode'] as int?;
+              final episodeTitle = extra?['episodeTitle'] as String?;
 
-      // Favorites
-      GoRoute(
-        path: '/favorites',
-        name: 'favorites',
-        builder: (context, state) => const FavoritesPage(),
-      ),
+              return PlayerPage(
+                url: url,
+                title: title,
+                subtitle: subtitle,
+                streams: streams,
+                mediaId: mediaId,
+                providerId: providerId,
+                posterUrl: posterUrl,
+                mediaType: mediaType,
+                season: season,
+                episode: episode,
+                episodeTitle: episodeTitle,
+                isOffline: isOffline,
+              );
+            },
+          ),
 
-      // History
-      GoRoute(
-        path: '/history',
-        name: 'history',
-        builder: (context, state) => const HistoryPage(),
-      ),
+          // Search
+          GoRoute(
+            path: '/search',
+            name: 'search',
+            builder: (context, state) {
+              final query = state.uri.queryParameters['q'];
+              return SearchPage(initialQuery: query);
+            },
+          ),
 
-      // Downloads (offline)
-      GoRoute(
-        path: '/downloads',
-        name: 'downloads',
-        builder: (context, state) => const DownloadsPage(),
-      ),
+          // Settings
+          GoRoute(
+            path: '/settings',
+            name: 'settings',
+            builder: (context, state) => const SettingsPage(),
+          ),
 
-      // Statistics
-      GoRoute(
-        path: '/stats',
-        name: 'stats',
-        builder: (context, state) => const StatsPage(),
-      ),
+          // Appearance settings
+          GoRoute(
+            path: '/appearance',
+            name: 'appearance',
+            builder: (context, state) => const AppearancePage(),
+          ),
 
-      // Watch Party
-      GoRoute(
-        path: '/watch-party',
-        name: 'watch-party',
-        builder: (context, state) {
-          final extra = state.extra as Map<String, dynamic>?;
-          return WatchPartyPage(
-            mediaUrl: extra?['mediaUrl'],
-            mediaTitle: extra?['mediaTitle'],
-          );
-        },
+          // Favorites
+          GoRoute(
+            path: '/favorites',
+            name: 'favorites',
+            builder: (context, state) => const FavoritesPage(),
+          ),
+
+          // History
+          GoRoute(
+            path: '/history',
+            name: 'history',
+            builder: (context, state) => const HistoryPage(),
+          ),
+
+          // Downloads (offline)
+          GoRoute(
+            path: '/downloads',
+            name: 'downloads',
+            builder: (context, state) => const DownloadsPage(),
+          ),
+
+          // Statistics
+          GoRoute(
+            path: '/stats',
+            name: 'stats',
+            builder: (context, state) => const StatsPage(),
+          ),
+
+          // Watch Party
+          GoRoute(
+            path: '/watch-party',
+            name: 'watch-party',
+            builder: (context, state) {
+              final extra = state.extra as Map<String, dynamic>?;
+              return WatchPartyPage(
+                mediaUrl: extra?['mediaUrl'],
+                mediaTitle: extra?['mediaTitle'],
+              );
+            },
+          ),
+        ],
       ),
     ],
   );
+
+  static Page<dynamic> _buildPageWithThemeTransition({
+    required BuildContext context,
+    required GoRouterState state,
+    required Widget child,
+  }) {
+    return CustomTransitionPage<void>(
+      key: state.pageKey,
+      child: child,
+      barrierDismissible: true,
+      barrierColor: Colors.black38,
+      opaque: false,
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        return FadeTransition(
+          opacity: CurveTween(curve: Curves.easeInOut).animate(animation),
+          child: child,
+        );
+      },
+    );
+  }
 }

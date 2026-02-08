@@ -56,6 +56,30 @@ class UakinoProvider implements ContentProvider {
   }
 
   @override
+  Future<List<MediaItem>> getSimilar(String id, MediaDetails details) async {
+    if (details.genres == null || details.genres!.isEmpty) {
+      return [];
+    }
+
+    try {
+      final genreDisplayName = details.genres!.first;
+
+      final slug = ProviderGenreMappings.getSlugForProvider(
+        id,
+        genreDisplayName,
+        fallback: ContentGenres.getSlug(genreDisplayName),
+      );
+
+      if (slug.isEmpty) return [];
+
+      final items = await getByCategory(slug, page: 1);
+      return items.where((item) => item.id != id).toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  @override
   Future<List<StreamSource>> getStreams(
     String id, {
     int? season,

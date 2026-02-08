@@ -1,7 +1,8 @@
 import 'package:equatable/equatable.dart';
 
 /// Type of media content
-enum ContentType { movie, series, cartoon, anime, unknown }
+/// Type of media content
+enum ContentType { movie, series, cartoon, anime, dorama, unknown }
 
 /// Extension to get display name for content type
 extension ContentTypeExtension on ContentType {
@@ -15,6 +16,8 @@ extension ContentTypeExtension on ContentType {
         return 'Мультфільм';
       case ContentType.anime:
         return 'Аніме';
+      case ContentType.dorama:
+        return 'Дорама';
       case ContentType.unknown:
         return 'Невідомо';
     }
@@ -30,6 +33,8 @@ extension ContentTypeExtension on ContentType {
         return 'Мультфільми';
       case ContentType.anime:
         return 'Аніме';
+      case ContentType.dorama:
+        return 'Дорами';
       case ContentType.unknown:
         return 'Контент';
     }
@@ -46,6 +51,8 @@ extension ContentTypeExtension on ContentType {
         return 'МФ';
       case ContentType.anime:
         return 'АН';
+      case ContentType.dorama:
+        return 'ДР';
       case ContentType.unknown:
         return '?';
     }

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:oxide_film/data/repositories/hdrezka_repository.dart';
 import 'package:oxide_film/core/network/api_client.dart';
+import '../../helpers/mock_services.dart';
 
 class _MockApiClient extends Mock implements ApiClient {}
 
@@ -16,9 +17,16 @@ void main() {
     registerFallbackValue(RequestOptions(path: ''));
   });
 
+  late MockUserAgentService mockUaService;
+
+  setUp(() {
+    mockUaService = MockUserAgentService();
+    when(() => mockUaService.getChromeUserAgent()).thenReturn('Chrome/Mock');
+  });
+
   test('HdrezkaRepository.getPopular returns parsed items', () async {
     final mockClient = _MockApiClient();
-    final repo = HdrezkaRepository(mockClient);
+    final repo = HdrezkaRepository(mockClient, mockUaService);
 
     final html = await File(
       'test/fixtures/integration/sample_provider_response.html',
@@ -37,7 +45,7 @@ void main() {
     'HdrezkaRepository.getDetails returns MediaDetails parsed via parser',
     () async {
       final mockClient = _MockApiClient();
-      final repo = HdrezkaRepository(mockClient);
+      final repo = HdrezkaRepository(mockClient, mockUaService);
 
       final html = await File(
         'test/fixtures/integration/sample_provider_response.html',
@@ -57,6 +65,7 @@ void main() {
     () async {
       final mockClient = _MockApiClient();
       final mockDio = _MockDio();
+      final repo = HdrezkaRepository(mockClient, mockUaService);
 
       when(
         () => mockClient.get(any()),
@@ -80,8 +89,6 @@ void main() {
           options: any(named: 'options'),
         ),
       ).thenAnswer((_) async => response);
-
-      final repo = HdrezkaRepository(mockClient);
 
       final streams = await repo.getStreams('some-id');
 

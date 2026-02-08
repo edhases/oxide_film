@@ -8,7 +8,6 @@ import '../../../data/providers/provider_registry.dart';
 import '../../../data/services/settings_service.dart';
 import '../../../domain/entities/entities.dart';
 import '../../../domain/repositories/content_provider.dart';
-import '../../theme/app_theme.dart';
 import '../../widgets/media_card.dart';
 import '../../widgets/custom_titlebar.dart';
 import '../../widgets/filter_sheet.dart';
@@ -38,6 +37,7 @@ class _CategoryPageState extends State<CategoryPage>
     ContentType.series,
     ContentType.cartoon,
     ContentType.anime,
+    ContentType.dorama,
   ];
 
   final Map<ContentType, List<MediaItem>> _contentByType = {};
@@ -290,9 +290,9 @@ class _CategoryPageState extends State<CategoryPage>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: AppTheme.surfaceColor,
+        color: Theme.of(context).colorScheme.surface,
         border: Border(
-          bottom: BorderSide(color: AppTheme.borderColor, width: 1),
+          bottom: BorderSide(color: Theme.of(context).dividerColor, width: 1),
         ),
       ),
       child: Row(
@@ -366,7 +366,7 @@ class _CategoryPageState extends State<CategoryPage>
 
   Widget _buildTabBar() {
     return Container(
-      color: AppTheme.surfaceColor,
+      color: Theme.of(context).colorScheme.surface,
       child: TabBar(
         controller: _tabController,
         tabs: _tabs.map((type) {
@@ -388,9 +388,9 @@ class _CategoryPageState extends State<CategoryPage>
           );
         }).toList(),
         isScrollable: true, // Always scrollable to prevent overflow
-        indicatorColor: AppTheme.primaryColor,
-        labelColor: AppTheme.primaryColor,
-        unselectedLabelColor: AppTheme.textMuted,
+        indicatorColor: Theme.of(context).colorScheme.primary,
+        labelColor: Theme.of(context).colorScheme.primary,
+        unselectedLabelColor: Theme.of(context).textTheme.bodySmall?.color,
         tabAlignment: TabAlignment.start,
       ),
     );
@@ -406,6 +406,8 @@ class _CategoryPageState extends State<CategoryPage>
         return Icons.animation;
       case ContentType.anime:
         return Icons.auto_awesome;
+      case ContentType.dorama:
+        return Icons.theater_comedy; // Assuming a suitable IconData for dorama
       case ContentType.unknown:
         return Icons.help_outline;
     }
@@ -504,12 +506,19 @@ class _CategoryPageState extends State<CategoryPage>
           SliverPadding(
             padding: EdgeInsets.all(_ui.gridSpacing.padding),
             sliver: SliverGrid(
-              gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: _getMaxCrossAxisExtent(),
-                childAspectRatio: _ui.posterSize.aspectRatio,
-                crossAxisSpacing: _ui.gridSpacing.crossAxisSpacing,
-                mainAxisSpacing: _ui.gridSpacing.mainAxisSpacing,
-              ),
+              gridDelegate: _ui.gridColumns > 0
+                  ? SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: _ui.gridColumns,
+                      childAspectRatio: _ui.posterSize.aspectRatio,
+                      crossAxisSpacing: _ui.gridSpacing.crossAxisSpacing,
+                      mainAxisSpacing: _ui.gridSpacing.mainAxisSpacing,
+                    )
+                  : SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: _getMaxCrossAxisExtent(),
+                      childAspectRatio: _ui.posterSize.aspectRatio,
+                      crossAxisSpacing: _ui.gridSpacing.crossAxisSpacing,
+                      mainAxisSpacing: _ui.gridSpacing.mainAxisSpacing,
+                    ),
               delegate: SliverChildBuilderDelegate((context, index) {
                 final item = items[index];
                 return MediaCard(item: item, onTap: () => _openDetails(item));
@@ -558,12 +567,19 @@ class _CategoryPageState extends State<CategoryPage>
   Widget _buildSkeletonGrid() {
     return GridView.builder(
       padding: EdgeInsets.all(_ui.gridSpacing.padding),
-      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: _getMaxCrossAxisExtent(),
-        childAspectRatio: _ui.posterSize.aspectRatio,
-        crossAxisSpacing: _ui.gridSpacing.crossAxisSpacing,
-        mainAxisSpacing: _ui.gridSpacing.mainAxisSpacing,
-      ),
+      gridDelegate: _ui.gridColumns > 0
+          ? SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: _ui.gridColumns,
+              childAspectRatio: _ui.posterSize.aspectRatio,
+              crossAxisSpacing: _ui.gridSpacing.crossAxisSpacing,
+              mainAxisSpacing: _ui.gridSpacing.mainAxisSpacing,
+            )
+          : SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: _getMaxCrossAxisExtent(),
+              childAspectRatio: _ui.posterSize.aspectRatio,
+              crossAxisSpacing: _ui.gridSpacing.crossAxisSpacing,
+              mainAxisSpacing: _ui.gridSpacing.mainAxisSpacing,
+            ),
       itemCount: 12,
       itemBuilder: (context, index) =>
           Skeleton(borderRadius: _ui.posterSize.borderRadius),
@@ -580,7 +596,7 @@ class _SeparateProviderButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = _getProviderColor(provider.id);
+    final color = _getProviderColor(context, provider.id);
 
     return Material(
       color: Colors.transparent,
@@ -626,14 +642,14 @@ class _SeparateProviderButton extends StatelessWidget {
     }
   }
 
-  Color _getProviderColor(String providerId) {
+  Color _getProviderColor(BuildContext context, String providerId) {
     switch (providerId) {
       case 'hdrezka':
         return Colors.orange;
       case 'youtube':
         return Colors.red;
       default:
-        return AppTheme.primaryColor;
+        return Theme.of(context).colorScheme.primary;
     }
   }
 }

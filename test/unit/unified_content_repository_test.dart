@@ -88,6 +88,10 @@ class MockContentProvider implements ContentProvider {
   }
 
   @override
+  Future<List<MediaItem>> getSimilar(String id, MediaDetails details) async =>
+      [];
+
+  @override
   Future<List<StreamSource>> getStreams(
     String id, {
     int? season,
@@ -147,6 +151,7 @@ class MockHistoryDao implements HistoryDao {
     String? voiceover,
     double? rating,
     String? ratingSource,
+    DateTime? watchedAt, // Added parameter
   }) async {}
   @override
   Future<int> cleanupDuplicates() async => 0;
@@ -210,6 +215,8 @@ class MockFavoritesDao implements FavoritesDao {
   Future<int> count() async => 0;
   @override
   Future<int> clearAll() async => 0;
+  @override
+  Future<Favorite?> get(String mediaId, String providerId) async => null; // Added method
 }
 
 class MockMediaItemsDao implements MediaItemsDao {

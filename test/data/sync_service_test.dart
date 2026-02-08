@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:path/path.dart' as p;
 
 import 'package:oxide_film/data/services/sync_service.dart';
 import 'package:oxide_film/data/database/dao/favorites_dao.dart';

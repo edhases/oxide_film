@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -82,7 +83,9 @@ class DataTransferService {
       if (result != null && result.files.single.path != null) {
         final file = File(result.files.single.path!);
         final jsonString = await file.readAsString();
-        final data = jsonDecode(jsonString) as Map<String, dynamic>;
+        final data = await Isolate.run(
+          () => jsonDecode(jsonString) as Map<String, dynamic>,
+        );
 
         await _restoreData(data);
       }

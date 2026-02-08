@@ -1,0 +1,4 @@
+# Provider analysis scripts
+provider_super_analyzer.py
+*.pyc
+__pycache__/

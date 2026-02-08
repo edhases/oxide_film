@@ -313,6 +313,7 @@ class UISettings {
   final bool showYears;
   final bool animationsEnabled;
   final bool blurBackgrounds;
+  final int gridColumns; // 0 for auto
 
   const UISettings({
     this.posterSize = PosterSize.medium,
@@ -324,6 +325,7 @@ class UISettings {
     this.showYears = true,
     this.animationsEnabled = true,
     this.blurBackgrounds = true,
+    this.gridColumns = 0,
   });
 
   UISettings copyWith({
@@ -336,6 +338,7 @@ class UISettings {
     bool? showYears,
     bool? animationsEnabled,
     bool? blurBackgrounds,
+    int? gridColumns,
   }) {
     return UISettings(
       posterSize: posterSize ?? this.posterSize,
@@ -347,6 +350,7 @@ class UISettings {
       showYears: showYears ?? this.showYears,
       animationsEnabled: animationsEnabled ?? this.animationsEnabled,
       blurBackgrounds: blurBackgrounds ?? this.blurBackgrounds,
+      gridColumns: gridColumns ?? this.gridColumns,
     );
   }
 }

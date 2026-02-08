@@ -32,6 +32,15 @@ class FavoritesDao {
     return result != null;
   }
 
+  /// Get a single favorite
+  Future<Favorite?> get(String mediaId, String providerId) async {
+    final query = _db.select(_db.favorites)
+      ..where(
+        (t) => t.mediaId.equals(mediaId) & t.providerId.equals(providerId),
+      );
+    return query.getSingleOrNull();
+  }
+
   /// Add to favorites
   Future<int> add({
     required String mediaId,

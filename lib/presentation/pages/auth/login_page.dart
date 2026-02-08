@@ -3,7 +3,10 @@ import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../data/services/auth_service.dart';
+import '../../../data/services/history_service.dart';
+import '../../../data/services/favorites_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/dialogs/import_data_dialog.dart';
 
 /// Login page for user authentication
 class LoginPage extends StatefulWidget {
@@ -45,13 +48,52 @@ class _LoginPageState extends State<LoginPage> {
       );
 
       if (mounted) {
-        context.go('/');
+        await _checkLocalDataAndSync();
+        if (mounted) {
+          context.go('/');
+        }
       }
     } catch (e) {
       setState(() => _error = _authService.error ?? e.toString());
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _checkLocalDataAndSync() async {
+    final historyService = GetIt.instance<HistoryService>();
+    final favoritesService = GetIt.instance<FavoritesService>();
+
+    final historyCount = await historyService.count;
+    final favoritesCount = await favoritesService.count;
+
+    if (historyCount > 0 || favoritesCount > 0) {
+      if (!mounted) return;
+
+      final shouldMerge = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => ImportDataDialog(
+          historyCount: historyCount,
+          favoritesCount: favoritesCount,
+        ),
+      );
+
+      if (shouldMerge == true) {
+        // Merge: Sync local to cloud
+        await historyService.syncNow();
+        await favoritesService.syncNow();
+      } else {
+        // Delete: Clear local data (cloud data will be pulled on next sync/startup)
+        // Actually, we want to replace local with cloud.
+        // Clearing local data is enough, as the service will pull from cloud.
+        await historyService.clearAll();
+        await favoritesService.clearAll();
+        // Force pull to populate with cloud data
+        await historyService.syncNow();
+        await favoritesService.syncNow();
       }
     }
   }
@@ -330,6 +372,56 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                       ),
                     ),
+
+                    const SizedBox(height: 32),
+
+                    // Social login divider
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Divider(
+                            color: Colors.white.withValues(alpha: 0.1),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Text(
+                            'Або увійдіть через',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.white.withValues(alpha: 0.4),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Divider(
+                            color: Colors.white.withValues(alpha: 0.1),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Social buttons
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _buildSocialButton(
+                          icon: Icons.g_mobiledata,
+                          label: 'Google',
+                          onTap: () => _handleSocialLogin('google'),
+                        ),
+                        // Discord login disabled for now as it's not fully configured
+                        /*
+                        const SizedBox(width: 16),
+                        _buildSocialButton(
+                          icon: Icons.discord,
+                          label: 'Discord',
+                          onTap: () => _handleSocialLogin('discord'),
+                        ),
+                        */
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -338,6 +430,59 @@ class _LoginPageState extends State<LoginPage> {
         ),
       ),
     );
+  }
+
+  Widget _buildSocialButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: _isLoading ? null : onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: 100,
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: AppTheme.darkCard,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: Colors.white, size: 28),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: const TextStyle(fontSize: 12, color: Colors.white),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleSocialLogin(String provider) async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      await _authService.socialSignIn(provider);
+      if (mounted) {
+        await _checkLocalDataAndSync();
+        if (mounted) {
+          context.go('/');
+        }
+      }
+    } catch (e) {
+      setState(() => _error = _authService.error ?? e.toString());
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   void _showForgotPasswordDialog() {

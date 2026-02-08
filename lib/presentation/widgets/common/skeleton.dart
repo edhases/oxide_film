@@ -17,10 +17,13 @@ class Skeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Determine base color based on theme brightness if needed,
-    // but app seems to be dark-mode focused.
-    const baseColor = Color(0xFF2C2C2C);
-    const highlightColor = Color(0xFF4A4A4A);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final baseColor = isDark
+        ? Theme.of(context).cardColor.withValues(alpha: 0.8)
+        : Colors.grey.shade300;
+    final highlightColor = isDark
+        ? Theme.of(context).cardColor.withValues(alpha: 0.5)
+        : Colors.grey.shade100;
 
     return Shimmer.fromColors(
       baseColor: baseColor,

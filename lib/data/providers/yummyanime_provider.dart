@@ -1,3 +1,4 @@
+import '../../core/constants/content_constants.dart';
 import '../../core/network/api_client.dart';
 import '../../domain/entities/entities.dart';
 import '../../domain/repositories/content_provider.dart';
@@ -114,6 +115,20 @@ class YummyAnimeProvider implements ContentProvider {
   @override
   Future<MediaDetails> getDetails(String id) {
     return _repository.getDetails(id);
+  }
+
+  @override
+  Future<List<MediaItem>> getSimilar(String id, MediaDetails details) async {
+    if (details.genres == null || details.genres!.isEmpty) {
+      return [];
+    }
+    try {
+      final slug = ContentGenres.getSlug(details.genres!.first);
+      final items = await getByCategory(slug, page: 1);
+      return items.where((item) => item.id != id).toList();
+    } catch (e) {
+      return [];
+    }
   }
 
   @override

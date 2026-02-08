@@ -8,6 +8,11 @@ import 'package:oxide_film/data/providers/provider_registry.dart';
 import 'package:oxide_film/domain/entities/entities.dart';
 import 'package:oxide_film/presentation/pages/home/home_page.dart';
 import 'package:oxide_film/presentation/widgets/media_card.dart';
+import 'package:oxide_film/data/services/settings_service.dart';
+import 'package:oxide_film/domain/repositories/content_provider.dart';
+import 'package:oxide_film/data/services/recommendation_service.dart';
+import 'package:oxide_film/data/services/episode_update_service.dart';
+import 'package:oxide_film/data/services/history_service.dart';
 
 import '../../../helpers/mock_services.dart';
 import 'package:mocktail/mocktail.dart';
@@ -62,6 +67,10 @@ class _FakeProvider implements ContentProvider {
   }
 
   @override
+  Future<List<MediaItem>> getSimilar(String id, MediaDetails details) async =>
+      [];
+
+  @override
   Future<List<StreamSource>> getStreams(
     String id, {
     int? season,
@@ -79,27 +88,70 @@ class _FakeProvider implements ContentProvider {
   Future<List<MediaItem>> getNew({ContentType? type, int page = 1}) {
     return Future.value(_items);
   }
+
+  @override
+  Future<List<String>> getCategories() {
+    return Future.value(['Category1', 'Category2']);
+  }
+}
+
+class FakeSettingsService extends Fake implements SettingsService {
+  @override
+  SettingsState get state => const SettingsState();
+
+  @override
+  UISettings get uiSettings => const UISettings();
+
+  @override
+  bool isProviderEnabled(String providerId) => true;
+
+  @override
+  void addListener(VoidCallback listener) {}
+
+  @override
+  void removeListener(VoidCallback listener) {}
 }
 
 void main() {
   setUp(() {
-    // Register a mock settings service and other dependencies used by HomePage
-    final mockSettings = MockSettingsService();
-    when(() => mockSettings.state).thenReturn(const SettingsState());
+    // Register a fake settings service
+    final startSettings = FakeSettingsService();
 
     if (GetIt.I.isRegistered<SettingsService>()) {
       GetIt.I.unregister<SettingsService>();
     }
-    GetIt.I.registerSingleton<SettingsService>(mockSettings);
+    GetIt.I.registerSingleton<SettingsService>(startSettings);
+
+    final mockRecommendationService = MockRecommendationService();
+    when(() => mockRecommendationService.recommendations).thenReturn([]);
+    when(() => mockRecommendationService.isLoading).thenReturn(false);
+    when(() => mockRecommendationService.init()).thenAnswer((_) async {});
+    when(() => mockRecommendationService.addListener(any())).thenReturn(null);
+    when(
+      () => mockRecommendationService.removeListener(any()),
+    ).thenReturn(null);
+    GetIt.I.registerSingleton<RecommendationService>(mockRecommendationService);
+
+    final mockEpisodeUpdateService = MockEpisodeUpdateService();
+    when(
+      () => mockEpisodeUpdateService.checkForUpdates(),
+    ).thenAnswer((_) async {});
+    when(() => mockEpisodeUpdateService.hasNewEpisodes).thenReturn(false);
+    when(() => mockEpisodeUpdateService.newEpisodesCount).thenReturn(0);
+    when(() => mockEpisodeUpdateService.isChecking).thenReturn(false);
+    when(() => mockEpisodeUpdateService.addListener(any())).thenReturn(null);
+    when(() => mockEpisodeUpdateService.removeListener(any())).thenReturn(null);
+    GetIt.I.registerSingleton<EpisodeUpdateService>(mockEpisodeUpdateService);
+
+    final mockHistoryService = MockHistoryService();
+    when(() => mockHistoryService.continueWatching).thenReturn([]);
+    when(() => mockHistoryService.addListener(any())).thenReturn(null);
+    when(() => mockHistoryService.removeListener(any())).thenReturn(null);
+    GetIt.I.registerSingleton<HistoryService>(mockHistoryService);
   });
 
   tearDown(() {
-    if (GetIt.I.isRegistered<ProviderRegistry>()) {
-      GetIt.I.unregister<ProviderRegistry>();
-    }
-    if (GetIt.I.isRegistered<SettingsService>()) {
-      GetIt.I.unregister<SettingsService>();
-    }
+    GetIt.I.reset();
   });
 
   testWidgets('HomePage loads providers in parallel and deduplicates items', (
@@ -134,6 +186,12 @@ void main() {
     registry.register(providerB);
 
     GetIt.I.registerSingleton<ProviderRegistry>(registry);
+
+    // Set a large enough screen size to ensure grid items are rendered and no overflow
+    tester.view.physicalSize = const Size(2000, 2000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: HomePage())));
 

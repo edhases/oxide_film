@@ -3,7 +3,6 @@ import 'package:mocktail/mocktail.dart';
 import 'package:oxide_film/data/repositories/uaflix_repository.dart';
 import 'package:oxide_film/core/network/api_client.dart';
 
-import '../../helpers/mock_services.dart';
 import 'dart:io';
 
 class _MockApiClient extends Mock implements ApiClient {}

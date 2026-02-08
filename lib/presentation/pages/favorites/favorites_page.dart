@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:get_it/get_it.dart';
@@ -7,8 +8,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../../data/database/app_database.dart';
 import '../../../data/services/favorites_service.dart';
 import '../../../data/services/settings_service.dart';
+import '../../../data/services/download_service.dart';
 import '../../../domain/entities/entities.dart';
-import '../../theme/app_theme.dart';
 import '../../widgets/custom_titlebar.dart';
 import '../../widgets/tv/focusable_card.dart';
 
@@ -71,9 +72,9 @@ class _FavoritesPageState extends State<FavoritesPage>
             controller: _tabController,
             tabs: _tabs,
             isScrollable: true,
-            indicatorColor: AppTheme.primaryColor,
-            labelColor: AppTheme.primaryColor,
-            unselectedLabelColor: AppTheme.textMuted,
+            indicatorColor: Theme.of(context).colorScheme.primary,
+            labelColor: Theme.of(context).colorScheme.primary,
+            unselectedLabelColor: Theme.of(context).textTheme.bodySmall?.color,
           ),
           Expanded(
             child: TabBarView(
@@ -96,9 +97,9 @@ class _FavoritesPageState extends State<FavoritesPage>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: AppTheme.surfaceColor,
+        color: Theme.of(context).colorScheme.surface,
         border: Border(
-          bottom: BorderSide(color: AppTheme.borderColor, width: 1),
+          bottom: BorderSide(color: Theme.of(context).dividerColor, width: 1),
         ),
       ),
       child: Row(
@@ -158,12 +159,19 @@ class _FavoritesPageState extends State<FavoritesPage>
   Widget _buildGridView(List<Favorite> items) {
     return GridView.builder(
       padding: EdgeInsets.all(_ui.gridSpacing.padding),
-      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: _getMaxCrossAxisExtent(),
-        childAspectRatio: _ui.posterSize.aspectRatio,
-        crossAxisSpacing: _ui.gridSpacing.crossAxisSpacing,
-        mainAxisSpacing: _ui.gridSpacing.mainAxisSpacing,
-      ),
+      gridDelegate: _ui.gridColumns > 0
+          ? SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: _ui.gridColumns,
+              childAspectRatio: _ui.posterSize.aspectRatio,
+              crossAxisSpacing: _ui.gridSpacing.crossAxisSpacing,
+              mainAxisSpacing: _ui.gridSpacing.mainAxisSpacing,
+            )
+          : SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: _getMaxCrossAxisExtent(),
+              childAspectRatio: _ui.posterSize.aspectRatio,
+              crossAxisSpacing: _ui.gridSpacing.crossAxisSpacing,
+              mainAxisSpacing: _ui.gridSpacing.mainAxisSpacing,
+            ),
       itemCount: items.length,
       itemBuilder: (context, index) {
         final item = items[index];
@@ -265,7 +273,7 @@ class _FavoritesPageState extends State<FavoritesPage>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: AppTheme.surfaceColor,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         title: const Text('Очистити обране?'),
         content: const Text(
           'Ви впевнені, що хочете видалити всі елементи з обраного? '
@@ -283,7 +291,7 @@ class _FavoritesPageState extends State<FavoritesPage>
             },
             child: Text(
               'Очистити',
-              style: TextStyle(color: AppTheme.errorColor),
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ),
         ],
@@ -307,24 +315,32 @@ class _FavoriteCard extends StatelessWidget {
     return Card(
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
-      color: AppTheme.surfaceColor,
+      color: Theme.of(context).colorScheme.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       child: Stack(
         fit: StackFit.expand,
         children: [
           // Poster
-          if (favorite.posterUrl != null)
-            CachedNetworkImage(
-              imageUrl: favorite.posterUrl!,
-              fit: BoxFit.cover,
-              placeholder: (_, __) => Container(
-                color: AppTheme.surfaceColor,
-                child: const Center(child: CircularProgressIndicator()),
-              ),
-              errorWidget: (_, __, ___) => _PosterPlaceholder(),
-            )
-          else
-            _PosterPlaceholder(),
+          Builder(
+            builder: (context) {
+              final localPath = GetIt.I<DownloadService>().getLocalPosterPath(
+                favorite.mediaId,
+                favorite.providerId,
+              );
+              return localPath != null
+                  ? Image.file(File(localPath), fit: BoxFit.cover)
+                  : favorite.posterUrl != null
+                  ? CachedNetworkImage(
+                      imageUrl: favorite.posterUrl!,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => Container(
+                        color: Theme.of(context).colorScheme.surface,
+                      ),
+                      errorWidget: (_, __, ___) => _PosterPlaceholder(),
+                    )
+                  : _PosterPlaceholder();
+            },
+          ),
 
           // Gradient overlay
           Positioned(
@@ -396,9 +412,13 @@ class _PosterPlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: AppTheme.surfaceColor,
+      color: Theme.of(context).colorScheme.surface,
       child: Center(
-        child: Icon(Icons.movie, size: 48, color: AppTheme.textMuted),
+        child: Icon(
+          Icons.movie,
+          size: 48,
+          color: Theme.of(context).textTheme.bodySmall?.color,
+        ),
       ),
     );
   }
@@ -414,7 +434,7 @@ class _FavoriteListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       margin: EdgeInsets.zero,
-      color: AppTheme.surfaceColor,
+      color: Theme.of(context).colorScheme.surface,
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Row(
@@ -425,14 +445,25 @@ class _FavoriteListTile extends StatelessWidget {
               child: SizedBox(
                 width: 60,
                 height: 90,
-                child: favorite.posterUrl != null
-                    ? CachedNetworkImage(
-                        imageUrl: favorite.posterUrl!,
-                        fit: BoxFit.cover,
-                        placeholder: (_, __) => _PosterPlaceholder(),
-                        errorWidget: (_, __, ___) => _PosterPlaceholder(),
-                      )
-                    : _PosterPlaceholder(),
+                child: Builder(
+                  builder: (context) {
+                    final localPath = GetIt.I<DownloadService>()
+                        .getLocalPosterPath(
+                          favorite.mediaId,
+                          favorite.providerId,
+                        );
+                    return localPath != null
+                        ? Image.file(File(localPath), fit: BoxFit.cover)
+                        : favorite.posterUrl != null
+                        ? CachedNetworkImage(
+                            imageUrl: favorite.posterUrl!,
+                            fit: BoxFit.cover,
+                            placeholder: (_, __) => _PosterPlaceholder(),
+                            errorWidget: (_, __, ___) => _PosterPlaceholder(),
+                          )
+                        : _PosterPlaceholder();
+                  },
+                ),
               ),
             ),
             const SizedBox(width: 12),
@@ -457,24 +488,28 @@ class _FavoriteListTile extends StatelessWidget {
                         Icon(
                           Icons.calendar_today,
                           size: 14,
-                          color: AppTheme.textMuted,
+                          color: Theme.of(context).textTheme.bodySmall?.color,
                         ),
                         const SizedBox(width: 4),
                         Text(
                           '${favorite.year}',
                           style: TextStyle(
-                            color: AppTheme.textMuted,
+                            color: Theme.of(context).textTheme.bodySmall?.color,
                             fontSize: 13,
                           ),
                         ),
                         const SizedBox(width: 12),
                       ],
-                      Icon(Icons.category, size: 14, color: AppTheme.textMuted),
+                      Icon(
+                        Icons.category,
+                        size: 14,
+                        color: Theme.of(context).textTheme.bodySmall?.color,
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         _getTypeName(favorite.mediaType),
                         style: TextStyle(
-                          color: AppTheme.textMuted,
+                          color: Theme.of(context).textTheme.bodySmall?.color,
                           fontSize: 13,
                         ),
                       ),
@@ -485,7 +520,10 @@ class _FavoriteListTile extends StatelessWidget {
             ),
             // Remove button
             IconButton(
-              icon: Icon(Icons.delete_outline, color: AppTheme.textMuted),
+              icon: Icon(
+                Icons.delete_outline,
+                color: Theme.of(context).textTheme.bodySmall?.color,
+              ),
               onPressed: onRemove,
               tooltip: 'Видалити',
             ),
@@ -531,11 +569,11 @@ class _FavoriteCompactTile extends StatelessWidget {
                   imageUrl: favorite.posterUrl!,
                   fit: BoxFit.cover,
                   placeholder: (_, __) =>
-                      Container(color: AppTheme.surfaceColor),
+                      Container(color: Theme.of(context).colorScheme.surface),
                   errorWidget: (_, __, ___) =>
-                      Container(color: AppTheme.surfaceColor),
+                      Container(color: Theme.of(context).colorScheme.surface),
                 )
-              : Container(color: AppTheme.surfaceColor),
+              : Container(color: Theme.of(context).colorScheme.surface),
         ),
       ),
       title: Text(
@@ -574,14 +612,23 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 80, color: AppTheme.textMuted),
+          Icon(
+            icon,
+            size: 80,
+            color: Theme.of(context).textTheme.bodySmall?.color,
+          ),
           const SizedBox(height: 16),
           Text(
             title,
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
-          Text(subtitle, style: TextStyle(color: AppTheme.textMuted)),
+          Text(
+            subtitle,
+            style: TextStyle(
+              color: Theme.of(context).textTheme.bodySmall?.color,
+            ),
+          ),
         ],
       ),
     );

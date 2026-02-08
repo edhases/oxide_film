@@ -1,7 +1,5 @@
 import 'dart:developer' as developer;
 
-import 'package:flutter/foundation.dart';
-
 /// Simple logger utility for debugging
 class Logger {
   static const String _tag = 'OxideFilm';

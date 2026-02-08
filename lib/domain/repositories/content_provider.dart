@@ -72,4 +72,10 @@ abstract class ContentProvider {
     ContentType? type,
     int page = 1,
   }) async => [];
+
+  /// Get similar content based on current item details
+  ///
+  /// Providers can implement this using genre matching, tags, or specific API endpoints.
+  Future<List<MediaItem>> getSimilar(String id, MediaDetails details) async =>
+      [];
 }

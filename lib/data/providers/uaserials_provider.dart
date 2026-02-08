@@ -1,3 +1,4 @@
+import '../../core/constants/content_constants.dart';
 import '../../core/network/api_client.dart';
 import '../../domain/entities/entities.dart';
 import '../../domain/repositories/content_provider.dart';
@@ -85,5 +86,30 @@ class UaserialsProvider implements ContentProvider {
     int? episode,
   }) {
     return _repository.getStreams(id, season: season, episode: episode);
+  }
+
+  @override
+  Future<List<MediaItem>> getSimilar(String id, MediaDetails details) async {
+    if (details.genres == null || details.genres!.isEmpty) {
+      return [];
+    }
+
+    try {
+      // Uaserials uses specific slugs for genres
+      // Try to get popular from the category of the first genre
+      // For Uaserials, categories are often top-level like 'seriess', 'filmss'
+      // BUT they also support genre slugs like 'fantastika', 'detective', etc.
+
+      final genreDisplayName = details.genres!.first;
+      // Use general slug generation, might need fine-tuning
+      final slug = ContentGenres.getSlug(genreDisplayName);
+
+      // Note: Uaserials usually puts genres at root like /boiovyk/, /drama/
+      final items = await getByCategory(slug, page: 1);
+      // Filter out the current item
+      return items.where((item) => item.id != id).toList();
+    } catch (e) {
+      return [];
+    }
   }
 }

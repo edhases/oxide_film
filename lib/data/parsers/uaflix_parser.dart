@@ -71,6 +71,8 @@ class UaflixParser {
         type = ContentType.series;
       } else if (href.contains('/anime/')) {
         type = ContentType.anime;
+      } else if (href.contains('/dorama/')) {
+        type = ContentType.dorama;
       } else if (href.contains('/cartoons/') || href.contains('/mult')) {
         type = ContentType.cartoon;
       }
@@ -208,7 +210,27 @@ class UaflixParser {
 
     // Title
     final titleEl = soup.find('h1');
-    final title = titleEl?.text.trim() ?? '';
+    var title = titleEl?.text.trim() ?? '';
+
+    // Clean Title SEO suffixes
+    final seoSuffixes = [
+      'дивитись онлайн',
+      'смотреть онлайн',
+      'подивитися онлайн',
+      'онлайн українською',
+      'українською мовою',
+      'в хорошій якості',
+      'безкоштовно',
+    ];
+
+    for (final suffix in seoSuffixes) {
+      final pattern = RegExp(
+        r'\s*[-–—]?\s*' + RegExp.escape(suffix) + r'.*$',
+        caseSensitive: false,
+      );
+      title = title.replaceAll(pattern, '');
+    }
+    title = title.trim();
 
     // Poster detection
     String? posterUrl;
@@ -238,12 +260,59 @@ class UaflixParser {
       }
     }
 
-    // Description
+    // Description cleaning
     final descEl =
         soup.find('div', class_: 'fdesc') ??
         soup.find('div', class_: 'full-desc') ??
         soup.find('div', class_: 'description');
-    final description = descEl?.text.trim();
+
+    String? description;
+    if (descEl != null) {
+      // Remove scripts and styles
+      final scripts = descEl.findAll('script');
+      for (final script in scripts) {
+        script.extract();
+      }
+      final styles = descEl.findAll('style');
+      for (final style in styles) {
+        style.extract();
+      }
+
+      // Remove pagination/rating/bookmarks leaked text
+      // Common garbage classes in UAFlix description
+      final garbageClasses = [
+        'rating',
+        'vote-num',
+        'unit-rating',
+        'ignore-select',
+        'full-rat',
+        'ppagin',
+      ];
+      for (final cls in garbageClasses) {
+        final garbage = descEl.findAll('*', class_: cls);
+        for (final g in garbage) {
+          g.extract();
+        }
+      }
+
+      // Also remove any elements with specific IDs or known garbage tags
+      // Sometimes raw numbers appear at the end (pagination)
+
+      description = descEl.text.trim();
+
+      // Post-process regex cleaning for leaked JS or Pagination
+      description = description.replaceAll(
+        RegExp(r'\(function\(\).*?\}\)\(\)', multiLine: true, dotAll: true),
+        '',
+      );
+      description = description.replaceAll(
+        RegExp(r'var\s+[a-zA-Z0-9_]+\s*=.*?;', multiLine: true),
+        '',
+      );
+      // Remove trailing numbers (often pagination 1 2 3...)
+      description = description.replaceAll(RegExp(r'\n\s*\d+\s*\n'), '\n');
+      description = description.replaceAll(RegExp(r'\s+\d{1,3}\s*$'), '');
+    }
 
     // Info extraction
     int? year;
@@ -252,8 +321,56 @@ class UaflixParser {
     String? director;
     List<String>? actors;
     Duration? duration;
-    double? rating;
-    String? ratingSource;
+    double? siteRating;
+    double? imdbRating;
+    String? originalTitle;
+
+    // Try Schema.org first (accurate and structured)
+    final directorMeta = soup.find('meta', attrs: {'itemprop': 'director'});
+    if (directorMeta != null) director = directorMeta.attributes['content'];
+
+    final genreMeta = soup.find('meta', attrs: {'itemprop': 'genre'});
+    if (genreMeta != null) {
+      genres = genreMeta.attributes['content']
+          ?.split(',')
+          .map((e) => e.trim())
+          .toList();
+    }
+
+    final dateMeta =
+        soup.find('meta', attrs: {'itemprop': 'dateCreated'}) ??
+        soup.find('meta', attrs: {'itemprop': 'datePublished'});
+    if (dateMeta != null) {
+      final dateStr = dateMeta.attributes['content'];
+      if (dateStr != null && dateStr.length >= 4) {
+        year = int.tryParse(dateStr.substring(0, 4));
+      }
+    }
+
+    final actorsMeta = soup.find('meta', attrs: {'itemprop': 'actors'});
+    if (actorsMeta != null) {
+      actors = actorsMeta.attributes['content']
+          ?.split(',')
+          .map((e) => e.trim())
+          .toList();
+    }
+
+    final countryMeta =
+        soup.find('meta', attrs: {'itemprop': 'contentLocation'}) ??
+        soup.find('meta', attrs: {'itemprop': 'countryOfOrigin'});
+    if (countryMeta != null) {
+      countries = countryMeta.attributes['content']
+          ?.split(',')
+          .map((e) => e.trim())
+          .toList();
+    }
+
+    // Original Title
+    final originTitleEl = soup.find(
+      'meta',
+      attrs: {'itemprop': 'alternateName'},
+    );
+    originalTitle = originTitleEl?.attributes['content']?.trim();
 
     final infoBlocks =
         soup.findAll('li', class_: 'full-info__item') +
@@ -261,39 +378,129 @@ class UaflixParser {
 
     for (final block in infoBlocks) {
       final label = block.find('span')?.text.toLowerCase() ?? '';
-      final value = block.findAll('a').map((a) => a.text.trim()).toList();
-      final textValue = block.text.replaceFirst(label, '').trim();
-      RegExpMatch? ratingMatch;
+      final valueLinks = block.findAll('a').map((a) => a.text.trim()).toList();
+      final textValue = block.text
+          .replaceFirst(block.find('span')?.text ?? '', '')
+          .trim();
+      RegExpMatch? rMatch;
 
       if (label.contains('imdb')) {
-        ratingMatch = RegExp(r'([\d.]+)').firstMatch(textValue);
-        if (ratingMatch != null) {
-          rating = double.tryParse(ratingMatch.group(1)!);
-          ratingSource = 'IMDb';
-        }
+        rMatch = RegExp(r'([\d.]+)').firstMatch(textValue);
+        if (rMatch != null) imdbRating = double.tryParse(rMatch.group(1)!);
       } else if (label.contains('tmdb')) {
-        ratingMatch = RegExp(r'([\d.]+)').firstMatch(textValue);
-        if (ratingMatch != null) {
-          rating = double.tryParse(ratingMatch.group(1)!);
-          ratingSource = 'TMDB';
-        }
+        rMatch = RegExp(r'([\d.]+)').firstMatch(textValue);
+        // Map TMDB to site rating or similar if needed, or just prioritize IMDb
       } else if (label.contains('рік')) {
-        year = int.tryParse(textValue.replaceAll(RegExp(r'[^\d]'), ''));
+        year ??= int.tryParse(textValue.replaceAll(RegExp(r'[^\d]'), ''));
       } else if (label.contains('жанр')) {
-        genres = value.isNotEmpty ? value : [textValue];
+        genres ??= valueLinks.isNotEmpty ? valueLinks : [textValue];
       } else if (label.contains('країн')) {
-        countries = value.isNotEmpty ? value : [textValue];
+        countries ??= valueLinks.isNotEmpty ? valueLinks : [textValue];
       } else if (label.contains('режис')) {
-        director = value.isNotEmpty ? value.first : textValue;
+        director ??= valueLinks.isNotEmpty ? valueLinks.first : textValue;
       } else if (label.contains('актор')) {
-        actors = value.isNotEmpty
-            ? value
-            : textValue.split(',').map((s) => s.trim()).toList();
+        if (actors == null || actors.isEmpty) {
+          actors = valueLinks.isNotEmpty
+              ? valueLinks
+              : textValue.split(',').map((s) => s.trim()).toList();
+        }
       } else if (label.contains('трива')) {
         final durMatch = RegExp(r'(\d+)').firstMatch(textValue);
         if (durMatch != null) {
           duration = Duration(minutes: int.parse(durMatch.group(1)!));
         }
+      }
+    }
+
+    // Generic site rating fallback
+    final siteRatingEl =
+        soup.find('div', class_: 'rating') ??
+        soup.find('span', class_: 'rating');
+    if (siteRatingEl != null) {
+      final text = siteRatingEl.text.toLowerCase();
+      if (!text.contains('imdb')) {
+        final rawRating = siteRatingEl.text
+            .replaceAll(',', '.')
+            .replaceAll(RegExp(r'[^\d.]'), '');
+        if (rawRating.isNotEmpty) {
+          siteRating = double.tryParse(rawRating);
+        }
+      }
+    }
+
+    // JSON-LD Rating Fallback
+    if (imdbRating == null) {
+      final jsonLd = soup.find(
+        'script',
+        attrs: {'type': 'application/ld+json'},
+      );
+      if (jsonLd != null) {
+        final rMatch = RegExp(
+          r'"ratingValue":\s*"([\d.]+)"',
+        ).firstMatch(jsonLd.text);
+        if (rMatch != null) imdbRating = double.tryParse(rMatch.group(1)!);
+      }
+    }
+
+    // Regex fallbacks for missing metadata (from Python analyzer findings)
+    final bodyText = soup.text;
+
+    // Year fallback via regex
+    if (year == null) {
+      final yearMatch = RegExp(
+        r'(?:Рік виходу|Год выпуска|Year)[:\s]+(\d{4})',
+        caseSensitive: false,
+      ).firstMatch(bodyText);
+      if (yearMatch != null) {
+        year = int.tryParse(yearMatch.group(1)!);
+      }
+    }
+
+    // Countries fallback via regex
+    if (countries == null || countries.isEmpty) {
+      final countriesMatch = RegExp(
+        r'(?:Країн[аи]|Стран[аы]|Country)[:\s]+([^\n]+)',
+        caseSensitive: false,
+      ).firstMatch(bodyText);
+      if (countriesMatch != null) {
+        final countriesText = countriesMatch.group(1)!.trim();
+        // Clean up and split
+        countries = countriesText
+            .split(RegExp(r'[,]'))
+            .map((c) => c.trim())
+            .where((c) => c.isNotEmpty && c.length < 50)
+            .toList();
+      }
+    }
+
+    // Director fallback via regex
+    if (director == null || director.isEmpty) {
+      final directorMatch = RegExp(
+        r'(?:Режисер|Режиссёр|Director)[:\s]+([А-ЯЁA-Zа-яёa-z\s\.]+?)(?=\n|Актор|В ролях|$)',
+        caseSensitive: false,
+        multiLine: true,
+      ).firstMatch(bodyText);
+      if (directorMatch != null) {
+        director = directorMatch.group(1)!.trim();
+        // Limit length for sanity
+        if (director.length > 100) director = null;
+      }
+    }
+
+    // Actors fallback via regex
+    if (actors == null || actors.isEmpty) {
+      final actorsMatch = RegExp(
+        r'(?:Актор[иы]|Актёр[иы]|В ролях|Actors?)[:\s]+([^\n]+)',
+        caseSensitive: false,
+      ).firstMatch(bodyText);
+      if (actorsMatch != null) {
+        final actorsText = actorsMatch.group(1)!.trim();
+        actors = actorsText
+            .split(RegExp(r'[,]'))
+            .map((a) => a.trim())
+            .where((a) => a.isNotEmpty && a.length < 50)
+            .take(10) // Limit to first 10 actors
+            .toList();
       }
     }
 
@@ -307,10 +514,13 @@ class UaflixParser {
       id: mediaId,
       providerId: 'uaflix',
       title: title,
+      originalTitle: originalTitle,
       posterUrl: _absoluteUrl(posterUrl),
       year: year,
-      rating: rating,
-      ratingSource: ratingSource,
+      rating: imdbRating ?? siteRating,
+      ratingSource: imdbRating != null
+          ? 'IMDb'
+          : (siteRating != null ? 'Сайт' : null),
       type: type,
     );
 
@@ -410,7 +620,7 @@ class UaflixParser {
       return ContentType.anime;
     }
     if (url.contains('/dorama/')) {
-      return ContentType.series;
+      return ContentType.dorama;
     }
     return ContentType.unknown;
   }

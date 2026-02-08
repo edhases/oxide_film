@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:get_it/get_it.dart';
 import '../../data/services/settings_service.dart';
 import '../../domain/entities/ui_settings.dart';
-import '../theme/app_theme.dart';
 
 // =============================================================================
 // SETTINGS SECTION
@@ -27,10 +26,10 @@ class SettingsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      color: AppTheme.surfaceColor,
+      color: Theme.of(context).cardColor,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: AppTheme.borderColor, width: 1),
+        side: BorderSide(color: Theme.of(context).dividerColor, width: 1),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -39,12 +38,16 @@ class SettingsSection extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Row(
               children: [
-                Icon(icon, size: 20, color: AppTheme.primaryColor),
+                Icon(
+                  icon,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
                 const SizedBox(width: 8),
                 Text(
                   title,
                   style: TextStyle(
-                    color: AppTheme.primaryColor,
+                    color: Theme.of(context).colorScheme.primary,
                     fontWeight: FontWeight.bold,
                     fontSize: 14,
                   ),
@@ -119,25 +122,30 @@ class _SettingsTileState extends State<SettingsTile> {
           leading: Icon(
             widget.icon,
             color: widget.destructive
-                ? AppTheme.errorColor
-                : AppTheme.textSecondary,
+                ? Theme.of(context).colorScheme.error
+                : Theme.of(context).textTheme.bodySmall?.color,
           ),
           title: Text(
             widget.title,
             style: TextStyle(
-              color: widget.destructive ? AppTheme.errorColor : null,
+              color: widget.destructive
+                  ? Theme.of(context).colorScheme.error
+                  : null,
             ),
           ),
           subtitle: Text(
             widget.value,
             style: TextStyle(
               color: widget.destructive
-                  ? AppTheme.errorColor.withValues(alpha: 0.7)
-                  : AppTheme.textMuted,
+                  ? Theme.of(context).colorScheme.error.withValues(alpha: 0.7)
+                  : Theme.of(context).textTheme.bodySmall?.color,
               fontSize: 13,
             ),
           ),
-          trailing: Icon(Icons.chevron_right, color: AppTheme.textMuted),
+          trailing: Icon(
+            Icons.chevron_right,
+            color: Theme.of(context).textTheme.bodySmall?.color,
+          ),
           onTap: widget.onTap,
         ),
       ),
@@ -201,14 +209,20 @@ class _SettingsSwitchState extends State<SettingsSwitch> {
         ),
         margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
         child: SwitchListTile(
-          secondary: Icon(widget.icon, color: AppTheme.textSecondary),
+          secondary: Icon(
+            widget.icon,
+            color: Theme.of(context).textTheme.bodySmall?.color,
+          ),
           title: Text(widget.title),
           subtitle: Text(
             widget.subtitle,
-            style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+            style: TextStyle(
+              color: Theme.of(context).textTheme.bodySmall?.color,
+              fontSize: 13,
+            ),
           ),
           value: widget.value,
-          activeThumbColor: AppTheme.primaryColor,
+          activeThumbColor: Theme.of(context).colorScheme.primary,
           onChanged: widget.onChanged,
         ),
       ),
@@ -277,8 +291,10 @@ class _ProviderTileState extends State<ProviderTile> {
             height: 40,
             decoration: BoxDecoration(
               color: widget.isEnabled
-                  ? AppTheme.primaryColor.withValues(alpha: 0.15)
-                  : AppTheme.textMuted.withValues(alpha: 0.1),
+                  ? Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: 0.15)
+                  : Theme.of(context).dividerColor.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: widget.iconUrl != null
@@ -292,25 +308,28 @@ class _ProviderTileState extends State<ProviderTile> {
                       errorWidget: (_, __, ___) => Icon(
                         Icons.movie_filter,
                         color: widget.isEnabled
-                            ? AppTheme.primaryColor
-                            : AppTheme.textMuted,
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).textTheme.bodySmall?.color,
                       ),
                     ),
                   )
                 : Icon(
                     Icons.movie_filter,
                     color: widget.isEnabled
-                        ? AppTheme.primaryColor
-                        : AppTheme.textMuted,
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).textTheme.bodySmall?.color,
                   ),
           ),
           title: Text(widget.name),
           subtitle: Text(
             widget.url,
-            style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+            style: TextStyle(
+              color: Theme.of(context).textTheme.bodySmall?.color,
+              fontSize: 12,
+            ),
           ),
           value: widget.isEnabled,
-          activeThumbColor: AppTheme.primaryColor,
+          activeThumbColor: Theme.of(context).colorScheme.primary,
           onChanged: widget.onChanged,
         ),
       ),
@@ -341,7 +360,10 @@ class EmptyProviders extends StatelessWidget {
                 const Text('Немає провайдерів'),
                 Text(
                   'Додайте джерела контенту',
-                  style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                  style: TextStyle(
+                    color: Theme.of(context).textTheme.bodySmall?.color,
+                    fontSize: 13,
+                  ),
                 ),
               ],
             ),
@@ -385,7 +407,7 @@ class SelectionSheet<T> extends StatelessWidget {
             width: 40,
             height: 4,
             decoration: BoxDecoration(
-              color: AppTheme.textMuted.withValues(alpha: 0.3),
+              color: Theme.of(context).dividerColor,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -438,27 +460,37 @@ class SelectionItem extends StatelessWidget {
         height: 44,
         decoration: BoxDecoration(
           color: isSelected
-              ? AppTheme.primaryColor.withValues(alpha: 0.15)
-              : AppTheme.textMuted.withValues(alpha: 0.1),
+              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.15)
+              : Theme.of(context).dividerColor.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Icon(
           icon,
-          color: isSelected ? AppTheme.primaryColor : AppTheme.textSecondary,
+          color: isSelected
+              ? Theme.of(context).colorScheme.primary
+              : Theme.of(context).textTheme.bodySmall?.color,
         ),
       ),
       title: Text(
         title,
         style: TextStyle(
           fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-          color: isSelected ? AppTheme.primaryColor : null,
+          color: isSelected ? Theme.of(context).colorScheme.primary : null,
         ),
       ),
       subtitle: subtitle != null
-          ? Text(subtitle!, style: TextStyle(color: AppTheme.textMuted))
+          ? Text(
+              subtitle!,
+              style: TextStyle(
+                color: Theme.of(context).textTheme.bodySmall?.color,
+              ),
+            )
           : null,
       trailing: isSelected
-          ? Icon(Icons.check_circle, color: AppTheme.primaryColor)
+          ? Icon(
+              Icons.check_circle,
+              color: Theme.of(context).colorScheme.primary,
+            )
           : null,
     );
   }

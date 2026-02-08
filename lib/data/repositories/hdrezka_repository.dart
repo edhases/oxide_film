@@ -8,13 +8,15 @@ import '../../core/network/api_client.dart';
 import '../../core/utils/logger.dart';
 import '../../domain/entities/entities.dart';
 import '../parsers/hdrezka_parser.dart';
+import '../../data/services/user_agent_service.dart';
 
 class HdrezkaRepository {
   static const String _tag = 'HdrezkaRepository';
   final ApiClient _client;
+  final UserAgentService _uaService;
   String _mirror = 'https://hdrezka-home.tv'; // Default mirror
 
-  HdrezkaRepository(this._client);
+  HdrezkaRepository(this._client, this._uaService);
 
   String get mirror => _mirror;
 
@@ -106,7 +108,9 @@ class HdrezkaRepository {
   }
 
   Future<MediaDetails> getDetails(String id) async {
-    final html = await _client.get('$_mirror/$id.html');
+    final url = '$_mirror/$id.html';
+    Logger.d('getDetails: id=$id, url=$url', tag: _tag);
+    final html = await _client.get(url);
     return compute(_parseDetailsCompute, {
       'html': html,
       'id': id,
@@ -135,7 +139,6 @@ class HdrezkaRepository {
 
       final csrfToken = params['csrf_token'] as String?;
       final dataId = params['data_id'] as String? ?? '';
-      final translatorId = params['translator_id'] as String? ?? '';
       final translators = Map<String, String>.from(params['translators'] ?? {});
 
       if (dataId.isEmpty) {
@@ -146,15 +149,18 @@ class HdrezkaRepository {
       // Parser returns '238' default if missing.
 
       if (season != null && episode != null) {
-        await _getEpisodeStreams(
-          dataId,
-          translatorId,
-          season,
-          episode,
-          translators[translatorId] ?? 'Оригінал',
-          sources,
-          csrfToken: csrfToken,
-        );
+        // Iterate through all translators for episodes too, just like for movies
+        for (final entry in translators.entries) {
+          await _getEpisodeStreams(
+            dataId,
+            entry.key,
+            season,
+            episode,
+            entry.value,
+            sources,
+            csrfToken: csrfToken,
+          );
+        }
       } else {
         for (final entry in translators.entries) {
           await _getMovieStreams(
@@ -181,11 +187,18 @@ class HdrezkaRepository {
     List<StreamSource> sources, {
     String? csrfToken,
   }) async {
+    Logger.d(
+      'Requesting movie stream: id=$dataId, translator=$translatorId ($voiceover)',
+      tag: _tag,
+    );
     try {
       final requestData = <String, dynamic>{
         'id': dataId,
         'translator_id': translatorId,
         'action': 'get_movie',
+        'is_camrip': '0',
+        'is_ads': '0',
+        'is_director': '0',
       };
 
       if (csrfToken != null) {
@@ -197,11 +210,12 @@ class HdrezkaRepository {
         data: requestData,
         options: Options(
           headers: {
+            'User-Agent': _uaService.getChromeUserAgent(),
             'X-Requested-With': 'XMLHttpRequest',
             'Referer': '$_mirror/',
             'Origin': _mirror,
             'Accept': 'application/json, text/javascript, */*; q=0.01',
-            'X-CSRF-TOKEN': ?csrfToken,
+            'X-CSRF-TOKEN': csrfToken,
           },
           contentType: Headers.formUrlEncodedContentType,
         ),
@@ -232,6 +246,9 @@ class HdrezkaRepository {
         'season': season.toString(),
         'episode': episode.toString(),
         'action': 'get_stream',
+        'is_camrip': '0',
+        'is_ads': '0',
+        'is_director': '0',
       };
 
       if (csrfToken != null) {
@@ -243,11 +260,12 @@ class HdrezkaRepository {
         data: requestData,
         options: Options(
           headers: {
+            'User-Agent': _uaService.getChromeUserAgent(),
             'X-Requested-With': 'XMLHttpRequest',
             'Referer': '$_mirror/',
             'Origin': _mirror,
             'Accept': 'application/json, text/javascript, */*; q=0.01',
-            'X-CSRF-TOKEN': ?csrfToken,
+            'X-CSRF-TOKEN': csrfToken,
           },
           contentType: Headers.formUrlEncodedContentType,
         ),

@@ -2,6 +2,15 @@
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:oxide_film/data/services/watch_party_service.dart';
+import 'package:oxide_film/data/services/pocketbase_service.dart';
+import 'package:oxide_film/data/services/settings_service.dart';
+
+class MockPocketBaseService extends Fake implements PocketBaseService {}
+
+class MockSettingsService extends Fake implements SettingsService {
+  @override
+  SettingsState get state => const SettingsState();
+}
 
 class _FakeBackend implements WatchPartyBackend {
   late Function(WatchPartyMessage) _onMessage;
@@ -35,6 +44,8 @@ class _FakeBackend implements WatchPartyBackend {
   }
 
   void emit(WatchPartyMessage message) {
+    // _onMessage might not be initialized if connect wasn't called
+    // In this test, connect is called by joinRoom/hostRoom
     _onMessage(message);
   }
 }
@@ -43,7 +54,11 @@ void main() {
   group('WatchPartyService (fake backend)', () {
     test('client reacts to play and pause messages from backend', () async {
       final fake = _FakeBackend();
-      final service = WatchPartyService(backendFactory: (_) => fake);
+      final service = WatchPartyService(
+        pocketBase: MockPocketBaseService(),
+        settings: MockSettingsService(),
+        backendFactory: (_) => fake,
+      );
 
       bool callbackCalled = false;
       bool? lastPlayState;
@@ -77,14 +92,18 @@ void main() {
       expect(callbackCalled, isTrue);
       expect(lastPlayState, isFalse);
 
-      await service.disconnect();
+      await service.leaveRoom();
     });
 
     test(
       'seek message updates position and triggers onSeek callback',
       () async {
         final fake = _FakeBackend();
-        final service = WatchPartyService(backendFactory: (_) => fake);
+        final service = WatchPartyService(
+          pocketBase: MockPocketBaseService(),
+          settings: MockSettingsService(),
+          backendFactory: (_) => fake,
+        );
 
         Duration? seekedTo;
         service.onSeek = (pos) => seekedTo = pos;
@@ -102,7 +121,7 @@ void main() {
 
         expect(seekedTo, Duration(milliseconds: 45000));
 
-        await service.disconnect();
+        await service.leaveRoom();
       },
     );
   });

@@ -74,6 +74,7 @@ class HistoryDao {
     String? voiceover,
     double? rating,
     String? ratingSource,
+    DateTime? watchedAt, // Optional: for cloud sync merge
   }) async {
     // Manually check for existing entry to handle NULLs in Unique Keys correctly
     final existing =
@@ -106,7 +107,7 @@ class HistoryDao {
           voiceover: Value(voiceover),
           rating: Value(rating),
           ratingSource: Value(ratingSource),
-          watchedAt: Value(DateTime.now()),
+          watchedAt: Value(watchedAt ?? DateTime.now()),
         ),
       );
     } else {

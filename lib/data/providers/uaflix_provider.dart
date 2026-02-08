@@ -1,3 +1,4 @@
+import '../../core/constants/content_constants.dart';
 import '../../core/network/api_client.dart';
 import '../../domain/entities/entities.dart';
 import '../../domain/repositories/content_provider.dart';
@@ -39,6 +40,7 @@ class UaflixProvider implements ContentProvider {
     ContentType.series,
     ContentType.cartoon,
     ContentType.anime,
+    ContentType.dorama,
   ];
 
   @override
@@ -92,6 +94,36 @@ class UaflixProvider implements ContentProvider {
   @override
   Future<MediaDetails> getDetails(String mediaId) {
     return _repository.getDetails(mediaId);
+  }
+
+  @override
+  Future<List<MediaItem>> getSimilar(String id, MediaDetails details) async {
+    if (details.genres == null || details.genres!.isEmpty) {
+      return [];
+    }
+
+    try {
+      // Logic: try to find a matching category for the first genre
+      // UAFlix uses 'films/slug' or 'serials/slug'
+      final typePrefix = details.item.type == ContentType.series
+          ? 'serials'
+          : 'films';
+      final genreDisplayName = details.genres!.first;
+
+      // Use ContentGenres to get the slug.
+      // Note: UAFlix might use slightly different slugs, but standard ones often work.
+      // We might need a specific mapping if standard slugs fail.
+      // For now, use standard slug.
+      final slug = ContentGenres.getSlug(genreDisplayName);
+      final categoryPath = '$typePrefix/$slug';
+
+      final items = await getByCategory(categoryPath, page: 1);
+
+      // Filter out the current item
+      return items.where((item) => item.id != id).toList();
+    } catch (e) {
+      return [];
+    }
   }
 
   @override

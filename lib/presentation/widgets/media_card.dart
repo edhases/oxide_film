@@ -1,11 +1,12 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:get_it/get_it.dart';
 
 import 'package:flutter/services.dart';
 import '../../data/services/settings_service.dart';
+import '../../data/services/download_service.dart';
 import '../../domain/entities/entities.dart';
-import '../theme/app_theme.dart';
 import 'common/skeleton.dart';
 import 'rating_badge.dart';
 
@@ -72,7 +73,10 @@ class _MediaCardState extends State<MediaCard> {
         onEnter: (_) => setState(() => _isHovered = true),
         onExit: (_) => setState(() => _isHovered = false),
         child: GestureDetector(
-          onTap: widget.onTap,
+          onTap: () {
+            HapticFeedback.selectionClick();
+            widget.onTap?.call();
+          },
           child: AnimatedContainer(
             duration: animationsEnabled
                 ? const Duration(milliseconds: 200)
@@ -141,29 +145,42 @@ class _MediaCardState extends State<MediaCard> {
   }
 
   Widget _buildPoster() {
-    if (widget.item.posterUrl != null) {
-      return CachedNetworkImage(
-        imageUrl: widget.item.posterUrl!,
-        fit: BoxFit.cover,
-        memCacheHeight: 400, // Optimize memory usage for lists
-        placeholder: (context, url) => const Skeleton(
-          width: double.infinity,
-          height: double.infinity,
-          borderRadius: 0,
-        ),
-        errorWidget: (context, url, error) => _buildPlaceholder(),
-      );
-    }
-    return _buildPlaceholder();
+    final localPath = GetIt.I<DownloadService>().getLocalPosterPath(
+      widget.item.id,
+      widget.item.providerId,
+    );
+
+    return Hero(
+      tag: 'media_poster_${widget.item.id}',
+      child: localPath != null
+          ? Image.file(File(localPath), fit: BoxFit.cover)
+          : widget.item.posterUrl != null
+          ? CachedNetworkImage(
+              imageUrl: widget.item.posterUrl!,
+              fit: BoxFit.cover,
+              memCacheHeight: 400,
+              placeholder: (context, url) => const Skeleton(
+                width: double.infinity,
+                height: double.infinity,
+                borderRadius: 0,
+              ),
+              errorWidget: (context, url, error) => _buildPlaceholder(),
+            )
+          : _buildPlaceholder(),
+    );
   }
 
   Widget _buildPlaceholder() {
     return Container(
-      color: AppTheme.darkCard,
+      color: Theme.of(context).cardColor,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(_getTypeIcon(), size: 48, color: AppTheme.textMuted),
+          Icon(
+            _getTypeIcon(),
+            size: 48,
+            color: Theme.of(context).textTheme.bodySmall?.color,
+          ),
           const SizedBox(height: 8),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -172,8 +189,8 @@ class _MediaCardState extends State<MediaCard> {
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppTheme.textSecondary,
+              style: TextStyle(
+                color: Theme.of(context).textTheme.bodyMedium?.color,
                 fontSize: 12,
               ),
             ),

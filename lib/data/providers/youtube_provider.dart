@@ -97,6 +97,12 @@ class YouTubeProvider implements ContentProvider {
   }
 
   @override
+  Future<List<MediaItem>> getSimilar(String id, MediaDetails details) async {
+    // YouTube provider integration is basic, no specific similar logic yet
+    return [];
+  }
+
+  @override
   Future<List<StreamSource>> getStreams(
     String id, {
     int? season,

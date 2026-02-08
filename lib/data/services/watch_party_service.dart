@@ -2,14 +2,15 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:pocketbase/pocketbase.dart' hide SettingsService;
 import 'package:peerdart/peerdart.dart';
 import 'package:get_it/get_it.dart';
+import 'pocketbase_service.dart';
 import 'settings_service.dart';
 import '../../core/utils/logger.dart';
 
 /// Watch party connection backend type
-enum WatchPartyBackendType { supabase, peerdart, none }
+enum WatchPartyBackendType { pocketbase, peerdart, none }
 
 /// Room state for watch party
 enum WatchPartyState { idle, hosting, joining, connected, error }
@@ -136,10 +137,17 @@ abstract class WatchPartyBackend {
   void sendMessage(String targetId, WatchPartyMessage message);
 }
 
-/// Supabase Backend Implementation
-class _SupabaseBackend implements WatchPartyBackend {
-  RealtimeChannel? _channel;
-  final String _tag = 'WatchParty_Supabase';
+/// PocketBase Backend Implementation
+class _PocketBaseBackend implements WatchPartyBackend {
+  final PocketBaseService _pocketBase;
+  UnsubscribeFunc? _messageSub;
+  UnsubscribeFunc? _roomSub;
+  String? _roomId;
+  String? _roomCode;
+  String? _myId;
+  final String _tag = 'WatchParty_PocketBase';
+
+  _PocketBaseBackend(this._pocketBase);
 
   @override
   Future<void> connect({
@@ -150,218 +158,180 @@ class _SupabaseBackend implements WatchPartyBackend {
     required Function(WatchPartyMessage) onMessage,
   }) async {
     try {
-      final supabase = Supabase.instance.client;
-      _channel = supabase.channel(
-        'watch_party_$roomCode',
-        opts: const RealtimeChannelConfig(self: true),
-      );
+      _roomCode = roomCode;
+      _myId = myId;
 
-      final completer = Completer<void>();
+      if (isHost) {
+        // Create room
+        Logger.d('Creating room: $roomCode', tag: _tag);
+        final room = await _pocketBase.pb
+            .collection('watch_party_rooms')
+            .create(
+              body: {
+                'room_code': roomCode,
+                'host_id': myId,
+                'host_name': myName,
+                'participants': [
+                  {
+                    'id': myId,
+                    'name': myName,
+                    'joinedAt': DateTime.now().toIso8601String(),
+                  },
+                ],
+                'current_position': 0,
+                'is_playing': false,
+                'playback_speed': 1.0,
+              },
+            );
+        _roomId = room.id;
+        Logger.i('✅ Room created: $_roomId', tag: _tag);
+      } else {
+        // Find and join room
+        Logger.d('Joining room: $roomCode', tag: _tag);
+        final rooms = await _pocketBase.pb
+            .collection('watch_party_rooms')
+            .getList(filter: 'room_code = "$roomCode"');
 
-      // Presence handling
-      _channel!.onPresenceSync((payload) {
-        Logger.d('🔄 Presence Sync Event. Payload: $payload', tag: _tag);
+        if (rooms.items.isEmpty) {
+          throw Exception('Room not found: $roomCode');
+        }
 
-        try {
-          final state = _channel!.presenceState();
-          Logger.d('  -> Current Raw State: $state', tag: _tag);
-          // In Supabase Flutter v2, presenceState() typically returns List<SinglePresenceState>
-          // But error said "entries" not defined on List.
-          // So we should iterate the list directly.
+        _roomId = rooms.items.first.id;
+        final currentParticipants =
+            rooms.items.first.data['participants'] as List? ?? [];
 
-          for (final presence in state) {
-            // presence is SinglePresenceState?
-            // It likely has 'payload' map.
-            // Or maybe the list itself contains the state objects.
-            // Let's assume dynamic access to avoid strict type errors for now
-            final payloads = (presence as dynamic).payloads as List<dynamic>?;
+        // Add ourselves to participants
+        final updatedParticipants = [
+          ...currentParticipants,
+          {
+            'id': myId,
+            'name': myName,
+            'joinedAt': DateTime.now().toIso8601String(),
+          },
+        ];
 
-            if (payloads != null) {
-              for (final payload in payloads) {
-                final pData = payload as Map<String, dynamic>;
-                final payloadId = pData['user_id'];
-                if (payloadId != null && payloadId != myId) {
-                  onMessage(
-                    WatchPartyMessage(
-                      type: WatchPartyMessageType.userJoined,
-                      senderId: payloadId,
-                      senderName: pData['name'],
-                      timestamp: DateTime.parse(
-                        pData['at'] ?? DateTime.now().toIso8601String(),
-                      ),
-                    ),
-                  );
-                }
+        await _pocketBase.pb
+            .collection('watch_party_rooms')
+            .update(_roomId!, body: {'participants': updatedParticipants});
+
+        Logger.i('✅ Joined room: $_roomId', tag: _tag);
+
+        // Notify others that we joined
+        onMessage(
+          WatchPartyMessage(
+            type: WatchPartyMessageType.userJoined,
+            senderId: myId,
+            senderName: myName,
+          ),
+        );
+      }
+
+      // Subscribe to messages
+      _messageSub = await _pocketBase.pb
+          .collection('watch_party_messages')
+          .subscribe('*', (e) {
+            if (e.action == 'create' && e.record != null) {
+              final record = e.record!;
+              final senderId = record.data['sender_id'] as String?;
+
+              // Ignore our own messages
+              if (senderId == myId) return;
+
+              try {
+                final message = WatchPartyMessage(
+                  type: WatchPartyMessageType.values.firstWhere(
+                    (t) => t.name == record.data['action'],
+                    orElse: () => WatchPartyMessageType.unknown,
+                  ),
+                  senderId: senderId ?? '',
+                  senderName: record.data['sender_name'] as String?,
+                  payload: record.data['payload'],
+                  timestamp: DateTime.parse(record.get<String>('created')),
+                );
+
+                Logger.d('Received message: ${message.type.name}', tag: _tag);
+                onMessage(message);
+              } catch (e) {
+                Logger.w('Failed to parse message: $e', tag: _tag);
               }
             }
-          }
-        } catch (e) {
-          Logger.w('Presence sync error: $e', tag: _tag);
-        }
-      });
+          }, filter: 'room_code = "$roomCode"');
 
-      _channel!.onPresenceJoin((payload) {
-        Logger.d('Presence join: $payload', tag: _tag);
-        try {
-          final newPresences = payload.newPresences; // List<Presence>
-          for (final presence in newPresences) {
-            // Each presence has payloads?
-            // Based on Supabase docs:
-            final payloads = (presence as dynamic).payloads as List<dynamic>?;
-            if (payloads != null) {
-              for (final p in payloads) {
-                if (p['user_id'] != myId) {
-                  onMessage(
-                    WatchPartyMessage(
-                      type: WatchPartyMessageType.userJoined,
-                      senderId: p['user_id'],
-                      senderName: p['name'],
-                    ),
-                  );
-                }
-              }
-            }
-          }
-        } catch (e) {
-          Logger.w('Presence join error: $e', tag: _tag);
-        }
-      });
-
-      _channel!.onPresenceLeave((payload) {
-        Logger.d('Presence leave: $payload', tag: _tag);
-        try {
-          final leftPresences = payload.leftPresences;
-          for (final presence in leftPresences) {
-            final payloads = (presence as dynamic).payloads as List<dynamic>?;
-            if (payloads != null) {
-              for (final p in payloads) {
-                if (p['user_id'] != myId) {
-                  onMessage(
-                    WatchPartyMessage(
-                      type: WatchPartyMessageType.userLeft,
-                      senderId: p['user_id'],
-                    ),
-                  );
-                }
-              }
-            }
-          }
-        } catch (e) {
-          Logger.w('Presence leave error: $e', tag: _tag);
-        }
-      });
-
-      _channel!.onBroadcast(
-        event: 'sync',
-        callback: (payload) {
-          try {
-            final message = WatchPartyMessage.fromJson(payload);
-            if (message.senderId == myId) return;
-            onMessage(message);
-          } catch (e) {
-            Logger.w('Failed to parse broadcast: $e', tag: _tag);
-          }
-        },
-      );
-
-      _channel!.subscribe((status, error) {
-        Logger.d('Channel status changed: $status', tag: _tag);
-
-        if (status == RealtimeSubscribeStatus.subscribed) {
-          Logger.i(
-            '✅ SUBSCRIBED to Watch Party Channel: watch_party_$roomCode',
-            tag: _tag,
-          );
-
-          // Track presence
-          _channel!
-              .track({
-                'user_id': myId,
-                'name': myName,
-                'at': DateTime.now().toIso8601String(),
-              })
-              .then(
-                (_) => Logger.d(
-                  'Presence track sent for $myName ($myId)',
-                  tag: _tag,
-                ),
-              )
-              .catchError((err) {
-                Logger.e('Failed to track presence', tag: _tag, error: err);
-                return null;
-              });
-
-          if (!completer.isCompleted) completer.complete();
-        } else if (status == RealtimeSubscribeStatus.closed) {
-          Logger.w('Channel CLOSED', tag: _tag);
-        }
-
-        if (error != null) {
-          Logger.e('Channel ERROR: $error', tag: _tag);
-          if (!completer.isCompleted) completer.completeError(error);
-        }
-      });
-
-      // Periodic probe to check presence state
-      // This is for debugging purposes to see what Supabase thinks the state is
-      Timer.periodic(const Duration(seconds: 5), (timer) {
-        if (_channel == null) {
-          timer.cancel();
-          return;
-        }
-        try {
-          // Direct access to internal state for debugging if possible,
-          // otherwise just trigger logs implies we are alive.
-          // Note: presenceState() returns the local view of state.
-          final state = _channel?.presenceState();
-          Logger.d(
-            '🔍 Periodic Presence Check: ${state?.length ?? 0} entries',
-            tag: _tag,
-          );
-          if (state != null && state.isNotEmpty) {
-            for (var entry in state) {
-              Logger.d('  - Entry: $entry', tag: _tag);
-            }
-          }
-        } catch (e) {
-          // Ignore
-        }
-      });
-
-      // Wait for subscription to be active
-      await completer.future.timeout(
-        const Duration(seconds: 15),
-        onTimeout: () {
-          Logger.w(
-            'Supabase subscription timed out (15s), proceeding anyway',
-            tag: _tag,
-          );
-          if (!completer.isCompleted) completer.complete();
-        },
-      );
+      Logger.i('✅ Subscribed to messages', tag: _tag);
     } catch (e) {
-      Logger.e('Supabase connection failed', tag: _tag, error: e);
+      Logger.e('PocketBase connection failed', tag: _tag, error: e);
       rethrow;
     }
   }
 
   @override
   Future<void> disconnect() async {
-    await _channel?.unsubscribe();
-    _channel = null;
-    // Participants cleared in service reset, handled by caller mostly but backend should be clean
+    Logger.d('Disconnecting...', tag: _tag);
+
+    // Unsubscribe from realtime
+    _messageSub?.call();
+    _roomSub?.call();
+
+    // Remove from participants
+    if (_roomId != null && _myId != null) {
+      try {
+        final room = await _pocketBase.pb
+            .collection('watch_party_rooms')
+            .getOne(_roomId!);
+        final participants = (room.data['participants'] as List? ?? [])
+            .where((p) => p['id'] != _myId)
+            .toList();
+
+        if (participants.isEmpty) {
+          // Delete room if empty
+          await _pocketBase.pb.collection('watch_party_rooms').delete(_roomId!);
+          Logger.d('Room deleted (no participants)', tag: _tag);
+        } else {
+          await _pocketBase.pb
+              .collection('watch_party_rooms')
+              .update(_roomId!, body: {'participants': participants});
+          Logger.d('Removed from participants', tag: _tag);
+        }
+      } catch (e) {
+        Logger.w('Failed to cleanup room: $e', tag: _tag);
+      }
+    }
+
+    _roomId = null;
+    _roomCode = null;
+    _myId = null;
   }
 
   @override
   void sendBroadcast(WatchPartyMessage message) {
-    _channel?.sendBroadcastMessage(event: 'sync', payload: message.toJson());
+    if (_roomCode == null) {
+      Logger.w('Cannot send broadcast: not connected', tag: _tag);
+      return;
+    }
+
+    _pocketBase.pb
+        .collection('watch_party_messages')
+        .create(
+          body: {
+            'room_code': _roomCode,
+            'sender_id': message.senderId,
+            'sender_name': message.senderName,
+            'action': message.type.name,
+            'payload': message.payload,
+          },
+        )
+        .then(
+          (_) {},
+          onError: (e) {
+            Logger.w('Failed to send broadcast: $e', tag: _tag);
+          },
+        );
   }
 
   @override
   void sendMessage(String targetId, WatchPartyMessage message) {
-    // Supabase broadcast goes to everyone, we can't easily target one user
-    // without private channels or filtering on client side.
-    // For now, we broadcast everything.
+    // PocketBase doesn't support direct messaging
+    // We broadcast everything and clients filter
     sendBroadcast(message);
   }
 }
@@ -572,23 +542,23 @@ class WatchPartyService extends ChangeNotifier {
   SyncCorrectionMode get correctionMode => _correctionMode;
   bool get isSynced => _correctionMode == SyncCorrectionMode.none;
 
-  // ... (inside class)
-
   // Dependency Injection for testing
+  final PocketBaseService _pocketBase;
   final WatchPartyBackend Function(WatchPartyBackendType)? _backendFactory;
 
   WatchPartyService({
+    required PocketBaseService pocketBase,
+    required SettingsService settings,
     WatchPartyBackend Function(WatchPartyBackendType)? backendFactory,
-  }) : _backendFactory = backendFactory {
-    _loadName();
+  }) : _pocketBase = pocketBase,
+       _backendFactory = backendFactory {
+    _loadName(settings);
   }
 
-  void _loadName() {
-    try {
-      final settings = GetIt.I<SettingsService>();
-      _myName = settings.state.watchPartyName;
-    } catch (e) {
-      Logger.w('Failed to load name from settings', tag: _tag);
+  Future<void> _loadName(SettingsService settings) async {
+    final savedName = settings.state.watchPartyName;
+    if (savedName.isNotEmpty) {
+      _myName = savedName;
     }
   }
 
@@ -629,7 +599,7 @@ class WatchPartyService extends ChangeNotifier {
     // 1. Try Supabase
     try {
       Logger.i('Hosting with Supabase: $roomCode', tag: _tag);
-      await _initBackend(WatchPartyBackendType.supabase, roomCode);
+      await _initBackend(WatchPartyBackendType.pocketbase, roomCode);
     } catch (e) {
       Logger.w(
         'Supabase hosting failed ($e), falling back to PeerDart',
@@ -706,7 +676,7 @@ class WatchPartyService extends ChangeNotifier {
     // 1. Try Supabase
     try {
       Logger.i('Joining with Supabase: $_currentRoomCode', tag: _tag);
-      await _initBackend(WatchPartyBackendType.supabase, _currentRoomCode!);
+      await _initBackend(WatchPartyBackendType.pocketbase, _currentRoomCode!);
     } catch (e) {
       Logger.w(
         'Supabase join failed ($e), falling back to PeerDart',
@@ -767,8 +737,8 @@ class WatchPartyService extends ChangeNotifier {
 
     if (_backendFactory != null) {
       _backend = _backendFactory(type);
-    } else if (type == WatchPartyBackendType.supabase) {
-      _backend = _SupabaseBackend();
+    } else if (type == WatchPartyBackendType.pocketbase) {
+      _backend = _PocketBaseBackend(_pocketBase);
     } else {
       _backend = _PeerDartBackend();
     }
@@ -814,6 +784,7 @@ class WatchPartyService extends ChangeNotifier {
             joinedAt: DateTime.now(),
           ),
         );
+        notifyListeners(); // Notify UI about new participant
 
         // Host sends sync to new user
         if (_isHost) {
@@ -1020,6 +991,7 @@ class WatchPartyService extends ChangeNotifier {
     _participants.clear();
     _chatMessages.clear();
     _isHost = false;
+    _currentRoomCode = null; // Reset room code
     _state = WatchPartyState.idle;
     notifyListeners();
   }

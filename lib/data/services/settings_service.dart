@@ -117,6 +117,9 @@ class SettingsState {
   final String deviceTypeOverride; // 'auto', 'phone', 'tablet', 'desktop', 'tv'
   final bool newEpisodeNotify;
   final bool updateNotify;
+  final int fullscreenTransitionDelay; // milliseconds
+  final String downloadPath;
+  final bool onlyWifiDownload;
 
   const SettingsState({
     this.theme = AppThemeMode.dark,
@@ -140,6 +143,9 @@ class SettingsState {
     this.deviceTypeOverride = 'auto',
     this.newEpisodeNotify = true,
     this.updateNotify = true,
+    this.fullscreenTransitionDelay = 200,
+    this.downloadPath = '',
+    this.onlyWifiDownload = true,
   });
 
   SettingsState copyWith({
@@ -163,6 +169,9 @@ class SettingsState {
     String? deviceTypeOverride,
     bool? newEpisodeNotify,
     bool? updateNotify,
+    int? fullscreenTransitionDelay,
+    String? downloadPath,
+    bool? onlyWifiDownload,
   }) {
     return SettingsState(
       theme: theme ?? this.theme,
@@ -185,6 +194,10 @@ class SettingsState {
       deviceTypeOverride: deviceTypeOverride ?? this.deviceTypeOverride,
       newEpisodeNotify: newEpisodeNotify ?? this.newEpisodeNotify,
       updateNotify: updateNotify ?? this.updateNotify,
+      fullscreenTransitionDelay:
+          fullscreenTransitionDelay ?? this.fullscreenTransitionDelay,
+      downloadPath: downloadPath ?? this.downloadPath,
+      onlyWifiDownload: onlyWifiDownload ?? this.onlyWifiDownload,
     );
   }
 
@@ -267,6 +280,7 @@ class SettingsService extends ChangeNotifier {
         showYears: settings['show_years'] != 'false',
         animationsEnabled: settings['animations_enabled'] != 'false',
         blurBackgrounds: settings['blur_backgrounds'] != 'false',
+        gridColumns: int.tryParse(settings['grid_columns'] ?? '') ?? 0,
       ),
       // New extended settings
       defaultSpeed: double.tryParse(settings['default_speed'] ?? '') ?? 1.0,
@@ -277,6 +291,10 @@ class SettingsService extends ChangeNotifier {
       deviceTypeOverride: settings['device_type_override'] ?? 'auto',
       newEpisodeNotify: settings['new_episode_notify'] != 'false',
       updateNotify: settings['update_notify'] != 'false',
+      fullscreenTransitionDelay:
+          int.tryParse(settings['fullscreen_transition_delay'] ?? '') ?? 200,
+      downloadPath: settings['download_path'] ?? '',
+      onlyWifiDownload: settings['only_wifi_download'] != 'false',
     );
     notifyListeners();
   }
@@ -389,6 +407,11 @@ class SettingsService extends ChangeNotifier {
     await _settingsDao.setSetting('blur_backgrounds', value.toString());
   }
 
+  /// Set grid columns
+  Future<void> setGridColumns(int columns) async {
+    await _settingsDao.setSetting('grid_columns', columns.toString());
+  }
+
   // ============================================================================
   // EXTENDED SETTINGS
   // ============================================================================
@@ -431,6 +454,24 @@ class SettingsService extends ChangeNotifier {
   /// Set update notifications
   Future<void> setUpdateNotify(bool value) async {
     await _settingsDao.setSetting('update_notify', value.toString());
+  }
+
+  /// Set fullscreen transition delay
+  Future<void> setFullscreenTransitionDelay(int milliseconds) async {
+    await _settingsDao.setSetting(
+      'fullscreen_transition_delay',
+      milliseconds.toString(),
+    );
+  }
+
+  /// Set download path
+  Future<void> setDownloadPath(String path) async {
+    await _settingsDao.setSetting('download_path', path);
+  }
+
+  /// Set only wifi download
+  Future<void> setOnlyWifiDownload(bool value) async {
+    await _settingsDao.setSetting('only_wifi_download', value.toString());
   }
 
   // ============================================================================

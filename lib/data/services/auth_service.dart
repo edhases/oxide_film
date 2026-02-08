@@ -1,52 +1,74 @@
+import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-
+import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/utils/logger.dart';
+import 'pocketbase_service.dart';
 
-/// Authentication service using Supabase Auth
+/// Authentication service using PocketBase
+///
+/// Note: Most cloud sync functionality (watch history, favorites) has been
+/// moved to HistoryService and FavoritesService for offline-first approach.
+/// This service now only handles authentication.
 class AuthService extends ChangeNotifier {
   static const _tag = 'AuthService';
 
-  final _supabase = Supabase.instance.client;
+  final PocketBaseService _pb;
 
-  // Cached profile data
-  Map<String, dynamic>? _profile;
+  // Cached state
   bool _isLoading = false;
   String? _error;
 
   // Getters
-  User? get currentUser => _supabase.auth.currentUser;
-  String? get userId => currentUser?.id;
-  String? get userEmail => currentUser?.email;
-  bool get isAuthenticated => currentUser != null;
-  Map<String, dynamic>? get profile => _profile;
+  bool get isAuthenticated => _pb.isAuthenticated;
+  String? get userId => _pb.userId;
+  String? get userEmail => _pb.userEmail;
+  String? get userName => _pb.userName;
   bool get isLoading => _isLoading;
+  bool get isGuest => !isAuthenticated;
   String? get error => _error;
+  List<String> _linkedProviders = [];
+  List<String> get linkedProviders => _linkedProviders;
 
-  String get displayName {
-    if (_profile != null && _profile!['display_name'] != null) {
-      return _profile!['display_name'];
-    }
-    return currentUser?.email?.split('@').first ?? 'Гість';
+  /// Get current user info (for cloud sync)
+  ({String id, String email, String? name})? get currentUser {
+    if (!isAuthenticated || userId == null || userEmail == null) return null;
+    return (id: userId!, email: userEmail!, name: userName);
   }
 
-  String? get avatarUrl => _profile?['avatar_url'];
+  /// Get user profile data (for UI pages)
+  Map<String, dynamic>? get profile {
+    if (!isAuthenticated) return null;
+    final record = _pb.pb.authStore.record;
+    if (record == null) return null;
 
-  AuthService() {
-    // Listen to auth state changes
-    _supabase.auth.onAuthStateChange.listen((data) {
-      Logger.d('Auth state changed: ${data.event}', tag: _tag);
-      if (data.event == AuthChangeEvent.signedIn) {
-        _loadProfile();
-      } else if (data.event == AuthChangeEvent.signedOut) {
-        _profile = null;
-      }
-      notifyListeners();
-    });
+    return {
+      'display_name': record.data['name'] ?? userName ?? '',
+      'bio': record.data['bio'] ?? '',
+      'avatar': record.data['avatar'] ?? '',
+      'created_at': record.created,
+      // These will be computed if needed (from actual data)
+      'watched_count': 0,
+      'favorites_count': 0,
+    };
+  }
 
-    // Load profile if already authenticated
+  /// Get avatar URL from PocketBase
+  String? get avatarUrl {
+    if (!isAuthenticated) return null;
+    final record = _pb.pb.authStore.record;
+    if (record == null || record.data['avatar'] == null) return null;
+
+    // PocketBase avatar URL format
+    return '${_pb.pb.baseUrl}/api/files/${record.collectionName}/${record.id}/${record.data['avatar']}';
+  }
+
+  String get displayName => userName ?? userEmail?.split('@').first ?? 'Гість';
+
+  AuthService(this._pb) {
+    // PocketBase auth state is automatically persisted via AsyncAuthStore
     if (isAuthenticated) {
-      _loadProfile();
+      Logger.i('User already authenticated: $userEmail', tag: _tag);
     }
   }
 
@@ -61,31 +83,16 @@ class AuthService extends ChangeNotifier {
     _error = null;
 
     try {
-      final response = await _supabase.auth.signUp(
+      await _pb.signUp(
         email: email,
         password: password,
-        data: {'display_name': displayName ?? email.split('@').first},
+        name: displayName ?? email.split('@').first,
       );
-
-      if (response.user == null) {
-        throw Exception('Помилка реєстрації: користувач не створений');
-      }
-
-      Logger.i('Sign up successful for: ${response.user!.email}', tag: _tag);
-
-      // Check if email confirmation is required
-      if (response.user!.emailConfirmedAt == null) {
-        Logger.d('Email confirmation required', tag: _tag);
-      }
-
-      await _loadProfile();
-    } on AuthException catch (e) {
-      Logger.e('Sign up failed', tag: _tag, error: e);
-      _error = _translateAuthError(e.message);
-      rethrow;
+      Logger.i('Sign up successful for: $email', tag: _tag);
+      notifyListeners();
     } catch (e) {
       Logger.e('Sign up failed', tag: _tag, error: e);
-      _error = e.toString();
+      _error = _translateError(e.toString());
       rethrow;
     } finally {
       _setLoading(false);
@@ -99,27 +106,96 @@ class AuthService extends ChangeNotifier {
     _error = null;
 
     try {
-      final response = await _supabase.auth.signInWithPassword(
-        email: email,
-        password: password,
-      );
-
-      if (response.user == null) {
-        throw Exception('Помилка входу');
-      }
-
-      Logger.i('Sign in successful for: ${response.user!.email}', tag: _tag);
-      await _loadProfile();
-    } on AuthException catch (e) {
-      Logger.e('Sign in failed', tag: _tag, error: e);
-      _error = _translateAuthError(e.message);
-      rethrow;
+      await _pb.signIn(email, password);
+      Logger.i('Sign in successful for: $email', tag: _tag);
+      notifyListeners();
     } catch (e) {
       Logger.e('Sign in failed', tag: _tag, error: e);
-      _error = e.toString();
+      _error = _translateError(e.toString());
       rethrow;
     } finally {
       _setLoading(false);
+    }
+  }
+
+  /// Sign in with social provider (Google, Discord, etc.)
+  Future<void> socialSignIn(String provider) async {
+    Logger.i('Attempting social sign in for provider: $provider', tag: _tag);
+    _setLoading(true);
+    _error = null;
+
+    try {
+      await _pb.authWithOAuth2(provider, (url) async {
+        // Launch the authentication URL in an external browser
+        if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+          throw Exception('Не вдалося відкрити вікно авторизації');
+        }
+      });
+      Logger.i('Social sign in successful: $userEmail', tag: _tag);
+      await fetchLinkedProviders(); // Update linked list
+      notifyListeners();
+    } catch (e) {
+      Logger.e('Social sign in failed', tag: _tag, error: e);
+      _error = _translateError(e.toString());
+      rethrow;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Link social provider to existing account
+  Future<void> linkSocialAccount(String provider) async {
+    if (!isAuthenticated) throw Exception('Потрібно авторизуватися');
+    Logger.i('Attempting to link provider: $provider', tag: _tag);
+    _setLoading(true);
+    _error = null;
+
+    try {
+      await _pb.authWithOAuth2(provider, (url) async {
+        if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+          throw Exception('Не вдалося відкрити вікно авторизації');
+        }
+      });
+      Logger.i('Provider $provider linked successfully', tag: _tag);
+      await fetchLinkedProviders();
+    } catch (e) {
+      Logger.e('Linking failed', tag: _tag, error: e);
+      _error = _translateError(e.toString());
+      rethrow;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Unlink social provider
+  Future<void> unlinkSocialAccount(String provider) async {
+    if (!isAuthenticated) throw Exception('Потрібно авторизуватися');
+    Logger.i('Attempting to unlink provider: $provider', tag: _tag);
+    _setLoading(true);
+    _error = null;
+
+    try {
+      await _pb.unlinkExternalAuth(provider);
+      Logger.i('Provider $provider unlinked successfully', tag: _tag);
+      await fetchLinkedProviders();
+    } catch (e) {
+      Logger.e('Unlinking failed', tag: _tag, error: e);
+      _error = _translateError(e.toString());
+      rethrow;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Fetch list of linked providers
+  Future<void> fetchLinkedProviders() async {
+    if (!isAuthenticated) return;
+    try {
+      final auths = await _pb.listExternalAuths();
+      _linkedProviders = auths.map((e) => e['provider'] as String).toList();
+      notifyListeners();
+    } catch (e) {
+      Logger.e('Failed to fetch linked providers', tag: _tag, error: e);
     }
   }
 
@@ -127,8 +203,7 @@ class AuthService extends ChangeNotifier {
   Future<void> signOut() async {
     Logger.i('Signing out user: $userEmail', tag: _tag);
     try {
-      await _supabase.auth.signOut();
-      _profile = null;
+      await _pb.signOut();
       notifyListeners();
       Logger.i('Sign out successful', tag: _tag);
     } catch (e) {
@@ -137,253 +212,163 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  /// Reset password
+  /// Update user profile
+  Future<void> updateProfile({String? displayName, String? bio}) async {
+    if (!isAuthenticated || userId == null) {
+      throw Exception('Not authenticated');
+    }
+
+    Logger.i('Updating profile for: $userEmail', tag: _tag);
+    _setLoading(true);
+    _error = null;
+
+    try {
+      final updateData = <String, dynamic>{};
+      if (displayName != null) updateData['name'] = displayName;
+      if (bio != null) updateData['bio'] = bio;
+
+      await _pb.pb.collection('users').update(userId!, body: updateData);
+      Logger.i('Profile updated successfully', tag: _tag);
+      notifyListeners();
+    } catch (e) {
+      Logger.e('Profile update failed', tag: _tag, error: e);
+      _error = _translateError(e.toString());
+      rethrow;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Request password reset email
   Future<void> resetPassword(String email) async {
     Logger.i('Requesting password reset for: $email', tag: _tag);
     _setLoading(true);
     _error = null;
 
     try {
-      await _supabase.auth.resetPasswordForEmail(email);
+      await _pb.pb.collection('users').requestPasswordReset(email);
       Logger.i('Password reset email sent to: $email', tag: _tag);
-    } on AuthException catch (e) {
+    } catch (e) {
       Logger.e('Password reset failed', tag: _tag, error: e);
-      _error = _translateAuthError(e.message);
+      _error = _translateError(e.toString());
       rethrow;
     } finally {
       _setLoading(false);
     }
   }
 
-  /// Load user profile from database
-  Future<void> _loadProfile() async {
-    if (!isAuthenticated) {
-      Logger.d('Cannot load profile: not authenticated', tag: _tag);
-      return;
-    }
-
-    Logger.d('Loading profile for: $userId', tag: _tag);
-
-    try {
-      final response = await _supabase
-          .from('profiles')
-          .select()
-          .eq('id', userId!)
-          .maybeSingle();
-
-      if (response != null) {
-        _profile = response;
-        Logger.d('Profile loaded: ${_profile!['display_name']}', tag: _tag);
-      } else {
-        Logger.w('Profile not found for user: $userId', tag: _tag);
-        // Profile might not exist yet (trigger didn't fire)
-        // Create it manually
-        await _createProfileIfMissing();
-      }
-      notifyListeners();
-    } catch (e) {
-      Logger.e('Failed to load profile', tag: _tag, error: e);
-    }
-  }
-
-  /// Create profile if it doesn't exist
-  Future<void> _createProfileIfMissing() async {
-    if (!isAuthenticated) return;
-
-    Logger.d('Creating missing profile for: $userId', tag: _tag);
-
-    try {
-      await _supabase.from('profiles').upsert({
-        'id': userId,
-        'email': userEmail,
-        'display_name': userEmail?.split('@').first ?? 'User',
-      });
-
-      // Reload profile
-      final response = await _supabase
-          .from('profiles')
-          .select()
-          .eq('id', userId!)
-          .single();
-
-      _profile = response;
-      Logger.i('Profile created successfully', tag: _tag);
-      notifyListeners();
-    } catch (e) {
-      Logger.e('Failed to create profile', tag: _tag, error: e);
-    }
-  }
-
-  /// Update user profile
-  Future<void> updateProfile({
-    String? displayName,
-    String? avatarUrl,
-    String? bio,
-  }) async {
-    if (!isAuthenticated) return;
-
-    Logger.d('Updating profile for: $userId', tag: _tag);
+  /// Request email verification
+  Future<void> requestVerification(String email) async {
+    Logger.i('Requesting email verification for: $email', tag: _tag);
     _setLoading(true);
+    _error = null;
 
     try {
-      final updates = <String, dynamic>{
-        'updated_at': DateTime.now().toIso8601String(),
-      };
-
-      if (displayName != null) updates['display_name'] = displayName;
-      if (avatarUrl != null) updates['avatar_url'] = avatarUrl;
-      if (bio != null) updates['bio'] = bio;
-
-      await _supabase.from('profiles').update(updates).eq('id', userId!);
-
-      // Update local cache
-      _profile = {...?_profile, ...updates};
-      Logger.i('Profile updated successfully', tag: _tag);
-      notifyListeners();
+      await _pb.pb.collection('users').requestVerification(email);
+      Logger.i('Verification email sent to: $email', tag: _tag);
     } catch (e) {
-      Logger.e('Failed to update profile', tag: _tag, error: e);
+      Logger.e('Email verification request failed', tag: _tag, error: e);
+      _error = _translateError(e.toString());
       rethrow;
     } finally {
       _setLoading(false);
     }
   }
 
-  // ============================================================================
-  // WATCH HISTORY (Cloud Sync)
-  // ============================================================================
+  /// Refresh authentication token
+  Future<bool> refreshAuth() async {
+    return await _pb.refreshAuth();
+  }
 
-  /// Save watch progress to cloud
-  Future<void> saveWatchProgress({
-    required String mediaId,
-    required String providerId,
-    required int positionMs,
-    required int durationMs,
-  }) async {
-    if (!isAuthenticated) {
-      Logger.d('Skipping cloud save: not authenticated', tag: _tag);
-      return;
+  /// Update user avatar
+  Future<void> updateAvatar(String filePath) async {
+    if (!isAuthenticated || userId == null) {
+      throw Exception('Not authenticated');
     }
 
-    try {
-      await _supabase.from('watch_history').upsert({
-        'user_id': userId,
-        'media_id': mediaId,
-        'provider_id': providerId,
-        'position_ms': positionMs,
-        'duration_ms': durationMs,
-        'last_watched': DateTime.now().toIso8601String(),
-      }, onConflict: 'user_id,media_id,provider_id');
+    Logger.i('Updating avatar for: $userEmail', tag: _tag);
+    _setLoading(true);
+    _error = null;
 
-      Logger.d('Watch progress saved: $mediaId @ $positionMs ms', tag: _tag);
+    try {
+      await _pb.pb
+          .collection('users')
+          .update(
+            userId!,
+            files: [
+              http.MultipartFile.fromBytes(
+                'avatar',
+                await File(filePath).readAsBytes(),
+                filename: 'avatar.jpg',
+              ),
+            ],
+          );
+      Logger.i('Avatar updated successfully', tag: _tag);
+      notifyListeners();
     } catch (e) {
-      Logger.e('Failed to save watch progress to cloud', tag: _tag, error: e);
+      Logger.e('Avatar update failed', tag: _tag, error: e);
+      _error = _translateError(e.toString());
+      rethrow;
+    } finally {
+      _setLoading(false);
     }
   }
 
-  /// Get watch history from cloud
-  Future<List<Map<String, dynamic>>> getCloudWatchHistory({
-    int limit = 50,
-  }) async {
-    if (!isAuthenticated) return [];
+  /// Change password
+  Future<void> changePassword(
+    String oldPassword,
+    String newPassword,
+    String newPasswordConfirm,
+  ) async {
+    if (!isAuthenticated || userId == null) {
+      throw Exception('Not authenticated');
+    }
+
+    Logger.i('Changing password for: $userEmail', tag: _tag);
+    _setLoading(true);
+    _error = null;
 
     try {
-      final response = await _supabase
-          .from('watch_history')
-          .select()
-          .eq('user_id', userId!)
-          .order('last_watched', ascending: false)
-          .limit(limit);
-
-      Logger.d('Loaded ${response.length} history items from cloud', tag: _tag);
-      return List<Map<String, dynamic>>.from(response);
+      await _pb.pb
+          .collection('users')
+          .update(
+            userId!,
+            body: {
+              'oldPassword': oldPassword,
+              'password': newPassword,
+              'passwordConfirm': newPasswordConfirm,
+            },
+          );
+      Logger.i('Password changed successfully', tag: _tag);
     } catch (e) {
-      Logger.e('Failed to load cloud watch history', tag: _tag, error: e);
-      return [];
+      Logger.e('Password change failed', tag: _tag, error: e);
+      _error = _translateError(e.toString());
+      rethrow;
+    } finally {
+      _setLoading(false);
     }
   }
 
-  /// Get watch position for specific media
-  Future<int?> getWatchPosition(String mediaId, String providerId) async {
-    if (!isAuthenticated) return null;
-
-    try {
-      final response = await _supabase
-          .from('watch_history')
-          .select('position_ms')
-          .eq('user_id', userId!)
-          .eq('media_id', mediaId)
-          .eq('provider_id', providerId)
-          .maybeSingle();
-
-      return response?['position_ms'] as int?;
-    } catch (e) {
-      Logger.e('Failed to get watch position', tag: _tag, error: e);
-      return null;
+  /// Delete account
+  Future<void> deleteAccount() async {
+    if (!isAuthenticated || userId == null) {
+      throw Exception('Not authenticated');
     }
-  }
 
-  // ============================================================================
-  // FAVORITES (Cloud Sync)
-  // ============================================================================
-
-  /// Add to cloud favorites
-  Future<void> addToCloudFavorites({
-    required String mediaId,
-    required String providerId,
-  }) async {
-    if (!isAuthenticated) return;
+    Logger.i('Deleting account: $userEmail', tag: _tag);
+    _setLoading(true);
+    _error = null;
 
     try {
-      await _supabase.from('favorites').upsert({
-        'user_id': userId,
-        'media_id': mediaId,
-        'provider_id': providerId,
-        'added_at': DateTime.now().toIso8601String(),
-      }, onConflict: 'user_id,media_id,provider_id');
-
-      Logger.d('Added to cloud favorites: $mediaId', tag: _tag);
+      await _pb.pb.collection('users').delete(userId!);
+      Logger.i('Account deleted successfully', tag: _tag);
+      await signOut();
     } catch (e) {
-      Logger.e('Failed to add to cloud favorites', tag: _tag, error: e);
-    }
-  }
-
-  /// Remove from cloud favorites
-  Future<void> removeFromCloudFavorites({
-    required String mediaId,
-    required String providerId,
-  }) async {
-    if (!isAuthenticated) return;
-
-    try {
-      await _supabase
-          .from('favorites')
-          .delete()
-          .eq('user_id', userId!)
-          .eq('media_id', mediaId)
-          .eq('provider_id', providerId);
-
-      Logger.d('Removed from cloud favorites: $mediaId', tag: _tag);
-    } catch (e) {
-      Logger.e('Failed to remove from cloud favorites', tag: _tag, error: e);
-    }
-  }
-
-  /// Get cloud favorites
-  Future<List<Map<String, dynamic>>> getCloudFavorites() async {
-    if (!isAuthenticated) return [];
-
-    try {
-      final response = await _supabase
-          .from('favorites')
-          .select()
-          .eq('user_id', userId!)
-          .order('added_at', ascending: false);
-
-      Logger.d('Loaded ${response.length} favorites from cloud', tag: _tag);
-      return List<Map<String, dynamic>>.from(response);
-    } catch (e) {
-      Logger.e('Failed to load cloud favorites', tag: _tag, error: e);
-      return [];
+      Logger.e('Account deletion failed', tag: _tag, error: e);
+      _error = _translateError(e.toString());
+      rethrow;
+    } finally {
+      _setLoading(false);
     }
   }
 
@@ -396,29 +381,42 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
-  String _translateAuthError(String message) {
-    // Translate common Supabase auth errors to Ukrainian
-    if (message.contains('Invalid login credentials')) {
+  String _translateError(String message) {
+    // Translate common PocketBase auth errors to Ukrainian
+    final lowerMsg = message.toLowerCase();
+
+    if (lowerMsg.contains('invalid login credentials') ||
+        lowerMsg.contains('invalid username or password')) {
       return 'Невірний email або пароль';
     }
-    if (message.contains('Email not confirmed')) {
-      return 'Email не підтверджено. Перевірте пошту';
+    if (lowerMsg.contains('email not confirmed') ||
+        lowerMsg.contains('not verified')) {
+      return 'Електронна пошта не підтверджена. Перевірте свою скриньку.';
     }
-    if (message.contains('User already registered')) {
+    if (lowerMsg.contains('failed to send password reset')) {
+      return 'Не вдалося надіслати лист для скидання пароля. Перевірте налаштування пошти (SMTP).';
+    }
+    if (lowerMsg.contains('identity already exists')) {
+      return 'Цей email уже використовується іншим акаунтом.';
+    }
+    if (lowerMsg.contains('missing or invalid') ||
+        lowerMsg.contains('validation failed')) {
+      return 'Помилка валідації. Перевірте введені дані.';
+    }
+    if (lowerMsg.contains('already exists') ||
+        lowerMsg.contains('user already registered')) {
       return 'Користувач з таким email вже існує';
     }
-    if (message.contains('Password should be at least')) {
+    if (lowerMsg.contains('password') && lowerMsg.contains('at least')) {
       return 'Пароль має бути щонайменше 6 символів';
     }
-    if (message.contains('Invalid email')) {
+    if (lowerMsg.contains('invalid email')) {
       return 'Невірний формат email';
     }
-    if (message.contains('rate limit')) {
+    if (lowerMsg.contains('rate limit') || lowerMsg.contains('too many')) {
       return 'Забагато спроб. Спробуйте пізніше';
     }
+
     return message;
   }
-
-  /// Auth state stream for listening to changes
-  Stream<AuthState> get authStateChanges => _supabase.auth.onAuthStateChange;
 }

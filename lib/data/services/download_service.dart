@@ -1,15 +1,21 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:semaphore/semaphore.dart';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../core/network/api_client.dart';
 import '../../core/utils/logger.dart';
 import '../database/app_database.dart';
 import '../database/dao/downloads_dao.dart';
 import '../../domain/entities/entities.dart';
+import '../../core/utils/translit_utils.dart';
+import 'settings_service.dart';
 
 /// Download task info
 class DownloadTask {
@@ -30,13 +36,17 @@ class DownloadService extends ChangeNotifier {
 
   final DownloadsDao _dao;
   final ApiClient _apiClient;
+  final SettingsService _settings;
   final Map<int, DownloadTask> _activeTasks = {};
 
   List<Download> _downloads = [];
   bool _isLoading = false;
   String? _lastError;
 
-  DownloadService(AppDatabase database, this._apiClient)
+  // Limit concurrent downloads to 3
+  final _downloadSemaphore = LocalSemaphore(3);
+
+  DownloadService(AppDatabase database, this._apiClient, this._settings)
     : _dao = DownloadsDao(database) {
     _loadDownloads();
     _listenToDownloads();
@@ -45,13 +55,13 @@ class DownloadService extends ChangeNotifier {
   // Getters
   List<Download> get downloads => _downloads;
   List<Download> get completed =>
-      _downloads.where((d) => d.status == 'completed').toList();
+      _downloads.where((d) => d.status == DownloadStatus.completed).toList();
   List<Download> get active => _downloads
       .where(
         (d) =>
-            d.status == 'pending' ||
-            d.status == 'downloading' ||
-            d.status == 'paused',
+            d.status == DownloadStatus.pending ||
+            d.status == DownloadStatus.downloading ||
+            d.status == DownloadStatus.paused,
       )
       .toList();
   bool get isLoading => _isLoading;
@@ -80,12 +90,54 @@ class DownloadService extends ChangeNotifier {
       _downloads = downloads;
       notifyListeners();
     });
+    _init();
   }
 
-  /// Get downloads directory
+  void _init() async {
+    // Wait a bit for other services to settle
+    await Future.delayed(const Duration(seconds: 2));
+
+    // Auto-resume interrupted downloads
+    final downloads = await _dao.getAll();
+    final interrupted = downloads.where(
+      (d) =>
+          d.status == DownloadStatus.downloading ||
+          d.status == DownloadStatus.pending,
+    );
+
+    for (final download in interrupted) {
+      resumeDownload(download.id);
+    }
+  }
+
+  /// Update active tasks and wakelock
+  void _updateActiveTasks(int id, DownloadTask? task) {
+    if (task == null) {
+      _activeTasks.remove(id);
+    } else {
+      _activeTasks[id] = task;
+    }
+
+    // Toggle wakelock based on active downloads
+    if (_activeTasks.isNotEmpty) {
+      WakelockPlus.enable();
+    } else {
+      WakelockPlus.disable();
+    }
+  }
+
+  /// Add to download queue
   Future<Directory> _getDownloadsDir() async {
-    final appDir = await getApplicationDocumentsDirectory();
-    final downloadsDir = Directory('${appDir.path}/downloads');
+    final String customPath = _settings.state.downloadPath;
+
+    Directory downloadsDir;
+    if (customPath.isNotEmpty) {
+      downloadsDir = Directory(customPath);
+    } else {
+      final appDir = await getApplicationDocumentsDirectory();
+      downloadsDir = Directory('${appDir.path}/downloads');
+    }
+
     if (!await downloadsDir.exists()) {
       await downloadsDir.create(recursive: true);
     }
@@ -94,16 +146,15 @@ class DownloadService extends ChangeNotifier {
 
   /// Generate local file path for download
   Future<String> _generateLocalPath(
-    String mediaId,
-    String providerId, {
+    MediaItem item, {
     int? season,
     int? episode,
     String? extension,
   }) async {
     final dir = await _getDownloadsDir();
-    final safeMediaId = mediaId.replaceAll(RegExp(r'[^\w\-]'), '_');
+    final translitTitle = TranslitUtils.translit(item.title);
 
-    String filename = '${providerId}_$safeMediaId';
+    String filename = translitTitle;
     if (season != null && episode != null) {
       filename += '_s${season}e$episode';
     }
@@ -112,16 +163,99 @@ class DownloadService extends ChangeNotifier {
     return '${dir.path}/$filename';
   }
 
+  final Map<int, String> _speeds = {};
+  final Map<int, String> _remaining = {};
+  final Map<int, double> _rawSpeeds = {}; // Bytes per second
+
+  // ... (existing code)
+
+  /// Get download speed for active task
+  String getDownloadSpeed(int id) => _speeds[id] ?? '';
+
+  /// Get remaining time for active task
+  String getRemainingTime(int id) => _remaining[id] ?? '';
+
+  /// Get local poster path if available
+  String? getLocalPosterPath(String mediaId, String providerId) {
+    try {
+      final download = _downloads.firstWhere(
+        (d) => d.mediaId == mediaId && d.providerId == providerId,
+      );
+      if (download.localPosterPath != null &&
+          File(download.localPosterPath!).existsSync()) {
+        return download.localPosterPath;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Cache poster image locally
+  Future<String?> _cachePoster(String? url, String mediaId) async {
+    if (url == null || url.isEmpty) return null;
+
+    try {
+      final dir = await _getDownloadsDir();
+      final postersDir = Directory('${dir.path}/posters');
+      if (!await postersDir.exists()) {
+        await postersDir.create(recursive: true);
+      }
+
+      final extension = url.split('.').last.split('?').first;
+      // Sanitize extension
+      final safeExt =
+          extension.length > 4 ||
+              !['jpg', 'jpeg', 'png', 'webp'].contains(extension)
+          ? 'jpg'
+          : extension;
+
+      final filename = 'poster_$mediaId.$safeExt';
+      final file = File('${postersDir.path}/$filename');
+
+      if (await file.exists()) {
+        return file.path;
+      }
+
+      final response = await _apiClient.dio.get<List<int>>(
+        url,
+        options: Options(responseType: ResponseType.bytes),
+      );
+
+      await file.writeAsBytes(response.data!);
+      return file.path;
+    } catch (e) {
+      Logger.w('Failed to cache poster for $mediaId', tag: _tag, error: e);
+      return null;
+    }
+  }
+
   /// Start downloading media
-  Future<bool> startDownload({
+  Future<bool> downloadContent({
     required MediaItem item,
     required StreamSource source,
     int? season,
     int? episode,
     String? episodeTitle,
+    int? duration,
   }) async {
     if (!canDownload) {
       _lastError = 'Завантаження недоступне на цій платформі';
+      return false;
+    }
+
+    // Check for HLS
+    if (source.url.toLowerCase().contains('.m3u8') ||
+        source.type == StreamType.hls) {
+      _lastError = 'Завантаження HLS-потоків (.m3u8) поки не підтримується';
+      return false;
+    }
+
+    // Validate URL scheme (must be http or https)
+    final uri = Uri.tryParse(source.url);
+    if (uri == null ||
+        !uri.hasScheme ||
+        (uri.scheme != 'http' && uri.scheme != 'https')) {
+      _lastError = 'Некоректне посилання для завантаження';
+      Logger.e('Invalid download URL: ${source.url}', tag: _tag);
       return false;
     }
 
@@ -134,17 +268,24 @@ class DownloadService extends ChangeNotifier {
         episode: episode,
       );
 
-      if (existing != null && existing.status == 'completed') {
-        _lastError = 'Вже завантажено';
+      if (existing != null &&
+          (existing.status == DownloadStatus.completed ||
+              existing.status == DownloadStatus.downloading)) {
+        _lastError = 'Вже завантажується або завантажено';
         return false;
       }
 
       // Generate local path
       final localPath = await _generateLocalPath(
-        item.id,
-        item.providerId,
+        item,
         season: season,
         episode: episode,
+      );
+
+      // Cache poster
+      final localPosterPath = await _cachePoster(
+        item.posterUrl,
+        item.uniqueId.replaceAll(':', '_'),
       );
 
       // Add to database
@@ -162,6 +303,9 @@ class DownloadService extends ChangeNotifier {
         localPath: localPath,
         quality: source.quality.displayName,
         voiceover: source.voiceover,
+        headers: source.headers,
+        localPosterPath: localPosterPath,
+        duration: duration,
       );
 
       // Start actual download
@@ -175,80 +319,176 @@ class DownloadService extends ChangeNotifier {
     }
   }
 
-  /// Start the actual download task using Dio
+  /// Start the actual download task using Dio streams for resuming
   void _startDownloadTask(int id, String url, String localPath) async {
     final cancelToken = CancelToken();
     final completer = Completer<void>();
 
     try {
+      // QUEUE: Wait for a slot
+      await _downloadSemaphore.acquire();
+
       await _dao.updateStatus(id, DownloadStatus.downloading);
 
       // Get download record for task tracking
-      final download = await _dao.getAll().then(
-        (list) => list.firstWhere((d) => d.id == id),
-      );
+      final list = await _dao.getAll();
+      final download = list.firstWhere((d) => d.id == id);
 
-      _activeTasks[id] = DownloadTask(
-        download: download,
-        cancelToken: cancelToken,
-        completer: completer,
-      );
-
-      // Use Dio for downloading with progress tracking
-      await _apiClient.dio.download(
-        url,
-        localPath,
-        cancelToken: cancelToken,
-        onReceiveProgress: (received, total) async {
-          if (total > 0) {
-            final progress = received / total;
-            await _dao.updateProgress(
-              id,
-              progress: progress,
-              downloadedBytes: received,
-              fileSizeBytes: total,
-            );
-          }
-        },
-        options: Options(
-          responseType: ResponseType.stream,
-          followRedirects: true,
-          receiveTimeout: const Duration(
-            hours: 2,
-          ), // Long timeout for large files
+      _updateActiveTasks(
+        id,
+        DownloadTask(
+          download: download,
+          cancelToken: cancelToken,
+          completer: completer,
         ),
       );
 
-      // Download completed successfully
-      await _dao.updateStatus(id, DownloadStatus.completed);
-      _activeTasks.remove(id);
+      // Connectivity check for Wi-Fi only
+      if (_settings.state.onlyWifiDownload) {
+        final connectivityResult = await Connectivity().checkConnectivity();
+        if (!connectivityResult.contains(ConnectivityResult.wifi)) {
+          Logger.w('Download deferred: Not on Wi-Fi', tag: _tag);
+          await _dao.updateStatus(id, DownloadStatus.paused);
+          _updateActiveTasks(id, null);
+          _downloadSemaphore.release();
+          return;
+        }
+      }
+
+      // RESUME LOGIC: Check existing file size
+      final file = File(localPath);
+      int startByte = 0;
+      if (await file.exists()) {
+        startByte = await file.length();
+      }
+
+      // Parse headers if available
+      Map<String, dynamic>? requestHeaders;
+      if (download.headers != null) {
+        try {
+          requestHeaders =
+              jsonDecode(download.headers!) as Map<String, dynamic>;
+        } catch (e) {
+          Logger.w('Failed to parse download headers', tag: _tag, error: e);
+        }
+      }
+
+      // Start download stream
+      final response = await _apiClient.dio.get<ResponseBody>(
+        url,
+        cancelToken: cancelToken,
+        options: Options(
+          headers: {
+            ...?requestHeaders,
+            if (startByte > 0) 'Range': 'bytes=$startByte-',
+          },
+          responseType: ResponseType.stream,
+          followRedirects: true,
+          receiveTimeout: const Duration(hours: 2),
+        ),
+      );
+
+      final totalInResponse =
+          int.tryParse(response.headers.value('content-length') ?? '') ?? 0;
+      final fileTotalSize = startByte + totalInResponse;
+
+      // Open file for appending
+      final sink = file.openWrite(mode: FileMode.append);
+      int receivedBytes = startByte;
+
+      final progressStopwatch = Stopwatch()..start();
+      final speedStopwatch = Stopwatch()..start();
+      int bytesSinceLastSpeedCheck = 0;
+
+      try {
+        await for (final chunk in response.data!.stream) {
+          sink.add(chunk);
+          receivedBytes += chunk.length;
+          bytesSinceLastSpeedCheck += chunk.length;
+
+          // Update speed every second
+          if (speedStopwatch.elapsedMilliseconds > 1000) {
+            final speed =
+                bytesSinceLastSpeedCheck /
+                (speedStopwatch.elapsedMilliseconds / 1000);
+            _rawSpeeds[id] = speed;
+            _speeds[id] = '${formatSize(speed.toInt())}/s';
+
+            // Calculate remaining time
+            if (speed > 0 && fileTotalSize > 0) {
+              final remainingBytes = fileTotalSize - receivedBytes;
+              final remainingSeconds = remainingBytes / speed;
+              _remaining[id] = _formatTimeRemaining(remainingSeconds.toInt());
+            } else {
+              _remaining[id] = '';
+            }
+
+            speedStopwatch.reset();
+            bytesSinceLastSpeedCheck = 0;
+            notifyListeners();
+          }
+
+          // Update progress periodically (every 500ms or so to avoid DB overload)
+          if (progressStopwatch.elapsedMilliseconds > 500) {
+            final progress = fileTotalSize > 0
+                ? receivedBytes / fileTotalSize
+                : 0.0;
+            await _dao.updateProgress(
+              id,
+              progress: progress,
+              downloadedBytes: receivedBytes,
+              fileSizeBytes: fileTotalSize > 0 ? fileTotalSize : null,
+            );
+            progressStopwatch.reset();
+          }
+        }
+
+        await sink.flush();
+        await sink.close();
+
+        // Final update - IMPORTANT: use receivedBytes, not fileTotalSize which might be 0
+        await _dao.updateProgress(
+          id,
+          progress: 1.0,
+          downloadedBytes: receivedBytes,
+          fileSizeBytes: receivedBytes,
+        );
+        await _dao.updateStatus(id, DownloadStatus.completed);
+      } catch (e) {
+        await sink.close();
+        rethrow;
+      }
+
+      _speeds.remove(id);
+      _rawSpeeds.remove(id);
+      _remaining.remove(id);
+      _updateActiveTasks(id, null);
       completer.complete();
       Logger.i('Download completed: $localPath', tag: _tag);
     } on DioException catch (e) {
-      _activeTasks.remove(id);
+      _speeds.remove(id);
+      _updateActiveTasks(id, null);
 
       if (e.type == DioExceptionType.cancel) {
-        // Download was cancelled (paused or deleted)
-        Logger.d('Download cancelled: $id', tag: _tag);
+        Logger.d('Download cancelled/paused: $id', tag: _tag);
         return;
       }
 
-      Logger.e('Download task failed', tag: _tag, error: e);
+      Logger.e('Download task failed (Dio)', tag: _tag, error: e);
       await _dao.updateStatus(id, DownloadStatus.failed);
       completer.completeError(e);
-
-      // Clean up partial file
-      try {
-        final file = File(localPath);
-        if (await file.exists()) {
-          await file.delete();
-        }
-      } catch (_) {}
     } catch (e) {
-      _activeTasks.remove(id);
+      _speeds.remove(id);
+      _updateActiveTasks(id, null);
       Logger.e('Download task failed', tag: _tag, error: e);
       await _dao.updateStatus(id, DownloadStatus.failed);
       completer.completeError(e);
+    } finally {
+      _speeds.remove(id);
+      _rawSpeeds.remove(id);
+      _remaining.remove(id);
+      // QUEUE: Release slot
+      _downloadSemaphore.release();
     }
   }
 
@@ -311,7 +551,7 @@ class DownloadService extends ChangeNotifier {
             d.providerId == providerId &&
             d.season == season &&
             d.episode == episode &&
-            d.status == 'completed',
+            d.status == DownloadStatus.completed,
       );
       return download.localPath;
     } catch (_) {
@@ -369,6 +609,20 @@ class DownloadService extends ChangeNotifier {
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 
+  /// Format time remaining
+  String _formatTimeRemaining(int seconds) {
+    if (seconds <= 0) return '';
+    if (seconds < 60) return '${seconds}s';
+    if (seconds < 3600) {
+      final m = seconds ~/ 60;
+      final s = seconds % 60;
+      return '${m}m ${s}s';
+    }
+    final h = seconds ~/ 3600;
+    final m = (seconds % 3600) ~/ 60;
+    return '${h}h ${m}m';
+  }
+
   /// Clear all downloads
   Future<void> clearAll() async {
     // Cancel all active downloads
@@ -386,6 +640,17 @@ class DownloadService extends ChangeNotifier {
       } catch (e) {
         Logger.w('Failed to delete file', tag: _tag);
       }
+    }
+
+    // Delete posters directory
+    try {
+      final dir = await _getDownloadsDir();
+      final postersDir = Directory('${dir.path}/posters');
+      if (await postersDir.exists()) {
+        await postersDir.delete(recursive: true);
+      }
+    } catch (e) {
+      Logger.w('Failed to delete posters directory', tag: _tag);
     }
 
     // Clear database

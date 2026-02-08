@@ -279,17 +279,18 @@ class HDRezkaParser {
   }
 
   static String extractIdFromUrl(String url) {
-    // Format: https://hdrezka.ag/film
+    // Format: https://hdrezka.ag/animation/drama/12345-film-name.html
     if (url.startsWith('/')) {
       final path = url.substring(1).replaceAll('.html', '');
       return path;
     }
-    final match = RegExp(
-      r'/([^/]+(?:/[^/]+)?)/(\d+-[^/]+)\.html',
-    ).firstMatch(url);
-    if (match != null) {
-      return match.group(1) ?? '';
+
+    // Try to match full path with 3 segments: category/genre/id-name
+    final match3 = RegExp(r'/([^/]+/[^/]+/\d+-[^/]+)\.html').firstMatch(url);
+    if (match3 != null) {
+      return match3.group(1) ?? '';
     }
+
     // Fallback: just extract path
     final uri = Uri.tryParse(url);
     if (uri != null && uri.path.isNotEmpty) {
@@ -345,6 +346,8 @@ class HDRezkaParser {
           '//_//JCQhIUAkJEBeIUAjJCRA', // longer variant
           '//_//QEBAQEAhIyMhXl5e', // another variant
           '//_//Xl5eIUAjIyEhIyM=', // another variant
+          '//_//QEBAQEAhIyMhXl5e', // NEW: Found 2026-02-08
+          '//_//IyMjI14hISMjIUBA', // NEW: Potential variant
         ];
 
         for (final trash in knownTrash) {
@@ -396,10 +399,7 @@ class HDRezkaParser {
       url = url.replaceAll(hlsPattern, '');
     }
 
-    final mp4EndPattern = RegExp(r'(\.mp4).*$');
-    if (mp4EndPattern.hasMatch(url) && !url.endsWith('.mp4')) {
-      url = url.replaceAllMapped(mp4EndPattern, (m) => m.group(1)!);
-    }
+    // Removed aggressive .mp4 stripping as it might remove necessary query parameters
 
     url = url.replaceAll(RegExp(r'[\s\r\n,]+$'), '');
     url = url.replaceAll(RegExp(r'[<>{}|\\^`\x00-\x1F\x7F-\xFF]'), '');
@@ -540,6 +540,23 @@ class HDRezkaParser {
     final pattern = RegExp(r'\[(\d+)p?\s*[^\]]*\]([^\[]+)');
     final matches = pattern.allMatches(decoded).toList();
 
+    if (matches.isEmpty && isValidStreamUrl(decoded)) {
+      sources.add(
+        StreamSource(
+          url: decoded,
+          quality: StreamQuality.unknown,
+          voiceover: voiceover,
+          type: decoded.contains('.m3u8') ? StreamType.hls : StreamType.direct,
+          headers: {
+            'Referer': 'https://hdrezka-home.tv/',
+            'Origin': 'https://hdrezka-home.tv',
+            'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
+          },
+        ),
+      );
+    }
+
     for (final match in matches) {
       final quality = match.group(1);
       var url = match.group(2)?.trim() ?? '';
@@ -556,6 +573,10 @@ class HDRezkaParser {
             quality: parseQuality(quality),
             voiceover: voiceover,
             type: url.contains('.m3u8') ? StreamType.hls : StreamType.direct,
+            headers: {
+              'Referer': 'https://hdrezka-home.tv/',
+              'Origin': 'https://hdrezka-home.tv',
+            },
           ),
         );
       }

@@ -1,0 +1,20 @@
+{
+    "platforms": {
+        "android": {
+            "versionCode": 20260205,
+            "versionName": "20260205.0.0",
+            "releaseNotes": "Initial Android Release with Release Commander support.",
+            "url": "https://github.com/edhases/oxide_film/releases/download/v20260204/oxide_film_v20260204.apk",
+            "sha256": "",
+            "minVersionCode": 20260205
+        },
+        "windows": {
+            "versionCode": 20260205,
+            "versionName": "20260205.0.0",
+            "releaseNotes": "Initial Windows Release with Release Commander support.",
+            "url": "https://github.com/edhases/oxide_film/releases/download/v20260204/oxide_film_v20260204.exe",
+            "sha256": "",
+            "minVersionCode": 20260205
+        }
+    }
+}

@@ -13,17 +13,39 @@ void main() {
       provider = YummyAnimeProvider(client);
     });
 
-    test('getPopular should return anime', () async {
+    test('getPopular should return unique anime with metadata', () async {
       final items = await provider.getPopular(type: ContentType.anime, page: 1);
 
       expect(items, isNotEmpty);
-      expect(items.every((m) => m.title.isNotEmpty), isTrue);
-      expect(items.every((m) => m.id.isNotEmpty), isTrue);
+
+      // 1. Deduplication check
+      final ids = items.map((e) => e.id).toList();
+      final uniqueIds = ids.toSet();
+      expect(
+        ids.length,
+        equals(uniqueIds.length),
+        reason: 'Duplicate items found in results',
+      );
+
+      // 2. Metadata check (Year and Rating)
+      bool foundYear = false;
+      bool foundRating = false;
+
+      for (final item in items) {
+        if (item.year != null && item.year! > 2000) foundYear = true;
+        if (item.rating != null && item.rating! > 0) foundRating = true;
+
+        expect(item.title, isNotEmpty);
+        expect(item.id, isNotEmpty);
+        expect(item.posterUrl, startsWith('http'));
+      }
+
+      expect(foundYear, isTrue, reason: 'No items with year found');
+      expect(foundRating, isTrue, reason: 'No items with rating found');
     });
 
-    test('getDetails should return full info', () async {
+    test('getDetails should return full info and correct seasons', () async {
       final items = await provider.getPopular(type: ContentType.anime, page: 1);
-
       if (items.isEmpty) fail('No items found');
 
       final item = items.first;
@@ -31,37 +53,59 @@ void main() {
 
       expect(details.item.id, equals(item.id));
       expect(details.item.title, isNotEmpty);
-      // YummyAnime usually has description
-      // expect(details.fullDescription, isNotNull);
 
-      // Verification of seasons parsing
       if (details.seasons != null && details.seasons!.isNotEmpty) {
         expect(details.seasons!.first.episodes, isNotEmpty);
-      }
-    });
-
-    test('getStreams should return available sources', () async {
-      final items = await provider.getPopular(type: ContentType.anime, page: 1);
-
-      if (items.isEmpty) fail('No items found');
-
-      // Try top 3 items to find one with streams
-      // Note: YummyAnime streams fetching is complex (AJAX), might fail if site changes or blocks
-      for (var i = 0; i < 3 && i < items.length; i++) {
-        try {
-          final streams = await provider.getStreams(items[i].id);
-          if (streams.isNotEmpty) {
-            expect(streams.every((s) => s.url.isNotEmpty), isTrue);
-            return;
-          }
-        } catch (e) {
-          // ignore errors in loop
+        for (final ep in details.seasons!.first.episodes) {
+          expect(ep.number, isPositive);
+          expect(ep.title, isNotEmpty);
         }
       }
-
-      print(
-        'Warning: No streams found for top 3 items in YummyAnime (could be blocked or empty)',
-      );
     });
+
+    test(
+      'getStreams should return available sources from multiple players',
+      () async {
+        // Find a specific anime known to have multiple players (like Adskij Raj or similar ongoing)
+        // Or just try the first few from popular
+        final items = await provider.getPopular(
+          type: ContentType.anime,
+          page: 1,
+        );
+        if (items.isEmpty) fail('No items found');
+
+        bool foundMultiSource = false;
+
+        for (var i = 0; i < 5 && i < items.length; i++) {
+          try {
+            final streams = await provider.getStreams(items[i].id);
+            if (streams.isNotEmpty) {
+              expect(streams.every((s) => s.url.isNotEmpty), isTrue);
+
+              // Checking if we found multiple sources (Kodik, Ashdi, etc.)
+              final sourceNames = streams
+                  .map((s) => s.sourceName)
+                  .whereType<String>()
+                  .toSet();
+              if (sourceNames.length > 1) {
+                foundMultiSource = true;
+              }
+
+              // If we found any streams, we at least verified basic fetching
+              if (foundMultiSource) break;
+            }
+          } catch (e) {
+            // ignore errors in loop
+          }
+        }
+
+        expect(
+          foundMultiSource,
+          isTrue,
+          reason:
+              'Expected to find at least one anime with multiple stream sources',
+        );
+      },
+    );
   });
 }

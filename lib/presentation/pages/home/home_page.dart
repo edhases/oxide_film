@@ -1,19 +1,30 @@
+import '../../../data/services/recommendation_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+
+import '../../../core/l10n/app_strings.dart';
 
 import '../../../data/providers/provider_registry.dart';
 import '../../../data/services/settings_service.dart';
 import '../../../data/services/episode_update_service.dart';
 import '../../../domain/entities/entities.dart';
+import '../../../domain/repositories/content_provider.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/media_card.dart';
 import '../../widgets/custom_titlebar.dart';
 import '../../widgets/filter_sheet.dart';
 import '../../widgets/new_episodes_widget.dart';
 import '../../widgets/common/skeleton.dart';
+import '../../widgets/common/app_error_widget.dart';
 import '../../widgets/tv/focusable_card.dart';
+import '../../widgets/home/continue_watching_section.dart';
+import '../../widgets/home/recommendations_section.dart';
 
 /// Home page with content browsing
 class HomePage extends StatefulWidget {
@@ -26,8 +37,12 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final _registry = GetIt.instance<ProviderRegistry>();
   final _settings = GetIt.instance<SettingsService>();
+  final _categoriesController = ScrollController();
+  final _providersController = ScrollController();
   final _episodeUpdateService = GetIt.instance<EpisodeUpdateService>();
   final _scrollController = ScrollController();
+
+  UISettings get _ui => _settings.uiSettings;
 
   List<MediaItem> _allItems = [];
   List<MediaItem> _filteredItems = [];
@@ -35,22 +50,41 @@ class _HomePageState extends State<HomePage> {
   String? _error;
   ContentFilter _filter = const ContentFilter();
 
-  UISettings get _ui => _settings.uiSettings;
+  bool _isOffline = false;
 
   @override
   void initState() {
     super.initState();
     _settings.addListener(_onSettingsChanged);
+    _checkConnectivity();
+    Connectivity().onConnectivityChanged.listen(_updateConnectivity);
     _loadContent();
 
     // Check for new episodes on startup
     _episodeUpdateService.checkForUpdates();
   }
 
+  Future<void> _checkConnectivity() async {
+    final result = await Connectivity().checkConnectivity();
+    _updateConnectivity(result);
+  }
+
+  void _updateConnectivity(List<ConnectivityResult> results) {
+    final isOffline = results.contains(ConnectivityResult.none);
+    if (_isOffline != isOffline) {
+      setState(() => _isOffline = isOffline);
+      if (!isOffline) {
+        _loadContent(refresh: true);
+      }
+    }
+  }
+
   @override
   void dispose() {
     _settings.removeListener(_onSettingsChanged);
     _scrollController.dispose();
+    _categoriesController.dispose();
+    _providersController.dispose();
     super.dispose();
   }
 
@@ -58,15 +92,30 @@ class _HomePageState extends State<HomePage> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _loadContent() async {
+  Future<void> _loadContent({bool refresh = false}) async {
     if (!mounted) return;
 
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+    if (_isOffline) {
+      setState(() {
+        _isLoading = false;
+        _error = null;
+      });
+      return;
+    }
+
+    if (!refresh) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
 
     try {
+      // Also refresh recommendations on pull-to-refresh
+      if (refresh) {
+        GetIt.instance<RecommendationService>().refresh();
+      }
+
       final providers = _registry.homeProviders;
       final allItems = <MediaItem>[];
       final seenIds = <String>{};
@@ -153,6 +202,54 @@ class _HomePageState extends State<HomePage> {
     return a.every((item) => b.contains(item));
   }
 
+  Future<void> _openLocalFile() async {
+    try {
+      // Check if platform supports file picker
+      if (kIsWeb) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Локальні файли не підтримуються у веб-версії'),
+            ),
+          );
+        }
+        return;
+      }
+
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['mp4', 'mkv', 'avi', 'mov', 'webm'],
+        dialogTitle: AppStrings.of(context).selectVideoFile,
+      );
+
+      if (result != null && result.files.single.path != null) {
+        final filePath = result.files.single.path!;
+        final fileName = result.files.single.name.replaceAll(
+          RegExp(r'\.[^.]+$'),
+          '',
+        );
+
+        if (mounted) {
+          context.push(
+            '/player',
+            extra: {
+              'url': 'file://$filePath',
+              'title': fileName,
+              'subtitle': AppStrings.of(context).localVideo,
+              'isOffline': true,
+            },
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Помилка: $e')));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDesktop =
@@ -176,31 +273,40 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildBody() {
+    if (_isOffline) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.wifi_off, size: 64, color: Colors.grey),
+            const SizedBox(height: 16),
+            Text(
+              'Відсутнє інтернет-з\'єднання',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Перевірте підключення або перегляньте завантажений контент',
+              style: Theme.of(context).textTheme.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: () => context.push('/downloads'),
+              icon: const Icon(Icons.download),
+              label: const Text('Перейти до завантажень'),
+            ),
+          ],
+        ),
+      );
+    }
+
     if (_isLoading) {
       return _buildSkeletonGrid();
     }
 
     if (_error != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline, size: 64, color: Colors.red),
-            const SizedBox(height: 16),
-            Text(
-              'Помилка завантаження',
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            const SizedBox(height: 8),
-            Text(_error!, style: Theme.of(context).textTheme.bodyMedium),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: _loadContent,
-              child: const Text('Спробувати знову'),
-            ),
-          ],
-        ),
-      );
+      return AppErrorWidget.loading(message: _error, onRetry: _loadContent);
     }
 
     if (_filteredItems.isEmpty) {
@@ -254,7 +360,7 @@ class _HomePageState extends State<HomePage> {
     }
 
     return RefreshIndicator(
-      onRefresh: _loadContent,
+      onRefresh: () => _loadContent(refresh: true),
       child: CustomScrollView(
         cacheExtent: 1000.0,
         controller: _scrollController,
@@ -297,9 +403,19 @@ class _HomePageState extends State<HomePage> {
                 tooltip: 'Історія',
               ),
               IconButton(
+                icon: const Icon(Icons.folder_open),
+                onPressed: _openLocalFile,
+                tooltip: AppStrings.of(context).openLocalFile,
+              ),
+              IconButton(
                 icon: const Icon(Icons.group_work),
                 onPressed: () => context.push('/watch-party'),
                 tooltip: 'Спільний перегляд',
+              ),
+              IconButton(
+                icon: const Icon(Icons.download),
+                onPressed: () => context.push('/downloads'),
+                tooltip: 'Завантаження',
               ),
               IconButton(
                 icon: const Icon(Icons.settings),
@@ -335,8 +451,21 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
 
+          // Continue Watching Section
+          // Only show if no active filters (don't clutter filtered results)
+          if (!_filter.hasActiveFilters)
+            const SliverToBoxAdapter(child: ContinueWatchingSection()),
+
+          // Recommendations Section
+          // Only show if no active filters
+          if (!_filter.hasActiveFilters)
+            const SliverToBoxAdapter(child: RecommendationsSection()),
+
           // Categories section
           SliverToBoxAdapter(child: _buildCategoriesSection()),
+
+          // Providers section
+          SliverToBoxAdapter(child: _buildProvidersSection()),
 
           // Section title
           SliverPadding(
@@ -392,6 +521,11 @@ class _HomePageState extends State<HomePage> {
           activeIcon: Icon(Icons.history),
           label: 'Історія',
         ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.download_outlined),
+          activeIcon: Icon(Icons.download),
+          label: 'Завантаження',
+        ),
       ],
       onTap: (index) {
         switch (index) {
@@ -404,6 +538,9 @@ class _HomePageState extends State<HomePage> {
           case 3:
             context.push('/history');
             break;
+          case 4:
+            context.push('/downloads');
+            break;
         }
       },
     );
@@ -415,6 +552,7 @@ class _HomePageState extends State<HomePage> {
       (ContentType.series, Icons.tv, Colors.green),
       (ContentType.cartoon, Icons.animation, Colors.orange),
       (ContentType.anime, Icons.auto_awesome, Colors.pink),
+      (ContentType.dorama, Icons.filter_vintage, Colors.deepPurple),
     ];
 
     return Column(
@@ -440,22 +578,87 @@ class _HomePageState extends State<HomePage> {
         ),
         SizedBox(
           height: 100,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            itemCount: categories.length,
-            itemBuilder: (context, index) {
-              final (type, icon, color) = categories[index];
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: _CategoryCard(
-                  type: type,
-                  icon: icon,
-                  color: color,
-                  onTap: () => context.push('/category?type=${type.name}'),
-                ),
-              );
-            },
+          child: Scrollbar(
+            controller: _categoriesController,
+            child: ListView.builder(
+              controller: _categoriesController,
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              itemCount: categories.length + 1, // +1 for HDRezka
+              itemBuilder: (context, index) {
+                if (index < categories.length) {
+                  final (type, icon, color) = categories[index];
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: _HomeSquareTile(
+                      label: type.pluralName,
+                      icon: icon,
+                      color: color,
+                      onTap: () => context.push('/category?type=${type.name}'),
+                    ),
+                  );
+                } else {
+                  // HDRezka button - styled to match categories
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: _HomeSquareTile(
+                      label: 'HDREZKA',
+                      icon: Icons.play_circle_filled,
+                      color: Colors.orange,
+                      onTap: () => context.push('/provider/hdrezka'),
+                    ),
+                  );
+                }
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProvidersSection() {
+    final separateProviders = _registry.separateProviders
+        .where((p) => p.id != 'youtube' && p.id != 'hdrezka')
+        .toList();
+    if (separateProviders.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Row(
+            children: [
+              Text(
+                'Провайдери',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 56,
+          child: Scrollbar(
+            controller: _providersController,
+            child: ListView.builder(
+              controller: _providersController,
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              itemCount: separateProviders.length,
+              itemBuilder: (context, index) {
+                final provider = separateProviders[index];
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: _ProviderCard(
+                    provider: provider,
+                    onTap: () => context.push('/provider/${provider.id}'),
+                  ),
+                );
+              },
+            ),
           ),
         ),
       ],
@@ -600,15 +803,15 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-/// Category card widget
-class _CategoryCard extends StatelessWidget {
-  final ContentType type;
+/// Quick action square tile (Category or Provider)
+class _HomeSquareTile extends StatelessWidget {
+  final String label;
   final IconData icon;
   final Color color;
   final VoidCallback onTap;
 
-  const _CategoryCard({
-    required this.type,
+  const _HomeSquareTile({
+    required this.label,
     required this.icon,
     required this.color,
     required this.onTap,
@@ -619,10 +822,16 @@ class _CategoryCard extends StatelessWidget {
     return SizedBox(
       width: 100,
       child: Card(
-        color: color.withValues(alpha: 0.2),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        color: color.withValues(alpha: 0.1),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: color.withValues(alpha: 0.2)),
+        ),
         child: InkWell(
-          onTap: onTap,
+          onTap: () {
+            HapticFeedback.lightImpact();
+            onTap();
+          },
           borderRadius: BorderRadius.circular(12),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -630,12 +839,14 @@ class _CategoryCard extends StatelessWidget {
               Icon(icon, size: 32, color: color),
               const SizedBox(height: 8),
               Text(
-                type.pluralName,
+                label,
                 style: TextStyle(
                   color: color,
                   fontWeight: FontWeight.bold,
                   fontSize: 12,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
@@ -762,6 +973,8 @@ class _MediaListTile extends StatelessWidget {
         return Icons.animation;
       case ContentType.anime:
         return Icons.auto_awesome;
+      case ContentType.dorama:
+        return Icons.filter_vintage;
       default:
         return Icons.video_library;
     }
@@ -777,6 +990,8 @@ class _MediaListTile extends StatelessWidget {
         return Colors.orange;
       case ContentType.anime:
         return Colors.pink;
+      case ContentType.dorama:
+        return Colors.deepPurple;
       default:
         return Colors.grey;
     }
@@ -829,5 +1044,76 @@ class _MediaCompactTile extends StatelessWidget {
       trailing: const Icon(Icons.chevron_right, size: 20),
       onTap: onTap,
     );
+  }
+}
+
+/// Card for provider (HDREZKA, YouTube)
+class _ProviderCard extends StatelessWidget {
+  final ContentProvider provider;
+  final VoidCallback onTap;
+
+  const _ProviderCard({required this.provider, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _getProviderColor(provider.id);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: 160,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(_getProviderIcon(provider.id), size: 24, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  provider.name.toUpperCase(),
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    letterSpacing: 0.5,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  IconData _getProviderIcon(String providerId) {
+    switch (providerId) {
+      case 'hdrezka':
+        return Icons.play_circle_filled;
+      case 'youtube':
+        return Icons.play_arrow;
+      default:
+        return Icons.video_library;
+    }
+  }
+
+  Color _getProviderColor(String providerId) {
+    switch (providerId) {
+      case 'hdrezka':
+        return Colors.orange;
+      case 'youtube':
+        return Colors.red;
+      default:
+        return AppTheme.primaryColor;
+    }
   }
 }

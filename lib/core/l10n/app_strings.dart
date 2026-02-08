@@ -47,10 +47,11 @@ class AppStrings {
   String get error => _t('Помилка', 'Error');
   String get retry => _t('Спробувати знову', 'Try again');
   String get cancel => _t('Скасувати', 'Cancel');
-  String get save => _t('Зберегти', 'Save');
   String get delete => _t('Видалити', 'Delete');
-  String get confirm => _t('Підтвердити', 'Confirm');
+  String get clear => _t('Очистити', 'Clear');
   String get back => _t('Назад', 'Back');
+  String get save => _t('Зберегти', 'Save');
+  String get confirm => _t('Підтвердити', 'Confirm');
   String get close => _t('Закрити', 'Close');
   String get search => _t('Пошук', 'Search');
   String get settings => _t('Налаштування', 'Settings');
@@ -66,6 +67,11 @@ class AppStrings {
   String get history => _t('Історія', 'History');
   String get noContent => _t('Немає контенту', 'No content');
   String get loadingError => _t('Помилка завантаження', 'Loading error');
+  String get openLocalFile => _t('Відкрити локальне відео', 'Open Local Video');
+  String get localVideo => _t('Локальне відео', 'Local Video');
+  String get unsupportedFormat =>
+      _t('Непідтримуваний формат файлу', 'Unsupported file format');
+  String get selectVideoFile => _t('Виберіть відеофайл', 'Select a video file');
 
   // ============================================================================
   // CONTENT TYPES
@@ -73,6 +79,8 @@ class AppStrings {
 
   String get movie => _t('Фільм', 'Movie');
   String get movies => _t('Фільми', 'Movies');
+  String get seasonLabel => _t('Сезон', 'Season');
+  String get episodeLabel => _t('Серія', 'Episode');
   String get series => _t('Серіал', 'Series');
   String get seriesPlural => _t('Серіали', 'Series');
   String get cartoon => _t('Мультфільм', 'Cartoon');
@@ -107,6 +115,10 @@ class AppStrings {
   String get noSources => _t('Немає джерел', 'No sources');
   String resumedFrom(String time) =>
       _t('Продовжено з $time', 'Resumed from $time');
+  String get regionBlocked => _t(
+    'На жаль, це відео недоступне для вашого регіону. Спробуйте увімкнути VPN.',
+    'Sorry, this video is not available in your region. Try enabling VPN.',
+  );
 
   // ============================================================================
   // DETAILS
@@ -125,6 +137,25 @@ class AppStrings {
   String get removedFromFavorites =>
       _t('Видалено з обраного', 'Removed from favorites');
   String get watchParty => _t('Спільний перегляд', 'Watch party');
+
+  // ============================================================================
+  // ACCOUNT
+  // ============================================================================
+
+  String get account => _t('Акаунт', 'Account');
+  String get signIn => _t('Увійти', 'Sign in');
+  String get signInPrompt => _t('Увійдіть в акаунт', 'Sign in to your account');
+  String get signInDescription =>
+      _t('Синхронізуйте дані між пристроями', 'Sync data across devices');
+  String get syncCloud =>
+      _t('Історія та обране в хмарі', 'History and favorites in cloud');
+  String get searchSettings => _t('Пошук налаштувань...', 'Search settings...');
+  String get fullscreenDelay =>
+      _t('Затримка повноекранного режиму', 'Fullscreen transition delay');
+  String get milliseconds => _t('мс', 'ms');
+  String get searchHint =>
+      _t('Почніть вводити для пошуку', 'Start typing to search');
+  String get seconds => _t('сек', 'sec');
 
   // ============================================================================
   // SETTINGS
@@ -152,9 +183,52 @@ class AppStrings {
   String get shareDesc => _t('Надіслати копію', 'Send a copy');
   String get downloads => _t('Завантаження', 'Downloads');
   String get offlineContent => _t('Офлайн контент', 'Offline content');
+  String get downloadFolder => _t('Папка для завантажень', 'Download folder');
+  String get selectFolder => _t('Обрати папку', 'Select folder');
+  String get defaultFolder =>
+      _t('За замовчуванням (Системна)', 'Default (System)');
+  String get onlyWifiDownload =>
+      _t('Тільки через Wi-Fi', 'Download only over Wi-Fi');
+  String get onlyWifiDownloadDesc => _t(
+    'Завантажувати лише за наявності Wi-Fi підключення',
+    'Only download when connected to Wi-Fi',
+  );
   String get clearCache => _t('Очистити кеш', 'Clear cache');
   String get clearCacheDesc =>
       _t('Видалити тимчасові файли', 'Delete temporary files');
+  String get downloaded => _t('Завантажено', 'Downloaded');
+  String get inQueue => _t('В черзі', 'In Queue');
+  String get clearAll => _t('Очистити все', 'Clear all');
+  String get noDownloads => _t('Немає завантажень', 'No downloads');
+  String get noDownloadsDesc => _t(
+    'Завантажте фільми для офлайн перегляду',
+    'Download movies for offline viewing',
+  );
+  String get noActiveDownloads =>
+      _t('Немає активних завантажень', 'No active downloads');
+  String get noActiveDownloadsDesc =>
+      _t('Додайте контент для завантаження', 'Add content to download');
+  String get fileNotFound => _t('Файл не знайдено', 'File not found');
+  String get deleteDownload => _t('Видалити завантаження?', 'Delete download?');
+  String get confirmDelete =>
+      _t('Ви впевнені, що хочете видалити', 'Are you sure you want to delete');
+  String get clearAllDownloads =>
+      _t('Очистити всі завантаження?', 'Clear all downloads?');
+  String get clearAllDownloadsConfirm => _t(
+    'Ви впевнені, що хочете видалити всі завантажені файли? Цю дію неможливо відмінити.',
+    'Are you sure you want to delete all downloaded files? This action cannot be undone.',
+  );
+  String get downloadsUnavailable =>
+      _t('Завантаження недоступне', 'Downloads unavailable');
+  String get downloadsUnavailableDesc => _t(
+    'Ця функція недоступна у веб-версії',
+    'This feature is not available in the web version',
+  );
+  String get pending => _t('Очікування...', 'Pending...');
+  String get downloadingStatus => _t('Завантаження...', 'Downloading...');
+  String get pausedStatus => _t('Призупинено', 'Paused');
+  String get failedStatus => _t('Помилка завантаження', 'Download failed');
+  String get completedStatus => _t('Завершено', 'Completed');
   String get statistics => _t('Статистика', 'Statistics');
   String get statsDesc =>
       _t('Переглянуті фільми, час, жанри', 'Watched movies, time, genres');
@@ -247,12 +321,36 @@ class AppStrings {
   String get sendMessage =>
       _t('Написати повідомлення...', 'Write a message...');
   String get leaveRoom => _t('Вийти з кімнати', 'Leave room');
+  String get deleteAccountConfirm => _t(
+    'Це видалить усі ваші дані. Продовжити?',
+    'This will delete all your data. Continue?',
+  );
+  String get sessionExpired => _t(
+    'Сесія закінчилася, будь ласка, увійдіть знову',
+    'Session expired, please sign in again',
+  );
+  String get networkErrorLink => _t(
+    'Помилка мережі при спробі авторизації',
+    'Network error during auth attempt',
+  );
   String get leaveRoomConfirm => _t(
     'Ви покинете спільний перегляд. Продовжити?',
     'You will leave the watch party. Continue?',
   );
   String get connectionError => _t('Помилка підключення', 'Connection error');
   String get host => _t('Хост', 'Host');
+  String get start => _t('Почати', 'Start');
+  String get join => _t('Приєднатися', 'Join');
+  String get unknownError => _t('Невідома помилка', 'Unknown error');
+  String get experimentalFeature => _t(
+    'Спільний перегляд працює через інтернет. Це експериментальна функція.',
+    'Watch party works over the internet. This is an experimental feature.',
+  );
+  String get selectMediaFirst =>
+      _t('Спочатку оберіть медіа', 'Select media first');
+  String get enterRoomCode =>
+      _t('Введіть 6-символьний код кімнати', 'Enter 6-character room code');
+  String get roomCode => _t('Код кімнати', 'Room code');
 
   // ============================================================================
   // NOTIFICATIONS
@@ -338,6 +436,23 @@ class AppStrings {
   String get updateNotify => _t('Оновлення додатку', 'App updates');
   String get updateNotifyDesc =>
       _t('Сповіщати про нові версії', 'Notify about new versions');
+  String get updateRequired => _t('Обов\'язкове оновлення', 'Update required');
+  String get checkForUpdates => _t('Перевірка оновлень', 'Check for updates');
+  String get updateAvailable => _t('Доступне оновлення', 'Update available');
+  String get noUpdates => _t('Оновлень не знайдено', 'No updates found');
+  String get latestVersion =>
+      _t('Встановлена остання версія', 'Latest version installed');
+  String get downloadUpdate => _t('Завантажити оновлення', 'Download update');
+  String get installing => _t('Встановлення...', 'Installing...');
+  String get updateError => _t('Помилка оновлення', 'Update error');
+  String get whatsNew => _t('Що нового:', 'What\'s new:');
+  String get supportProject => _t('Підтримати проект', 'Support project');
+  String get donateDesc => _t(
+    'Ваша підтримка допомагає нам розвиватися',
+    'Your support helps us grow',
+  );
+  String get donateButton => _t('Задонатити', 'Donate');
+  String get scanQrCode => _t('Відскануйте QR-код', 'Scan QR code');
 
   // ============================================================================
   // STATISTICS

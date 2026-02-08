@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 
 import 'package:oxide_film/core/network/api_client.dart';
 import 'package:oxide_film/data/providers/uakino_provider.dart';
@@ -7,6 +8,7 @@ import 'package:oxide_film/data/providers/hdrezka_provider.dart';
 import 'package:oxide_film/data/providers/yummyanime_provider.dart';
 import 'package:oxide_film/domain/entities/entities.dart';
 import 'package:oxide_film/domain/repositories/content_provider.dart';
+import '../helpers/mock_services.dart';
 
 void main() {
   group('UakinoProvider', () {
@@ -61,10 +63,13 @@ void main() {
   group('HdrezkaProvider', () {
     late ApiClient client;
     late HdrezkaProvider provider;
+    late MockUserAgentService mockUaService;
 
     setUp(() {
       client = ApiClient();
-      provider = HdrezkaProvider(client);
+      mockUaService = MockUserAgentService();
+      when(() => mockUaService.getChromeUserAgent()).thenReturn('Chrome/Mock');
+      provider = HdrezkaProvider(client, mockUaService);
     });
 
     test('should have correct metadata', () {
@@ -122,11 +127,13 @@ void main() {
   group('Provider Common Interface', () {
     test('all providers should implement ContentProvider', () {
       final client = ApiClient();
+      final mockUaService = MockUserAgentService();
+      when(() => mockUaService.getChromeUserAgent()).thenReturn('Chrome/Mock');
 
       final List<ContentProvider> providers = [
         UakinoProvider(client),
         EneyidaProvider(client),
-        HdrezkaProvider(client),
+        HdrezkaProvider(client, mockUaService),
         YummyAnimeProvider(client),
       ];
 

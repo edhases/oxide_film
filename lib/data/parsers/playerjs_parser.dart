@@ -37,12 +37,25 @@ class PlayerJsParser {
 
       // Pattern 1: Extract file parameter from PlayerJS init
       // Matches: file:"..." or file:'...'
-      final filePattern = RegExp(
-        r'''file\s*[:=]\s*["']([^"']+)["']''',
+      // We use two patterns to handle quotes correctly (allow " inside ' and vice versa)
+      final filePatternSingle = RegExp(
+        r"""file\s*[:=]\s*'([^']*)'""",
+        caseSensitive: false,
+      );
+      final filePatternDouble = RegExp(
+        r'''file\s*[:=]\s*"([^"]*)"''',
         caseSensitive: false,
       );
 
-      for (final match in filePattern.allMatches(html)) {
+      for (final match in filePatternSingle.allMatches(html)) {
+        final fileValue = match.group(1);
+        if (fileValue != null && fileValue.isNotEmpty) {
+          sources.addAll(
+            _parseFileValue(fileValue, defaultQuality: defaultQuality),
+          );
+        }
+      }
+      for (final match in filePatternDouble.allMatches(html)) {
         final fileValue = match.group(1);
         if (fileValue != null && fileValue.isNotEmpty) {
           sources.addAll(
@@ -98,26 +111,7 @@ class PlayerJsParser {
         try {
           final dynamic jsonData = json.decode(fileValue);
           if (jsonData is List) {
-            for (final source in jsonData) {
-              try {
-                if (source is Map<String, dynamic>) {
-                  final file = source['file'] as String?;
-                  final title = source['title'] as String?;
-                  if (file != null && _isValidUrl(file)) {
-                    sources.add(
-                      _createStreamSource(
-                        file,
-                        voiceover: title,
-                        qualityLabel: defaultQuality,
-                      ),
-                    );
-                  }
-                }
-              } catch (e) {
-                // Log but continue parsing other items
-                Logger.w('Failed to parse single JSON source: $e', tag: _tag);
-              }
-            }
+            sources.addAll(_parseJsonList(jsonData, defaultQuality));
             if (sources.isNotEmpty) return sources;
           }
         } on FormatException catch (e) {
@@ -199,20 +193,138 @@ class PlayerJsParser {
     return sources;
   }
 
-  /// Create StreamSource from URL with optional quality label and voiceover
+  /// Helper to parse JSON list with recursion for folders
+  static List<StreamSource> _parseRecursive(
+    List<dynamic> items,
+    String? defaultQuality,
+    List<String> breadcrumbs,
+  ) {
+    final sources = <StreamSource>[];
+
+    for (final item in items) {
+      if (item is! Map<String, dynamic>) continue;
+
+      final title = item['title'] as String? ?? '';
+      final file = item['file'] as String?;
+      final folder = item['folder'];
+
+      final currentBreadcrumbs = [...breadcrumbs, title];
+
+      if (folder != null && folder is List) {
+        sources.addAll(
+          _parseRecursive(folder, defaultQuality, currentBreadcrumbs),
+        );
+      } else if (file != null && _isValidUrl(file)) {
+        // Reached a file node. Analyze breadcrumbs for metadata.
+        // Example breadcrumbs: ["1 сезон", "15K3", "1 серія"]
+
+        int? season;
+        int? episode;
+        String? voiceover;
+        String? qualityLabel = defaultQuality;
+
+        for (final crumb in currentBreadcrumbs) {
+          final lower = crumb.toLowerCase();
+
+          // Season
+          if (lower.contains('сезон')) {
+            final match = RegExp(r'(\d+)').firstMatch(lower);
+            if (match != null) season = int.tryParse(match.group(1)!);
+          }
+          // Episode
+          else if (lower.contains('серія')) {
+            final match = RegExp(r'(\d+)').firstMatch(lower);
+            if (match != null) episode = int.tryParse(match.group(1)!);
+          }
+          // Voiceover (simplified heuristic: if not season/episode/quality, assume voice)
+          else if (!lower.contains('p') && !lower.contains('q')) {
+            // Might be voiceover?
+            // 15K3 doesn't look like season/episode.
+            if (voiceover == null) {
+              voiceover = crumb;
+            } else {
+              voiceover = '$voiceover, $crumb';
+            }
+          }
+          // Quality
+          if (lower.contains('p') &&
+              (lower.contains('720') || lower.contains('1080'))) {
+            qualityLabel = crumb;
+          }
+        }
+
+        // If we didn't find "Voiceover" explicitly but have 3 levels?
+        // [Season, Voice, Episode]
+        // If verify structure:
+        // Breadcrumb 0: Season?
+        // Breadcrumb 1: Voice?
+        // Breadcrumb 2: Episode?
+        // Use position based fallback if regex fails?
+        // Probably safer to rely on regex first.
+
+        // Fallback for voiceover: join everything that isn't season/episode?
+        if (voiceover == null) {
+          final leftovers = currentBreadcrumbs.where((c) {
+            final l = c.toLowerCase();
+            return !l.contains('сезон') && !l.contains('серія');
+          }).toList();
+          if (leftovers.isNotEmpty) {
+            voiceover = leftovers.join(' ');
+          }
+        }
+
+        sources.add(
+          _createStreamSource(
+            file,
+            voiceover: voiceover,
+            qualityLabel: qualityLabel,
+            season: season,
+            episode: episode,
+            episodeTitle: title, // "1 серія"
+          ),
+        );
+      }
+    }
+    return sources;
+  }
+
+  static List<StreamSource> _parseJsonList(
+    List<dynamic> list,
+    String? defaultQuality,
+  ) {
+    return _parseRecursive(list, defaultQuality, []);
+  }
+
+  /// Create StreamSource from URL with optional metadata
   static StreamSource _createStreamSource(
     String url, {
     String? qualityLabel,
     String? voiceover,
+    int? season,
+    int? episode,
+    String? episodeTitle,
   }) {
-    final quality = _parseQuality(qualityLabel);
+    var quality = _parseQuality(qualityLabel);
     final type = _detectStreamType(url);
+
+    // For HLS, if quality was set via default_quality (or is generic),
+    // we prefer unknown (Auto) because HLS usually contains multiple qualities.
+    if (type == StreamType.hls && qualityLabel != null) {
+      // If qualityLabel came from the specific source definition (e.g. [720p]url), keep it.
+      // But _createStreamSource doesn't know where qualityLabel came from.
+      // However, typical PlayerJS config has file:"...m3u8" which passes defaultQuality.
+      // We can just rely on the fact that if it's HLS, we want the player to handle it.
+      quality = StreamQuality.unknown;
+    }
 
     return StreamSource(
       url: url.trim(),
       quality: quality,
       type: type,
       voiceover: voiceover,
+      season: season,
+      episode: episode,
+      episodeTitle: episodeTitle,
     );
   }
 

@@ -6,6 +6,8 @@ import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
+import '../../../core/l10n/app_strings.dart';
+import '../../../domain/entities/entities.dart';
 import '../../../data/database/app_database.dart';
 import '../../../data/services/download_service.dart';
 import '../../theme/app_theme.dart';
@@ -50,12 +52,16 @@ class _DownloadsPageState extends State<DownloadsPage>
 
   @override
   Widget build(BuildContext context) {
+    final s = AppStrings.of(
+      context,
+    ); // Moved up to be accessible for the 'canDownload' check
+
     if (!_downloadService.canDownload) {
       return Scaffold(
         body: Column(
           children: [
             if (_isDesktop) const CustomTitleBar(),
-            _buildAppBar(),
+            _buildAppBar(s), // Pass 's' here
             Expanded(
               child: Center(
                 child: Column(
@@ -64,11 +70,11 @@ class _DownloadsPageState extends State<DownloadsPage>
                     const Icon(Icons.cloud_off, size: 64, color: Colors.grey),
                     const SizedBox(height: 16),
                     Text(
-                      'Завантаження недоступне',
+                      s.downloadsUnavailable, // Use the new string
                       style: Theme.of(context).textTheme.headlineSmall,
                     ),
                     const SizedBox(height: 8),
-                    const Text('Ця функція недоступна у веб-версії'),
+                    Text(s.downloadsUnavailableDesc), // Use the new string
                   ],
                 ),
               ),
@@ -82,21 +88,21 @@ class _DownloadsPageState extends State<DownloadsPage>
       body: Column(
         children: [
           if (_isDesktop) const CustomTitleBar(),
-          _buildAppBar(),
+          _buildAppBar(s),
           TabBar(
             controller: _tabController,
-            tabs: const [
-              Tab(text: 'Завантажено'),
-              Tab(text: 'В черзі'),
+            tabs: [
+              Tab(text: s.downloaded),
+              Tab(text: s.inQueue),
             ],
             indicatorColor: AppTheme.primaryColor,
             labelColor: AppTheme.primaryColor,
-            unselectedLabelColor: AppTheme.textMuted,
+            unselectedLabelColor: AppTheme.textSecondary,
           ),
           Expanded(
             child: TabBarView(
               controller: _tabController,
-              children: [_buildCompletedList(), _buildActiveList()],
+              children: [_buildCompletedList(s), _buildActiveList(s)],
             ),
           ),
         ],
@@ -104,7 +110,7 @@ class _DownloadsPageState extends State<DownloadsPage>
     );
   }
 
-  Widget _buildAppBar() {
+  Widget _buildAppBar(AppStrings s) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -118,14 +124,14 @@ class _DownloadsPageState extends State<DownloadsPage>
           IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () => context.pop(),
-            tooltip: 'Назад',
+            tooltip: s.back,
           ),
           const SizedBox(width: 8),
           const Icon(Icons.download_done),
           const SizedBox(width: 8),
-          const Text(
-            'Завантаження',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          Text(
+            s.downloads,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           const Spacer(),
           FutureBuilder<int>(
@@ -134,7 +140,7 @@ class _DownloadsPageState extends State<DownloadsPage>
               final size = snapshot.data ?? 0;
               return Text(
                 _downloadService.formatSize(size),
-                style: TextStyle(color: AppTheme.textMuted),
+                style: TextStyle(color: AppTheme.textSecondary),
               );
             },
           ),
@@ -142,8 +148,8 @@ class _DownloadsPageState extends State<DownloadsPage>
             const SizedBox(width: 8),
             IconButton(
               icon: const Icon(Icons.delete_sweep),
-              onPressed: _showClearDialog,
-              tooltip: 'Очистити все',
+              onPressed: () => _showClearDialog(s),
+              tooltip: s.clearAll,
             ),
           ],
         ],
@@ -151,14 +157,14 @@ class _DownloadsPageState extends State<DownloadsPage>
     );
   }
 
-  Widget _buildCompletedList() {
+  Widget _buildCompletedList(AppStrings s) {
     final items = _downloadService.completed;
 
     if (items.isEmpty) {
       return _buildEmptyState(
         icon: Icons.download_done,
-        title: 'Немає завантажень',
-        subtitle: 'Завантажте фільми для офлайн перегляду',
+        title: s.noDownloads,
+        subtitle: s.noDownloadsDesc,
       );
     }
 
@@ -169,22 +175,23 @@ class _DownloadsPageState extends State<DownloadsPage>
         final item = items[index];
         return _DownloadCard(
           download: item,
+          s: s,
           formatSize: _downloadService.formatSize,
-          onPlay: () => _playDownload(item),
-          onDelete: () => _deleteDownload(item),
+          onPlay: () => _playDownload(item, s),
+          onDelete: () => _deleteDownload(item, s),
         );
       },
     );
   }
 
-  Widget _buildActiveList() {
+  Widget _buildActiveList(AppStrings s) {
     final items = _downloadService.active;
 
     if (items.isEmpty) {
       return _buildEmptyState(
         icon: Icons.cloud_download,
-        title: 'Немає активних завантажень',
-        subtitle: 'Додайте контент для завантаження',
+        title: s.noActiveDownloads,
+        subtitle: s.noActiveDownloadsDesc,
       );
     }
 
@@ -195,11 +202,12 @@ class _DownloadsPageState extends State<DownloadsPage>
         final item = items[index];
         return _ActiveDownloadCard(
           download: item,
+          s: s,
           formatSize: _downloadService.formatSize,
-          onPause: item.status == 'downloading'
+          onPause: item.status == DownloadStatus.downloading
               ? () => _downloadService.pauseDownload(item.id)
               : null,
-          onResume: item.status == 'paused'
+          onResume: item.status == DownloadStatus.paused
               ? () => _downloadService.resumeDownload(item.id)
               : null,
           onCancel: () => _downloadService.cancelDownload(item.id),
@@ -225,20 +233,20 @@ class _DownloadsPageState extends State<DownloadsPage>
             subtitle,
             style: Theme.of(
               context,
-            ).textTheme.bodyMedium?.copyWith(color: AppTheme.textMuted),
+            ).textTheme.bodyMedium?.copyWith(color: AppTheme.textSecondary),
           ),
         ],
       ),
     );
   }
 
-  void _playDownload(Download download) {
+  void _playDownload(Download download, AppStrings s) {
     // Check if file exists
     final file = File(download.localPath);
     if (!file.existsSync()) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Файл не знайдено')));
+      ).showSnackBar(SnackBar(content: Text(s.fileNotFound)));
       return;
     }
 
@@ -246,6 +254,11 @@ class _DownloadsPageState extends State<DownloadsPage>
     if (download.season != null && download.episode != null) {
       title += ' - S${download.season}E${download.episode}';
     }
+
+    final mediaType = ContentType.values.firstWhere(
+      (e) => e.name == download.mediaType,
+      orElse: () => ContentType.unknown,
+    );
 
     context.push(
       '/player',
@@ -256,62 +269,57 @@ class _DownloadsPageState extends State<DownloadsPage>
         'mediaId': download.mediaId,
         'providerId': download.providerId,
         'posterUrl': download.posterUrl,
+        'mediaType': mediaType,
+        'season': download.season,
+        'episode': download.episode,
+        'episodeTitle': download.episodeTitle,
         'isOffline': true,
       },
     );
   }
 
-  void _deleteDownload(Download download) {
+  void _deleteDownload(Download download, AppStrings s) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppTheme.surfaceColor,
-        title: const Text('Видалити завантаження?'),
-        content: Text('Ви впевнені, що хочете видалити "${download.title}"?'),
+        title: Text(s.deleteDownload),
+        content: Text('${s.confirmDelete} "${download.title}"?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Скасувати'),
+            child: Text(s.cancel),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               _downloadService.deleteDownload(download.id);
             },
-            child: Text(
-              'Видалити',
-              style: TextStyle(color: AppTheme.errorColor),
-            ),
+            child: Text(s.delete, style: TextStyle(color: AppTheme.errorColor)),
           ),
         ],
       ),
     );
   }
 
-  void _showClearDialog() {
+  void _showClearDialog(AppStrings s) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppTheme.surfaceColor,
-        title: const Text('Очистити всі завантаження?'),
-        content: const Text(
-          'Ви впевнені, що хочете видалити всі завантажені файли? '
-          'Цю дію неможливо відмінити.',
-        ),
+        title: Text(s.clearAllDownloads),
+        content: Text(s.clearAllDownloadsConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Скасувати'),
+            child: Text(s.cancel),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               _downloadService.clearAll();
             },
-            child: Text(
-              'Очистити',
-              style: TextStyle(color: AppTheme.errorColor),
-            ),
+            child: Text(s.clear, style: TextStyle(color: AppTheme.errorColor)),
           ),
         ],
       ),
@@ -322,12 +330,14 @@ class _DownloadsPageState extends State<DownloadsPage>
 /// Card for completed downloads
 class _DownloadCard extends StatelessWidget {
   final Download download;
+  final AppStrings s;
   final String Function(int) formatSize;
   final VoidCallback onPlay;
   final VoidCallback onDelete;
 
   const _DownloadCard({
     required this.download,
+    required this.s,
     required this.formatSize,
     required this.onPlay,
     required this.onDelete,
@@ -349,19 +359,24 @@ class _DownloadCard extends StatelessWidget {
               // Poster
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: download.posterUrl != null
+                child:
+                    download.localPosterPath != null &&
+                        File(download.localPosterPath!).existsSync()
+                    ? Image.file(
+                        File(download.localPosterPath!),
+                        width: 60,
+                        height: 90,
+                        fit: BoxFit.cover,
+                      )
+                    : download.posterUrl != null
                     ? CachedNetworkImage(
                         imageUrl: download.posterUrl!,
                         width: 60,
                         height: 90,
                         fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => _buildPosterPlaceholder(),
                       )
-                    : Container(
-                        width: 60,
-                        height: 90,
-                        color: AppTheme.darkCard,
-                        child: const Icon(Icons.movie, size: 32),
-                      ),
+                    : _buildPosterPlaceholder(),
               ),
               const SizedBox(width: 12),
 
@@ -378,9 +393,9 @@ class _DownloadCard extends StatelessWidget {
                     ),
                     if (download.season != null && download.episode != null)
                       Text(
-                        'Сезон ${download.season}, Серія ${download.episode}',
+                        '${s.seasonLabel} ${download.season}, ${s.episodeLabel} ${download.episode}',
                         style: TextStyle(
-                          color: AppTheme.textMuted,
+                          color: AppTheme.textSecondary,
                           fontSize: 12,
                         ),
                       ),
@@ -394,8 +409,20 @@ class _DownloadCard extends StatelessWidget {
                         const SizedBox(width: 8),
                         _InfoChip(
                           icon: Icons.storage,
-                          label: formatSize(download.fileSizeBytes),
+                          label: formatSize(
+                            download.fileSizeBytes > 0
+                                ? download.fileSizeBytes
+                                : download.downloadedBytes,
+                          ),
                         ),
+                        if (download.duration != null &&
+                            download.duration! > 0) ...[
+                          const SizedBox(width: 8),
+                          _InfoChip(
+                            icon: Icons.timer,
+                            label: _formatDuration(download.duration!),
+                          ),
+                        ],
                       ],
                     ),
                   ],
@@ -423,11 +450,31 @@ class _DownloadCard extends StatelessWidget {
       ),
     );
   }
+
+  Widget _buildPosterPlaceholder() {
+    return Container(
+      width: 60,
+      height: 90,
+      color: AppTheme.darkCard,
+      child: const Icon(Icons.movie, size: 32),
+    );
+  }
+
+  String _formatDuration(int seconds) {
+    final duration = Duration(seconds: seconds);
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    if (hours > 0) {
+      return '$hoursгод $minutesхв';
+    }
+    return '$minutesхв';
+  }
 }
 
 /// Card for active downloads
 class _ActiveDownloadCard extends StatelessWidget {
   final Download download;
+  final AppStrings s;
   final String Function(int) formatSize;
   final VoidCallback? onPause;
   final VoidCallback? onResume;
@@ -435,6 +482,7 @@ class _ActiveDownloadCard extends StatelessWidget {
 
   const _ActiveDownloadCard({
     required this.download,
+    required this.s,
     required this.formatSize,
     this.onPause,
     this.onResume,
@@ -443,8 +491,9 @@ class _ActiveDownloadCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isPaused = download.status == 'paused';
-    final isFailed = download.status == 'failed';
+    final isPaused = download.status == DownloadStatus.paused;
+    final isFailed = download.status == DownloadStatus.failed;
+    final isDownloading = download.status == DownloadStatus.downloading;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -460,12 +509,27 @@ class _ActiveDownloadCard extends StatelessWidget {
                 // Poster
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: download.posterUrl != null
+                  child:
+                      download.localPosterPath != null &&
+                          File(download.localPosterPath!).existsSync()
+                      ? Image.file(
+                          File(download.localPosterPath!),
+                          width: 50,
+                          height: 75,
+                          fit: BoxFit.cover,
+                        )
+                      : download.posterUrl != null
                       ? CachedNetworkImage(
                           imageUrl: download.posterUrl!,
                           width: 50,
                           height: 75,
                           fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) => Container(
+                            width: 50,
+                            height: 75,
+                            color: AppTheme.darkCard,
+                            child: const Icon(Icons.movie),
+                          ),
                         )
                       : Container(
                           width: 50,
@@ -519,16 +583,20 @@ class _ActiveDownloadCard extends StatelessWidget {
             const SizedBox(height: 8),
 
             // Progress bar
-            LinearProgressIndicator(
-              value: download.progress,
-              backgroundColor: AppTheme.darkCard,
-              color: isFailed
-                  ? AppTheme.errorColor
-                  : isPaused
-                  ? Colors.orange
-                  : AppTheme.primaryColor,
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: download.progress,
+                minHeight: 6,
+                backgroundColor: AppTheme.darkCard,
+                color: isFailed
+                    ? AppTheme.errorColor
+                    : isPaused
+                    ? Colors.orange
+                    : AppTheme.primaryColor,
+              ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 8),
 
             // Progress text
             Row(
@@ -538,9 +606,16 @@ class _ActiveDownloadCard extends StatelessWidget {
                   '${(download.progress * 100).toStringAsFixed(1)}%',
                   style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                 ),
-                Text(
-                  '${formatSize(download.downloadedBytes)} / ${formatSize(download.fileSizeBytes)}',
-                  style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                Builder(
+                  builder: (context) {
+                    final ds = GetIt.I<DownloadService>();
+                    final speed = ds.getDownloadSpeed(download.id);
+                    final remaining = ds.getRemainingTime(download.id);
+                    return Text(
+                      '${formatSize(download.downloadedBytes)} / ${formatSize(download.fileSizeBytes > 0 ? download.fileSizeBytes : download.downloadedBytes)}${speed.isNotEmpty ? " ($speed)${remaining.isNotEmpty ? " • $remaining" : ""}" : ""}',
+                      style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
+                    );
+                  },
                 ),
               ],
             ),
@@ -553,15 +628,15 @@ class _ActiveDownloadCard extends StatelessWidget {
   String _getStatusText() {
     switch (download.status) {
       case DownloadStatus.pending:
-        return 'Очікування...';
+        return s.pending;
       case DownloadStatus.downloading:
-        return 'Завантаження...';
+        return s.downloadingStatus;
       case DownloadStatus.paused:
-        return 'Призупинено';
+        return s.pausedStatus;
       case DownloadStatus.failed:
-        return 'Помилка завантаження';
+        return s.failedStatus;
       case DownloadStatus.completed:
-        return 'Завершено';
+        return s.completedStatus;
     }
   }
 }

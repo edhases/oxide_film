@@ -47,7 +47,6 @@ class YummyAnimeParser {
         final item = _parseMovieItem(card);
         if (item != null) items.add(item);
       }
-      return items;
     }
 
     // Legacy fallback
@@ -94,7 +93,8 @@ class YummyAnimeParser {
       int? year;
       final metaEl = card.find('div', class_: 'movie-item__meta');
       if (metaEl != null) {
-        final yearMatch = RegExp(r'\((\d{4})\)').firstMatch(metaEl.text);
+        // Fix regex to be more flexible: (2026) or 2026
+        final yearMatch = RegExp(r'\(?(\d{4})\)?').firstMatch(metaEl.text);
         if (yearMatch != null) {
           year = int.tryParse(yearMatch.group(1) ?? '');
         }
@@ -103,9 +103,11 @@ class YummyAnimeParser {
       double? rating;
       final ratingEl = card.find('div', class_: 'movie-item__rating');
       if (ratingEl != null) {
-        rating = double.tryParse(
-          ratingEl.text.trim().replaceAll(RegExp(r'[^\d.]'), ''),
-        );
+        // Fix regex to catch first float
+        final ratingMatch = RegExp(r'(\d+\.?\d*)').firstMatch(ratingEl.text);
+        if (ratingMatch != null) {
+          rating = double.tryParse(ratingMatch.group(1) ?? '');
+        }
       }
 
       return MediaItem(
@@ -174,17 +176,20 @@ class YummyAnimeParser {
     final soup = BeautifulSoup(html);
 
     // Title
-    final titleEl = soup.find('h1');
+    final titleEl =
+        soup.find('div', class_: 'inner-page__title')?.find('h1') ??
+        soup.find('h1');
     final title = titleEl?.text.trim() ?? '';
 
     String? originalTitle;
-    final origEl = soup.find('div', class_: 'original-title');
+    final origEl = soup.find('div', class_: 'inner-page__subtitle');
     if (origEl != null) {
       originalTitle = origEl.text.trim();
     }
 
     // Poster
     final posterEl =
+        soup.find('div', class_: 'inner-page__img') ??
         soup.find('div', class_: 'anime-poster') ??
         soup.find('div', class_: 'poster');
     final posterUrl = posterEl?.find('img')?.attributes['src'];
@@ -195,41 +200,98 @@ class YummyAnimeParser {
     String? status;
 
     final infoBlock =
+        soup.find('ul', class_: 'inner-page__list') ??
         soup.find('div', class_: 'anime-info') ??
         soup.find('div', class_: 'full-info');
 
+    // Try Schema.org first (accurate and structured)
+    final directorMeta = soup.find('meta', attrs: {'itemprop': 'director'});
+    if (directorMeta != null) director = directorMeta.attributes['content'];
+
+    final genreMeta = soup.find('meta', attrs: {'itemprop': 'genre'});
+    if (genreMeta != null) {
+      genres = genreMeta.attributes['content']
+          ?.split(',')
+          .map((e) => e.trim())
+          .toList();
+    }
+
+    final dateMeta =
+        soup.find('meta', attrs: {'itemprop': 'dateCreated'}) ??
+        soup.find('meta', attrs: {'itemprop': 'datePublished'});
+    if (dateMeta != null) {
+      final dateStr = dateMeta.attributes['content'];
+      if (dateStr != null && dateStr.length >= 4) {
+        year = int.tryParse(dateStr.substring(0, 4));
+      }
+    }
+
+    // Original Title from Schema.org or page
+    final originTitleMeta = soup.find(
+      'meta',
+      attrs: {'itemprop': 'alternateName'},
+    );
+    if (originTitleMeta != null) {
+      originalTitle = originTitleMeta.attributes['content']?.trim();
+    }
+
     if (infoBlock != null) {
-      for (final row in infoBlock.findAll('div', class_: 'info-item')) {
+      final rows = infoBlock.name == 'ul'
+          ? infoBlock.findAll('li')
+          : infoBlock.findAll('div', class_: 'info-item');
+
+      for (final row in rows) {
         final label =
-            row.find('span', class_: 'label')?.text.toLowerCase() ?? '';
-        final value = row.find('span', class_: 'value');
+            row.find('span')?.text.toLowerCase() ??
+            ''; // label is usually first span
+        final valueText = row.text
+            .replaceFirst(row.find('span')?.text ?? '', '')
+            .trim();
 
         if (label.contains('студ')) {
-          director = value?.text.trim();
+          director ??= row.findAll('a').map((a) => a.text.trim()).join(', ');
         } else if (label.contains('жанр')) {
-          genres = value?.findAll('a').map((a) => a.text.trim()).toList();
-        } else if (label.contains('рік')) {
-          year = int.tryParse(value?.text.trim() ?? '');
+          genres ??= row.findAll('a').map((a) => a.text.trim()).toList();
+        } else if (label.contains('рік') || label.contains('год')) {
+          final yearMatch = RegExp(r'(\d{4})').firstMatch(row.text);
+          if (yearMatch != null) {
+            year ??= int.tryParse(yearMatch.group(1) ?? '');
+          }
         } else if (label.contains('стату')) {
-          status = value?.text.trim();
+          status = row.find('span', class_: 'status')?.text.trim() ?? valueText;
         }
       }
     }
 
     // Description
     final descEl =
+        soup.find(
+          'div',
+          class_: 'inner-page__text',
+          attrs: {'itemprop': 'description'},
+        ) ??
         soup.find('div', class_: 'anime-description') ??
         soup.find('div', class_: 'full-text') ??
         soup.find('div', class_: 'description');
     final description = descEl?.text.trim();
 
-    double? rating;
+    double? siteRating;
+    double? imdbRating;
     final ratingEl = soup.find('div', class_: 'anime-rating');
     if (ratingEl != null) {
       final ratingMatch = RegExp(r'([\d.]+)').firstMatch(ratingEl.text);
       if (ratingMatch != null) {
-        rating = double.tryParse(ratingMatch.group(1) ?? '');
+        siteRating = double.tryParse(ratingMatch.group(1) ?? '');
       }
+    }
+
+    // JSON-LD Rating Fallback
+    final jsonLd = soup.find('script', attrs: {'type': 'application/ld+json'});
+    if (jsonLd != null) {
+      final rMatch = RegExp(
+        r'"ratingValue":\s*"([\d.]+)"',
+      ).firstMatch(jsonLd.text);
+      if (rMatch != null) imdbRating = double.tryParse(rMatch.group(1)!);
     }
 
     return MediaDetails(
@@ -240,7 +302,10 @@ class YummyAnimeParser {
         originalTitle: originalTitle,
         posterUrl: _absoluteUrl(posterUrl),
         year: year,
-        rating: rating,
+        rating: imdbRating ?? siteRating,
+        ratingSource: imdbRating != null
+            ? 'IMDb'
+            : (siteRating != null ? 'Site' : null),
         type: ContentType.anime,
         description: status,
       ),
@@ -253,8 +318,37 @@ class YummyAnimeParser {
 
   static List<Season> _parseSeasons(BeautifulSoup soup) {
     final seasons = <Season>[];
+
+    // 1. Try to parse from filter selects (most accurate for current state)
+    final seasonSelect = soup.find('select', id: 'filterS');
+    final episodeSelect = soup.find('select', id: 'filterE');
+
+    if (seasonSelect != null && episodeSelect != null) {
+      final seasonOptions = seasonSelect.findAll('option');
+      final episodeOptions = episodeSelect.findAll('option');
+
+      for (final sOpt in seasonOptions) {
+        final sNum = int.tryParse(sOpt.attributes['value'] ?? '') ?? 1;
+        final episodes = <Episode>[];
+        for (final eOpt in episodeOptions) {
+          final eNum = int.tryParse(eOpt.attributes['value'] ?? '');
+          if (eNum != null) {
+            episodes.add(Episode(number: eNum, title: eOpt.text.trim()));
+          }
+        }
+        seasons.add(Season(number: sNum, episodes: episodes));
+      }
+      if (seasons.isNotEmpty) return seasons;
+    }
+
+    // 2. Fallback to standard episode list in central container
     final episodes = <Episode>[];
-    final episodeItems = soup.findAll('li', class_: 'episode-item');
+    final container =
+        soup.find('div', id: 'episodes-list') ??
+        soup.find('ul', class_: 'inner-page__list') ??
+        soup.find('div', class_: 'anime-episodes');
+
+    final episodeItems = container?.findAll('li', class_: 'episode-item') ?? [];
 
     for (final item in episodeItems) {
       final epNum =
@@ -269,11 +363,27 @@ class YummyAnimeParser {
     }
 
     if (episodes.isNotEmpty) {
-      // YummyAnime usually treats series as one season
       seasons.add(Season(number: 1, episodes: episodes));
     }
 
     return seasons;
+  }
+
+  static Map<String, String> extractVoiceovers(String html) {
+    final soup = BeautifulSoup(html);
+    final mapping = <String, String>{};
+    final voiceSelect = soup.find('select', id: 'filterV');
+    if (voiceSelect != null) {
+      final options = voiceSelect.findAll('option');
+      for (final opt in options) {
+        final id = opt.attributes['value'];
+        final name = opt.text.trim();
+        if (id != null && name.isNotEmpty) {
+          mapping[id] = name;
+        }
+      }
+    }
+    return mapping;
   }
 
   /// Extracts metadata about episode (data-id, data-episode) to fetch sources
@@ -281,8 +391,13 @@ class YummyAnimeParser {
     final soup = BeautifulSoup(html);
     final items = <Map<String, String>>[];
 
-    // 1. Try standard episode list
-    final episodeItems = soup.findAll('li', class_: 'episode-item');
+    // 1. Try standard episode list within a known container to avoid sidebar
+    final container =
+        soup.find('div', id: 'episodes-list') ??
+        soup.find('ul', class_: 'inner-page__list') ??
+        soup.find('div', class_: 'anime-episodes');
+
+    final episodeItems = container?.findAll('li', class_: 'episode-item') ?? [];
     for (final item in episodeItems) {
       items.add({
         'episode': item.attributes['data-episode'] ?? '',
@@ -376,39 +491,54 @@ class YummyAnimeParser {
   }) {
     final sources = <StreamSource>[];
 
-    // Ashdi pattern
-    final ashdiMatch = RegExp(
-      r'file\s*:\s*["\x27](https?://[^"\x27]+)["\x27]',
-    ).firstMatch(html);
-    if (ashdiMatch != null) {
-      sources.add(
-        StreamSource(
-          url: ashdiMatch.group(1)!,
-          quality: StreamQuality.unknown,
-          voiceover: voiceover,
-          type: StreamType.hls,
-        ),
-      );
-    }
-
-    // Generic patterns
+    // Generic patterns (HLS, MP4)
     final patterns = [
       RegExp(
-        r'src["\s]*:["\s]*["\x27](https?://[^"\x27]+\.m3u8[^"\x27]*)["\x27]',
+        r'file\s*[:=]\s*["\x27](https?://[^"\x27]+\.m3u8[^"\x27]*)["\x27]',
       ),
-      RegExp(r'"hls"["\s]*:["\s]*["\x27](https?://[^"\x27]+)["\x27]'),
+      RegExp(r'src\s*[:=]\s*["\x27](https?://[^"\x27]+\.m3u8[^"\x27]*)["\x27]'),
+      RegExp(r'["\x27]hls["\x27]\s*[:=]\s*["\x27](https?://[^"\x27]+)["\x27]'),
+      // Alloha/Common JSON pattern in scripts: "link":"..."
+      RegExp(
+        r'["\x27]link["\x27]\s*[:=]\s*["\x27](https?://[^"\x27]+\.m3u8[^"\x27]*)["\x27]',
+      ),
+      // Fallback: any m3u8 in quotes
+      RegExp(r'["\x27](https?://[^"\x27]+\.m3u8[^"\x27]*)["\x27]'),
     ];
 
     for (final pattern in patterns) {
       for (final match in pattern.allMatches(html)) {
-        final url = match.group(1);
+        var url = match.group(1);
         if (url != null && _isValidStreamUrl(url)) {
+          // Fallback metadata from URL
+          var currentQuality = StreamQuality.unknown;
+          int? currentSeason;
+          int? currentEpisode;
+
+          // Quality from URL: ..._1080p_... or .../720/...
+          final qMatch = RegExp(r'(\d{3,4})p').firstMatch(url);
+          if (qMatch != null) {
+            currentQuality = _parseQuality(qMatch.group(1));
+          }
+
+          // Season/Episode from URL: ..._s01e10_... or .../1-10/...
+          final seMatch = RegExp(
+            r'[sс](\d+)[eе](\d+)',
+            caseSensitive: false,
+          ).firstMatch(url);
+          if (seMatch != null) {
+            currentSeason = int.tryParse(seMatch.group(1) ?? '');
+            currentEpisode = int.tryParse(seMatch.group(2) ?? '');
+          }
+
           sources.add(
             StreamSource(
               url: url,
-              quality: StreamQuality.unknown,
+              quality: currentQuality,
               voiceover: voiceover,
               type: StreamType.hls,
+              season: currentSeason,
+              episode: currentEpisode,
             ),
           );
         }

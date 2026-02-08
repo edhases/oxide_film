@@ -33,7 +33,7 @@ class _PlayerChatOverlayState extends State<PlayerChatOverlay> {
       widget.service.sendChatMessage(text);
       _controller.clear();
       // Auto scroll to bottom
-      Future.delayed(const Duration(milliseconds: 100), () {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scrollController.hasClients) {
           _scrollController.animateTo(
             _scrollController.position.maxScrollExtent,

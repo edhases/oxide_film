@@ -12,6 +12,7 @@ class MediaDetails extends Equatable {
   final Duration? duration;
   final String? trailerUrl;
   final List<Season>? seasons; // For series/anime
+  final double? imdbRating;
 
   const MediaDetails({
     required this.item,
@@ -23,6 +24,7 @@ class MediaDetails extends Equatable {
     this.duration,
     this.trailerUrl,
     this.seasons,
+    this.imdbRating,
   });
 
   bool get isSeries => seasons != null && seasons!.isNotEmpty;
@@ -38,6 +40,7 @@ class MediaDetails extends Equatable {
     duration,
     trailerUrl,
     seasons,
+    imdbRating,
   ];
 
   MediaDetails copyWith({
@@ -50,6 +53,7 @@ class MediaDetails extends Equatable {
     Duration? duration,
     String? trailerUrl,
     List<Season>? seasons,
+    double? imdbRating,
   }) {
     return MediaDetails(
       item: item ?? this.item,
@@ -61,6 +65,7 @@ class MediaDetails extends Equatable {
       duration: duration ?? this.duration,
       trailerUrl: trailerUrl ?? this.trailerUrl,
       seasons: seasons ?? this.seasons,
+      imdbRating: imdbRating ?? this.imdbRating,
     );
   }
 }

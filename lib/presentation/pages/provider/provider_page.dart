@@ -41,6 +41,7 @@ class _ProviderPageState extends State<ProviderPage>
     ContentType.series,
     ContentType.cartoon,
     ContentType.anime,
+    ContentType.dorama,
   ];
 
   final Map<ContentType, List<MediaItem>> _contentByType = {};
@@ -392,6 +393,8 @@ class _ProviderPageState extends State<ProviderPage>
         return Icons.animation;
       case ContentType.anime:
         return Icons.auto_awesome;
+      case ContentType.dorama:
+        return Icons.filter_vintage;
       case ContentType.unknown:
         return Icons.help_outline;
     }

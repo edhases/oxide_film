@@ -11,12 +11,14 @@ import '../../../data/services/settings_service.dart';
 import '../../../data/services/search_service.dart';
 import '../../../data/services/smart_search/smart_search_service.dart';
 import '../../../domain/entities/entities.dart';
-import '../../theme/app_theme.dart';
 import '../../widgets/media_card.dart';
 import '../../widgets/custom_titlebar.dart';
 import '../../widgets/tv/focusable_card.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:skeletonizer/skeletonizer.dart' hide Skeleton;
+import '../../widgets/common/skeleton_wrappers.dart';
 import '../../widgets/common/skeleton.dart';
+import '../../widgets/common/app_error_widget.dart';
 
 /// Search page with autocomplete suggestions
 class SearchPage extends StatefulWidget {
@@ -42,7 +44,6 @@ class _SearchPageState extends State<SearchPage> {
   SmartSearchResult? _searchResult;
   AggregatedSearchResult? _aggregatedResult;
   bool _isLoading = false;
-  bool _isLoadingSuggestions = false;
   String? _error;
   bool _hasSearched = false;
   bool _showSuggestions = false;
@@ -113,7 +114,6 @@ class _SearchPageState extends State<SearchPage> {
     if (query.isEmpty) {
       setState(() {
         _suggestions = [];
-        _showSuggestions = true;
       });
       return;
     }
@@ -127,7 +127,7 @@ class _SearchPageState extends State<SearchPage> {
   Future<void> _fetchSuggestions(String query) async {
     if (query.length < 2) return;
 
-    setState(() => _isLoadingSuggestions = true);
+    // Loading state for suggestions is no longer used explicitly in UI
 
     try {
       // Use SmartSearchService for smart suggestions with fuzzy matching
@@ -140,13 +140,10 @@ class _SearchPageState extends State<SearchPage> {
         setState(() {
           _suggestions = suggestions;
           _showSuggestions = true;
-          _isLoadingSuggestions = false;
         });
       }
     } catch (e) {
-      if (mounted) {
-        setState(() => _isLoadingSuggestions = false);
-      }
+      // Ignore errors for suggestions
     }
   }
 
@@ -295,7 +292,7 @@ class _SearchPageState extends State<SearchPage> {
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: AppTheme.darkSurface,
+      color: Theme.of(context).colorScheme.surface,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -368,7 +365,10 @@ class _SearchPageState extends State<SearchPage> {
               padding: const EdgeInsets.only(top: 8),
               child: Text(
                 _buildSearchStats(),
-                style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                style: TextStyle(
+                  color: Theme.of(context).textTheme.bodySmall?.color,
+                  fontSize: 12,
+                ),
               ),
             ),
         ],
@@ -395,7 +395,9 @@ class _SearchPageState extends State<SearchPage> {
               decoration: BoxDecoration(
                 color: isSelected
                     ? Colors.white.withValues(alpha: 0.2)
-                    : AppTheme.textMuted.withValues(alpha: 0.2),
+                    : Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.color?.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
@@ -415,8 +417,10 @@ class _SearchPageState extends State<SearchPage> {
       ),
       selected: isSelected,
       onSelected: (_) => onSelected(),
-      selectedColor: AppTheme.primaryColor.withValues(alpha: 0.3),
-      checkmarkColor: AppTheme.primaryColor,
+      selectedColor: Theme.of(
+        context,
+      ).colorScheme.primary.withValues(alpha: 0.3),
+      checkmarkColor: Theme.of(context).colorScheme.primary,
     );
   }
 
@@ -458,7 +462,7 @@ class _SearchPageState extends State<SearchPage> {
   Widget _buildSearchBar() {
     return Container(
       padding: const EdgeInsets.all(16),
-      color: AppTheme.darkSurface,
+      color: Theme.of(context).colorScheme.surface,
       child: Row(
         children: [
           IconButton(
@@ -484,12 +488,6 @@ class _SearchPageState extends State<SearchPage> {
                 suffixIcon: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (_isLoadingSuggestions)
-                      const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
                     if (_searchController.text.isNotEmpty)
                       IconButton(
                         icon: const Icon(Icons.clear),
@@ -510,7 +508,7 @@ class _SearchPageState extends State<SearchPage> {
                   borderSide: BorderSide.none,
                 ),
                 filled: true,
-                fillColor: AppTheme.darkCard,
+                fillColor: Theme.of(context).cardColor,
               ),
               onSubmitted: (_) => _performSearch(),
               onChanged: _onSearchChanged,
@@ -529,7 +527,7 @@ class _SearchPageState extends State<SearchPage> {
 
   Widget _buildSuggestions() {
     return Container(
-      color: AppTheme.darkSurface,
+      color: Theme.of(context).colorScheme.surface,
       constraints: const BoxConstraints(maxHeight: 300),
       child: ListView(
         shrinkWrap: true,
@@ -541,7 +539,7 @@ class _SearchPageState extends State<SearchPage> {
               child: Text(
                 'Нещодавні пошуки',
                 style: TextStyle(
-                  color: AppTheme.textMuted,
+                  color: Theme.of(context).textTheme.bodySmall?.color,
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
                 ),
@@ -554,7 +552,10 @@ class _SearchPageState extends State<SearchPage> {
                   onTap: () => _useRecentSearch(query),
                   borderRadius: 8,
                   child: ListTile(
-                    leading: const Icon(Icons.history),
+                    leading: Icon(
+                      Icons.history,
+                      color: Theme.of(context).textTheme.bodySmall?.color,
+                    ),
                     title: Text(query),
                     dense: true,
                   ),
@@ -570,7 +571,7 @@ class _SearchPageState extends State<SearchPage> {
               child: Text(
                 'Пропозиції',
                 style: TextStyle(
-                  color: AppTheme.textMuted,
+                  color: Theme.of(context).textTheme.bodySmall?.color,
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
                 ),
@@ -620,7 +621,7 @@ class _SearchPageState extends State<SearchPage> {
                       subtitle: Text(
                         '${mediaItem.type.displayName}${mediaItem.year != null ? ' • ${mediaItem.year}' : ''}',
                         style: TextStyle(
-                          color: AppTheme.textMuted,
+                          color: Theme.of(context).textTheme.bodySmall?.color,
                           fontSize: 12,
                         ),
                       ),
@@ -647,7 +648,9 @@ class _SearchPageState extends State<SearchPage> {
                           ? Text(
                               '${suggestion.searchCount}x',
                               style: TextStyle(
-                                color: AppTheme.textMuted,
+                                color: Theme.of(
+                                  context,
+                                ).textTheme.bodySmall?.color,
                                 fontSize: 12,
                               ),
                             )
@@ -665,26 +668,12 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   Widget _buildResults() {
-    if (_isLoading) {
-      return _buildSkeletonResults();
+    if (_isLoading && _results.isEmpty) {
+      return Skeletonizer(enabled: true, child: _buildSkeletonResults());
     }
 
     if (_error != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline, size: 64, color: Colors.red),
-            const SizedBox(height: 16),
-            Text('Помилка: $_error'),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _performSearch,
-              child: const Text('Спробувати знову'),
-            ),
-          ],
-        ),
-      );
+      return AppErrorWidget.loading(message: _error, onRetry: _performSearch);
     }
 
     if (!_hasSearched) {
@@ -692,11 +681,18 @@ class _SearchPageState extends State<SearchPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.search, size: 80, color: AppTheme.textMuted),
+            Icon(
+              Icons.search,
+              size: 80,
+              color: Theme.of(context).textTheme.bodySmall?.color,
+            ),
             const SizedBox(height: 16),
             Text(
               'Введіть запит для пошуку',
-              style: TextStyle(color: AppTheme.textMuted, fontSize: 16),
+              style: TextStyle(
+                color: Theme.of(context).textTheme.bodySmall?.color,
+                fontSize: 16,
+              ),
             ),
           ],
         ),
@@ -708,16 +704,25 @@ class _SearchPageState extends State<SearchPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.movie_filter, size: 80, color: AppTheme.textMuted),
+            Icon(
+              Icons.movie_filter,
+              size: 80,
+              color: Theme.of(context).textTheme.bodySmall?.color,
+            ),
             const SizedBox(height: 16),
             Text(
               'Нічого не знайдено',
-              style: TextStyle(color: AppTheme.textMuted, fontSize: 16),
+              style: TextStyle(
+                color: Theme.of(context).textTheme.bodySmall?.color,
+                fontSize: 16,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
               'Спробуйте інший запит',
-              style: TextStyle(color: AppTheme.textMuted),
+              style: TextStyle(
+                color: Theme.of(context).textTheme.bodySmall?.color,
+              ),
             ),
             // Show spell correction suggestion
             if (_suggestedQuery != null) ...[
@@ -733,10 +738,14 @@ class _SearchPageState extends State<SearchPage> {
                     vertical: 10,
                   ),
                   decoration: BoxDecoration(
-                    color: AppTheme.primaryColor.withValues(alpha: 0.15),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.3),
                     ),
                   ),
                   child: Row(
@@ -744,18 +753,20 @@ class _SearchPageState extends State<SearchPage> {
                     children: [
                       Icon(
                         Icons.lightbulb_outline,
-                        color: AppTheme.primaryColor,
+                        color: Theme.of(context).colorScheme.primary,
                         size: 20,
                       ),
                       const SizedBox(width: 8),
                       Text(
                         'Можливо, ви мали на увазі: ',
-                        style: TextStyle(color: AppTheme.textMuted),
+                        style: TextStyle(
+                          color: Theme.of(context).textTheme.bodySmall?.color,
+                        ),
                       ),
                       Text(
                         _suggestedQuery!,
                         style: TextStyle(
-                          color: AppTheme.primaryColor,
+                          color: Theme.of(context).colorScheme.primary,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -769,25 +780,39 @@ class _SearchPageState extends State<SearchPage> {
       );
     }
 
-    return GridView.builder(
-      cacheExtent: 1000.0,
-      padding: EdgeInsets.all(_ui.gridSpacing.padding),
-      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: _getMaxCrossAxisExtent(),
-        childAspectRatio: _ui.posterSize.aspectRatio,
-        crossAxisSpacing: _ui.gridSpacing.crossAxisSpacing,
-        mainAxisSpacing: _ui.gridSpacing.mainAxisSpacing,
-      ),
-      itemCount: _results.length,
-      itemBuilder: (context, index) {
-        final item = _results[index];
-        return MediaCard(
-          item: item,
-          onTap: () => context.push(
-            '/details/${item.providerId}/${Uri.encodeComponent(item.id)}',
-          ),
-        );
+    return RefreshIndicator(
+      onRefresh: () async {
+        if (_searchController.text.isNotEmpty) {
+          await _performSearch();
+        }
       },
+      child: GridView.builder(
+        cacheExtent: 1000.0,
+        padding: EdgeInsets.all(_ui.gridSpacing.padding),
+        gridDelegate: _ui.gridColumns > 0
+            ? SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: _ui.gridColumns,
+                childAspectRatio: _ui.posterSize.aspectRatio,
+                crossAxisSpacing: _ui.gridSpacing.crossAxisSpacing,
+                mainAxisSpacing: _ui.gridSpacing.mainAxisSpacing,
+              )
+            : SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: _getMaxCrossAxisExtent(),
+                childAspectRatio: _ui.posterSize.aspectRatio,
+                crossAxisSpacing: _ui.gridSpacing.crossAxisSpacing,
+                mainAxisSpacing: _ui.gridSpacing.mainAxisSpacing,
+              ),
+        itemCount: _results.length,
+        itemBuilder: (context, index) {
+          final item = _results[index];
+          return MediaCard(
+            item: item,
+            onTap: () => context.push(
+              '/details/${item.providerId}/${Uri.encodeComponent(item.id)}',
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -803,17 +828,10 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   Widget _buildSkeletonResults() {
-    return GridView.builder(
-      padding: EdgeInsets.all(_ui.gridSpacing.padding),
-      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: _getMaxCrossAxisExtent(),
-        childAspectRatio: _ui.posterSize.aspectRatio,
-        crossAxisSpacing: _ui.gridSpacing.crossAxisSpacing,
-        mainAxisSpacing: _ui.gridSpacing.mainAxisSpacing,
-      ),
-      itemCount: 12,
-      itemBuilder: (context, index) =>
-          Skeleton(borderRadius: _ui.posterSize.borderRadius),
+    return SkeletonWrappers.grid(
+      maxExtent: _getMaxCrossAxisExtent(),
+      spacing: _ui.gridSpacing.padding,
+      crossAxisCount: _ui.gridColumns,
     );
   }
 }
