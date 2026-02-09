@@ -1,7 +1,7 @@
 name: oxide_film
 description: "Cross-platform media parser for movies, series, cartoons & anime"
 publish_to: 'none'
-version: 26.2.9+0
+version: 26.2.9+1
 
 environment:
   sdk: ^3.10.7
