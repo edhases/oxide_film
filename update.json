@@ -16,5 +16,12 @@
             "sha256": "",
             "minVersionCode": 20260205
         }
-    }
+    },
+    "versionName": "20260208.0.0",
+    "changelog": "- General improvements and bug fixes",
+    "versionCode": 20260208,
+    "apkUrl": "https://github.com/edhases/oxide_film/releases/download/20260208/oxide_film_v20260208.apk",
+    "apkSha256": "74543BB2B5D066BE64ADDBF76986C5546D1D657ADEA146F05C605E03A0EF1053",
+    "windowsUrl": "https://github.com/edhases/oxide_film/releases/download/20260208/oxide_film_v20260208.exe",
+    "windowsSha256": "EE5D73874B58731B7D36CCDC38E29195CCC94E589578B8C1223E3581AFF1C3A6"
 }

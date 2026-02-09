@@ -78,7 +78,7 @@ dependencies:
   # PocketBase backend (self-hosted)
   pocketbase: ^0.19.0
   shared_preferences: ^2.3.4
-  flutter_secure_storage: ^9.2.2
+
   peerdart: ^0.5.6
   
   # YouTube embed player (ToS-compliant, no stream extraction)
@@ -113,35 +113,9 @@ dev_dependencies:
 dependency_overrides:
   # Fix for Flutter 3.29 removing Registrar API (needed for peerdart)
   flutter_webrtc: ^0.12.9
-  msix: ^3.16.7
 
-msix_config:
-  display_name: Oxide Film
-  publisher_display_name: Edhases
-  identity_name: Edhases.OxideFilm
-  msix_version: 1.0.0.0
-  logo_path: assets/branding/icon_m3.png
-  store_logo_path: assets/branding/icon_m3.png
-  capabilities:
-    - internetClient
-    - internetClientServer
-    - privateNetworkClientServer
-  languages:
-    - en-US
-    - uk-UA
-
-# For information on the generic Dart part of this file, see the
-# following page: https://dart.dev/tools/pub/pubspec
-
-# The following section is specific to Flutter packages.
 flutter:
-
-  # The following line ensures that the Material Icons font is
-  # included with your application, so that you can use the icons in
-  # the material Icons class.
   uses-material-design: true
-
-  # To add assets to your application, add an assets section, like this:
   assets:
     - assets/images/
 

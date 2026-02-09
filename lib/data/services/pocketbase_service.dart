@@ -1,5 +1,4 @@
 import 'package:pocketbase/pocketbase.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/config/app_config.dart';
 import '../../core/utils/logger.dart';
@@ -11,51 +10,33 @@ class PocketBaseService {
   static const _authKey = 'pb_auth';
 
   late final PocketBase pb;
-  late final FlutterSecureStorage _storage;
 
   PocketBaseService(SharedPreferences prefs) {
-    _storage = const FlutterSecureStorage(
-      aOptions: AndroidOptions(encryptedSharedPreferences: true),
-    );
-
     // AsyncAuthStore automatically persists auth token
     final store = AsyncAuthStore(
       save: (String data) async {
-        await _storage.write(key: _authKey, value: data);
-        Logger.d('Auth token saved securely', tag: _tag);
+        await prefs.setString(_authKey, data);
+        Logger.d('Auth token saved (prefs)', tag: _tag);
+      },
+      clear: () async {
+        await prefs.remove(_authKey);
+        Logger.d('Auth token cleared (prefs)', tag: _tag);
       },
     );
 
     // Initialize PocketBase client
     pb = PocketBase(AppConfig.backendUrl, authStore: store);
 
-    // Load initial data and migrate if needed
-    _initStore(prefs);
-
-    Logger.i('PocketBase initialized: ${AppConfig.backendUrl}', tag: _tag);
-  }
-
-  Future<void> _initStore(SharedPreferences prefs) async {
-    // 1. Check secure storage first
-    String? data = await _storage.read(key: _authKey);
-
-    // 2. Migration from SharedPreferences
-    if (data == null) {
-      final oldData = prefs.getString(_authKey);
-      if (oldData != null) {
-        Logger.i('Migrating auth token to secure storage', tag: _tag);
-        await _storage.write(key: _authKey, value: oldData);
-        await prefs.remove(_authKey);
-        data = oldData;
-      }
-    }
-
+    // Load initial data
+    final data = prefs.getString(_authKey);
     if (data != null) {
       pb.authStore.save(data, null); // Load into memory store
       if (isAuthenticated) {
         Logger.i('Found existing auth: $userEmail', tag: _tag);
       }
     }
+
+    Logger.i('PocketBase initialized: ${AppConfig.backendUrl}', tag: _tag);
   }
 
   // Quick access properties
