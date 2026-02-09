@@ -1,7 +1,7 @@
 name: oxide_film
 description: "Cross-platform media parser for movies, series, cartoons & anime"
 publish_to: 'none'
-version: 20260208.0.0+20260208
+version: 26.2.9+0
 
 environment:
   sdk: ^3.10.7
@@ -101,19 +101,17 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   mocktail: ^1.0.4
   flutter_launcher_icons: ^0.14.4
+  msix: ^3.16.1
+
+msix_config:
+  display_name: Oxide Film
+  publisher_display_name: Oxide
+  identity_name: com.oxide.film
+  publisher: CN=Oxide
+  logo_path: logoapp.png
+  languages: en-US, uk-UA
+  install_certificate: false
   
-  # Code generation
-  build_runner: ^2.11.0
-  json_serializable: ^6.12.0
-  injectable_generator: ^2.12.0
-  drift_dev: ^2.31.0
-
-  http: any
-  path_provider_platform_interface: any
-dependency_overrides:
-  # Fix for Flutter 3.29 removing Registrar API (needed for peerdart)
-  flutter_webrtc: ^0.12.9
-
 flutter:
   uses-material-design: true
   assets:
@@ -144,3 +142,6 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+dependency_overrides:
+  flutter_webrtc: 0.12.12+hotfix.1
