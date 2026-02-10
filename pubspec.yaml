@@ -1,7 +1,7 @@
 name: oxide_film
 description: "Cross-platform media parser for movies, series, cartoons & anime"
 publish_to: 'none'
-version: 26.2.9+1
+version: 26.2.10+0
 
 environment:
   sdk: ^3.10.7
@@ -110,7 +110,7 @@ msix_config:
   publisher: CN=Oxide
   logo_path: logoapp.png
   languages: en-US, uk-UA
-  install_certificate: false
+  install_certificate: true
   
 flutter:
   uses-material-design: true
