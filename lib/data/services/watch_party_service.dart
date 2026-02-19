@@ -44,7 +44,7 @@ class WatchPartyMessage {
     this.senderName,
     this.payload,
     DateTime? timestamp,
-  }) : timestamp = timestamp ?? DateTime.now();
+  }) : timestamp = timestamp ?? DateTime.now().toUtc();
 
   factory WatchPartyMessage.fromJson(Map<String, dynamic> json) {
     return WatchPartyMessage(
@@ -58,8 +58,8 @@ class WatchPartyMessage {
       senderName: json['senderName'],
       payload: json['payload'],
       timestamp: json['timestamp'] != null
-          ? DateTime.parse(json['timestamp'])
-          : DateTime.now(),
+          ? DateTime.parse(json['timestamp']).toUtc()
+          : DateTime.now().toUtc(),
     );
   }
 
@@ -68,7 +68,7 @@ class WatchPartyMessage {
     'senderId': senderId,
     'senderName': senderName,
     'payload': payload,
-    'timestamp': timestamp.toIso8601String(),
+    'timestamp': timestamp.toUtc().toIso8601String(),
   };
 }
 
@@ -246,7 +246,9 @@ class _PocketBaseBackend implements WatchPartyBackend {
                   senderId: senderId ?? '',
                   senderName: record.data['sender_name'] as String?,
                   payload: record.data['payload'],
-                  timestamp: DateTime.parse(record.get<String>('created')),
+                  timestamp: DateTime.parse(
+                    record.get<String>('created'),
+                  ).toUtc(),
                 );
 
                 Logger.d('Received message: ${message.type.name}', tag: _tag);
@@ -384,18 +386,27 @@ class _PeerDartBackend implements WatchPartyBackend {
         Logger.d('Connecting to host: $hostId', tag: _tag);
 
         final conn = _peer!.connect(hostId);
-        // _hostConnection = conn;
         _connections.add(conn);
+
+        final connCompleter = Completer<void>();
 
         conn.on('open').listen((_) {
           Logger.d('Connected to host', tag: _tag);
-          // Send initial joint message immediately?
+          if (!connCompleter.isCompleted) connCompleter.complete();
+        });
+
+        // Timeout for connection
+        Future.delayed(const Duration(seconds: 15), () {
+          if (!connCompleter.isCompleted) {
+            connCompleter.completeError(Exception('Peer connection timeout'));
+          }
         });
 
         _setupConnection(conn, onMessage);
 
-        // Wait for connection to actually open?
-        // PeerDart connect returns connection immediately but it might not be open.
+        // Wait for connection to actually open before returning
+        // so that _send operations don't fire into a closed pipe
+        await connCompleter.future;
       }
 
       if (isHost) {
@@ -763,28 +774,23 @@ class WatchPartyService extends ChangeNotifier {
   // --------------------------------------------------------------------------
 
   void _onMessageReceived(WatchPartyMessage message) {
+    // Automatically add any unknown user to participants list
+    if (message.senderId != _myId &&
+        !_participants.any((p) => p.id == message.senderId)) {
+      _participants.add(
+        WatchPartyParticipant(
+          id: message.senderId,
+          name: message.senderName ?? 'Unknown',
+          isHost: _room != null && message.senderId == _room!.hostId,
+          joinedAt: DateTime.now(),
+        ),
+      );
+      notifyListeners();
+    }
+
     switch (message.type) {
       case WatchPartyMessageType.userJoined:
         Logger.d('User joined: ${message.senderName}', tag: _tag);
-
-        // Prevent duplicate participants
-        if (_participants.any((p) => p.id == message.senderId)) {
-          Logger.d(
-            'User ${message.senderName} already in list, skipping',
-            tag: _tag,
-          );
-          break;
-        }
-
-        _participants.add(
-          WatchPartyParticipant(
-            id: message.senderId,
-            name: message.senderName ?? 'Unknown',
-            isHost: false,
-            joinedAt: DateTime.now(),
-          ),
-        );
-        notifyListeners(); // Notify UI about new participant
 
         // Host sends sync to new user
         if (_isHost) {
@@ -879,8 +885,21 @@ class WatchPartyService extends ChangeNotifier {
     }
 
     // Account for network latency (estimate based on timestamp)
-    final networkDelay = DateTime.now().difference(hostTimestamp);
-    final adjustedHostPosition = hostPosition + networkDelay;
+    // Both timestamps must be UTC to avoid timezone differences causing massive drift
+    final nowUtc = DateTime.now().toUtc();
+    final networkDelay = nowUtc.difference(hostTimestamp);
+
+    // Clamp network delay to [0, 5000] ms.
+    // - If it's < 0, host clock is faster than client clock (impossible latency physically).
+    // - If it's > 5000, prevent huge jumps in case of offline buffering or lag.
+    Duration cappedDelay = networkDelay;
+    if (cappedDelay.inMilliseconds < 0) {
+      cappedDelay = Duration.zero;
+    } else if (cappedDelay.inMilliseconds > 5000) {
+      cappedDelay = const Duration(milliseconds: 5000);
+    }
+
+    final adjustedHostPosition = hostPosition + cappedDelay;
 
     _lastHostPosition = adjustedHostPosition;
     _lastSyncTime = DateTime.now();

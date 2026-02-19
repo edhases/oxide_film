@@ -325,7 +325,7 @@ class _CompactMenu extends StatelessWidget {
             _showSpeedSheet(context, controller);
             break;
           case 'settings':
-            // TODO: Implement Settings Sheet
+            _showMainSettingsSheet(context, controller);
             break;
           case 'fit':
             controller.cycleFit();
@@ -421,9 +421,7 @@ class _ExpandedMenu extends StatelessWidget {
           focusColor: Colors.white24,
           icon: Icon(Icons.settings, color: Colors.white, size: iconSize),
           tooltip: 'Налаштування',
-          onPressed: () {
-            // TODO: Settings
-          },
+          onPressed: () => _showMainSettingsSheet(context, controller),
         ),
         if (onEnterPiP != null)
           IconButton(
@@ -442,16 +440,6 @@ class _ExpandedMenu extends StatelessWidget {
           icon: Icon(Icons.aspect_ratio, color: Colors.white, size: iconSize),
           tooltip: 'Масштаб',
           onPressed: controller.cycleFit,
-        ),
-        IconButton(
-          focusColor: Colors.white24,
-          icon: Icon(
-            Icons.file_download_outlined,
-            color: Colors.white,
-            size: iconSize,
-          ),
-          tooltip: 'Завантажити',
-          onPressed: () => _showDownloadDialog(context, controller),
         ),
       ],
     );
@@ -1041,6 +1029,21 @@ void _showMainSettingsSheet(BuildContext context, PlayerController controller) {
             onTap: () {
               Navigator.pop(context);
               _showSpeedSheet(context, controller);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.file_download_outlined),
+            title: const Text('Завантажити'),
+            enabled:
+                !(controller.isOffline ||
+                    (controller.state.currentUrl.startsWith('file') ||
+                        controller.state.currentUrl.toLowerCase().startsWith(
+                          'c:',
+                        ) ||
+                        controller.state.currentUrl.startsWith('/'))),
+            onTap: () {
+              Navigator.pop(context);
+              _showDownloadDialog(context, controller);
             },
           ),
           const SizedBox(height: 16),

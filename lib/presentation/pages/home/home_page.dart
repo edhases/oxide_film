@@ -392,35 +392,93 @@ class _HomePageState extends State<HomePage> {
                 onPressed: () => context.push('/search'),
                 tooltip: 'Пошук',
               ),
-              IconButton(
-                icon: const Icon(Icons.favorite_border),
-                onPressed: () => context.push('/favorites'),
-                tooltip: 'Обране',
-              ),
-              IconButton(
-                icon: const Icon(Icons.history),
-                onPressed: () => context.push('/history'),
-                tooltip: 'Історія',
-              ),
-              IconButton(
-                icon: const Icon(Icons.folder_open),
-                onPressed: _openLocalFile,
-                tooltip: AppStrings.of(context).openLocalFile,
-              ),
-              IconButton(
-                icon: const Icon(Icons.group_work),
-                onPressed: () => context.push('/watch-party'),
-                tooltip: 'Спільний перегляд',
-              ),
-              IconButton(
-                icon: const Icon(Icons.download),
-                onPressed: () => context.push('/downloads'),
-                tooltip: 'Завантаження',
-              ),
-              IconButton(
-                icon: const Icon(Icons.settings),
-                onPressed: () => context.push('/settings'),
-                tooltip: 'Налаштування',
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert),
+                tooltip: 'Більше',
+                onSelected: (value) {
+                  switch (value) {
+                    case 'favorites':
+                      context.push('/favorites');
+                      break;
+                    case 'history':
+                      context.push('/history');
+                      break;
+                    case 'local_file':
+                      _openLocalFile();
+                      break;
+                    case 'watch_party':
+                      context.push('/watch-party');
+                      break;
+                    case 'downloads':
+                      context.push('/downloads');
+                      break;
+                    case 'settings':
+                      context.push('/settings');
+                      break;
+                  }
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'favorites',
+                    child: Row(
+                      children: [
+                        Icon(Icons.favorite_border, size: 20),
+                        SizedBox(width: 8),
+                        Text('Обране'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'history',
+                    child: Row(
+                      children: [
+                        Icon(Icons.history, size: 20),
+                        SizedBox(width: 8),
+                        Text('Історія'),
+                      ],
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'local_file',
+                    child: Row(
+                      children: [
+                        const Icon(Icons.folder_open, size: 20),
+                        const SizedBox(width: 8),
+                        Text(AppStrings.of(context).openLocalFile),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'watch_party',
+                    child: Row(
+                      children: [
+                        Icon(Icons.group_work, size: 20),
+                        SizedBox(width: 8),
+                        Text('Спільний перегляд'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'downloads',
+                    child: Row(
+                      children: [
+                        Icon(Icons.download, size: 20),
+                        SizedBox(width: 8),
+                        Text('Завантаження'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'settings',
+                    child: Row(
+                      children: [
+                        Icon(Icons.settings, size: 20),
+                        SizedBox(width: 8),
+                        Text('Налаштування'),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

@@ -25,6 +25,7 @@ class _WatchPartyPageState extends State<WatchPartyPage> {
 
   bool _isInPlayer = false;
   bool _wasPlaying = false;
+  String? _lastMediaUrl;
 
   @override
   void initState() {
@@ -32,6 +33,7 @@ class _WatchPartyPageState extends State<WatchPartyPage> {
     _nameController = TextEditingController(text: _service.myName);
     _service.addListener(_onServiceChanged);
     _wasPlaying = _service.isPlaying;
+    _lastMediaUrl = _service.room?.mediaUrl;
     // Check initial state after build
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_service.isHost &&
@@ -56,23 +58,23 @@ class _WatchPartyPageState extends State<WatchPartyPage> {
   void _onServiceChanged() {
     setState(() {});
 
-    // Auto-navigate to player if playback starts and we are not host
+    final currentMediaUrl = _service.room?.mediaUrl;
+
+    // Auto-navigate to player if playback starts or media is newly set, and we are not host
     if (!_service.isHost &&
         _service.state == WatchPartyState.connected &&
-        _service.room?.mediaUrl != null) {
-      // If playing started (edge trigger) or we are playing and not in player
-      if (_service.isPlaying && (!_wasPlaying || !_isInPlayer)) {
-        // If we just backed out, _isInPlayer is false, _wasPlaying is true (from previous loop).
-        // If we want to force re-entry only on NEW play commands, check edge `_service.isPlaying && !_wasPlaying`.
-        // If we want to allow re-entry if the user just sits there, we might need a timeout or the "Join" button.
-        // Let's stick to edge trigger OR if it's playing and we aren't there (but be careful of loops).
+        currentMediaUrl != null) {
+      final startedPlaying = _service.isPlaying && !_wasPlaying;
+      final newMediaAssigned =
+          currentMediaUrl != _lastMediaUrl && _lastMediaUrl == null;
 
-        if (_service.isPlaying && !_wasPlaying) {
-          _enterPlayer();
-        }
+      if (!_isInPlayer && (startedPlaying || newMediaAssigned)) {
+        _enterPlayer();
       }
     }
+
     _wasPlaying = _service.isPlaying;
+    _lastMediaUrl = currentMediaUrl;
 
     // Auto-scroll chat
     if (_chatScrollController.hasClients) {
