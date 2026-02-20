@@ -9,6 +9,7 @@ import 'package:file_picker/file_picker.dart';
 import '../../../core/l10n/app_strings.dart';
 import '../../../data/providers/provider_registry.dart';
 import '../../../data/services/settings_service.dart';
+import '../../../core/services/version_service.dart';
 import '../../../data/services/auth_service.dart';
 import '../../../data/services/history_service.dart';
 import '../../../data/services/favorites_service.dart';
@@ -447,7 +448,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     SettingsTile(
                       icon: Icons.movie_filter,
                       title: _s.appName,
-                      value: '${_s.version} 1.0.0',
+                      value: '${_s.version} ${VersionService.versionName}',
                       onTap: () => _showAboutDialog(),
                     ),
                     SettingsTile(
@@ -459,8 +460,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     SettingsTile(
                       icon: Icons.update,
                       title: _s.checkForUpdates,
-                      value:
-                          '1.0.0', // Current version placeholder or fetch from PackageInfo
+                      value: VersionService.versionName,
                       onTap: () => UpdateDialog.show(context, _updateService),
                     ),
                   ],
@@ -818,7 +818,7 @@ class _SettingsPageState extends State<SettingsPage> {
     showAboutDialog(
       context: context,
       applicationName: _s.appName,
-      applicationVersion: '1.0.0',
+      applicationVersion: VersionService.versionName,
       applicationLegalese: '© 2026 Open Source',
       applicationIcon: Container(
         width: 64,

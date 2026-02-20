@@ -262,7 +262,7 @@ class HistoryService extends ChangeNotifier {
           .subscribe(
             '*',
             (e) => _handleRealtimeEvent(e),
-            filter: 'userId = "${user.id}"',
+            filter: 'user_id = "${user.id}"',
           );
 
       debugPrint('[History] ✓ Subscribed to realtime updates');
@@ -425,8 +425,10 @@ class HistoryService extends ChangeNotifier {
         'user_id': userId,
         'media_id': mediaId,
         'provider_id': providerId,
-        'title': localItem.title,
-        'poster_url': localItem.posterUrl,
+        'title': localItem.title.isEmpty ? 'Unknown' : localItem.title,
+        'poster_url': (localItem.posterUrl?.startsWith('http') ?? false)
+            ? localItem.posterUrl
+            : null,
         'year': localItem.year,
         'media_type': localItem.mediaType,
         'position_ms': localItem.positionMs,
@@ -434,7 +436,10 @@ class HistoryService extends ChangeNotifier {
         'season': season,
         'episode': episode,
         'episode_title': localItem.episodeTitle,
-        'last_stream_url': localItem.lastStreamUrl,
+        'last_stream_url':
+            (localItem.lastStreamUrl?.startsWith('http') ?? false)
+            ? localItem.lastStreamUrl
+            : null,
         'voiceover': localItem.voiceover,
         'watched_at': localItem.watchedAt.toIso8601String(),
       };

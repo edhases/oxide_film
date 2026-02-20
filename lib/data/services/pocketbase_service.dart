@@ -7,11 +7,15 @@ import '../../core/utils/logger.dart';
 /// Handles authentication and provides access to PocketBase client
 class PocketBaseService {
   static const _tag = 'PocketBaseService';
-  static const _authKey = 'pb_auth';
+  static const _authKey =
+      'oxide_pb_auth'; // Changed from pb_auth to avoid Admin UI conflict
 
   late final PocketBase pb;
 
   PocketBaseService(SharedPreferences prefs) {
+    // Load initial data
+    final initialData = prefs.getString(_authKey);
+
     // AsyncAuthStore automatically persists auth token
     final store = AsyncAuthStore(
       save: (String data) async {
@@ -22,18 +26,14 @@ class PocketBaseService {
         await prefs.remove(_authKey);
         Logger.d('Auth token cleared (prefs)', tag: _tag);
       },
+      initial: initialData,
     );
 
     // Initialize PocketBase client
     pb = PocketBase(AppConfig.backendUrl, authStore: store);
 
-    // Load initial data
-    final data = prefs.getString(_authKey);
-    if (data != null) {
-      pb.authStore.save(data, null); // Load into memory store
-      if (isAuthenticated) {
-        Logger.i('Found existing auth: $userEmail', tag: _tag);
-      }
+    if (isAuthenticated) {
+      Logger.i('Found existing auth: $userEmail', tag: _tag);
     }
 
     Logger.i('PocketBase initialized: ${AppConfig.backendUrl}', tag: _tag);
@@ -122,7 +122,7 @@ class PocketBaseService {
       Logger.d('External auths response: $response', tag: _tag);
       return [];
     } catch (e) {
-      Logger.e('Failed to list external auths', tag: _tag, error: e);
+      Logger.d('Failed to list external auths (ignoring error)', tag: _tag);
       return [];
     }
   }

@@ -4,6 +4,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'core/di/injection.dart';
+import 'core/services/version_service.dart';
 import 'core/utils/logger.dart';
 import 'data/providers/provider_registry.dart';
 import 'data/services/auth_service.dart';
@@ -17,6 +18,9 @@ void main() async {
 
   // Initialize dependency injection
   await configureDependencies();
+
+  // Initialize VersionService
+  await VersionService.init();
 
   // Proactively refresh auth session in background
   _refreshAuthSession();

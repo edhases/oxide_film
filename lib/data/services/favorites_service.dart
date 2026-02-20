@@ -145,15 +145,15 @@ class FavoritesService extends ChangeNotifier {
 
       final records = await _pocketBase.pb
           .collection('favorites')
-          .getFullList(filter: 'userId = "${user.id}"');
+          .getFullList(filter: 'user_id = "${user.id}"');
 
       debugPrint('[Favorites] Found ${records.length} cloud favorites');
 
       // Merge with local favorites (newer timestamp wins)
       for (final record in records) {
         final cloudData = record.data;
-        final mediaId = cloudData['mediaId'] as String;
-        final providerId = cloudData['providerId'] as String;
+        final mediaId = cloudData['media_id'] as String;
+        final providerId = cloudData['provider_id'] as String;
 
         // Check if exists locally
         final localExists = await _dao.isFavorite(mediaId, providerId);
@@ -164,9 +164,9 @@ class FavoritesService extends ChangeNotifier {
             mediaId: mediaId,
             providerId: providerId,
             title: cloudData['title'] as String,
-            posterUrl: cloudData['posterUrl'] as String?,
+            posterUrl: cloudData['poster_url'] as String?,
             year: cloudData['year'] as int?,
-            mediaType: cloudData['mediaType'] as String,
+            mediaType: cloudData['media_type'] as String,
           );
         }
       }
@@ -190,7 +190,7 @@ class FavoritesService extends ChangeNotifier {
           .subscribe(
             '*',
             (e) => _handleRealtimeEvent(e),
-            filter: 'userId = "${user.id}"',
+            filter: 'user_id = "${user.id}"',
           );
 
       Logger.d('✓ Subscribed to realtime updates', tag: 'Favorites');
@@ -306,18 +306,20 @@ class FavoritesService extends ChangeNotifier {
             .collection('favorites')
             .getFullList(
               filter:
-                  'userId = "${user.id}" && mediaId = "${fav.mediaId}" && providerId = "${fav.providerId}"',
+                  'user_id = "${user.id}" && media_id = "${fav.mediaId}" && provider_id = "${fav.providerId}"',
             );
 
         final data = {
-          'userId': user.id,
-          'mediaId': fav.mediaId,
-          'providerId': fav.providerId,
-          'title': fav.title,
-          'posterUrl': fav.posterUrl,
+          'user_id': user.id,
+          'media_id': fav.mediaId,
+          'provider_id': fav.providerId,
+          'title': fav.title.isEmpty ? 'Unknown' : fav.title,
+          'poster_url': (fav.posterUrl?.startsWith('http') ?? false)
+              ? fav.posterUrl
+              : null,
           'year': fav.year,
-          'mediaType': fav.mediaType,
-          'addedAt': fav.addedAt.toIso8601String(),
+          'media_type': fav.mediaType,
+          'added_at': fav.addedAt.toIso8601String(),
         };
 
         if (existing.isEmpty) {
@@ -333,7 +335,7 @@ class FavoritesService extends ChangeNotifier {
             .collection('favorites')
             .getFullList(
               filter:
-                  'userId = "${user.id}" && mediaId = "${fav.mediaId}" && providerId = "${fav.providerId}"',
+                  'user_id = "${user.id}" && media_id = "${fav.mediaId}" && provider_id = "${fav.providerId}"',
             );
 
         for (final record in existing) {

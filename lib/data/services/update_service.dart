@@ -4,12 +4,12 @@ import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:injectable/injectable.dart';
 import 'package:open_filex/open_filex.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../core/utils/logger.dart';
 import '../../domain/entities/entities.dart';
+import '../../core/services/version_service.dart';
 import 'settings_service.dart';
 
 /// Result of an update check
@@ -30,10 +30,9 @@ class UpdateService {
 
   /// Get current app version code
   Future<int> getCurrentVersionCode() async {
-    final packageInfo = await PackageInfo.fromPlatform();
-    final versionCode = int.tryParse(packageInfo.buildNumber) ?? 0;
+    final versionCode = VersionService.versionCode;
     Logger.d(
-      'Current app: ${packageInfo.version}+${packageInfo.buildNumber} (code: $versionCode)',
+      'Current app: ${VersionService.versionName} (code: $versionCode)',
       tag: _tag,
     );
     return versionCode;
@@ -41,8 +40,7 @@ class UpdateService {
 
   /// Get current app version name
   Future<String> getCurrentVersionName() async {
-    final packageInfo = await PackageInfo.fromPlatform();
-    return packageInfo.version;
+    return VersionService.versionName;
   }
 
   /// Check for available updates
@@ -111,6 +109,13 @@ class UpdateService {
 
       Logger.d('App is up to date', tag: _tag);
       return (UpdateCheckResult.upToDate, null);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) {
+        Logger.d('No update.json found (404), assuming up to date', tag: _tag);
+        return (UpdateCheckResult.upToDate, null);
+      }
+      Logger.e('Error checking for updates', tag: _tag, error: e);
+      return (UpdateCheckResult.error, null);
     } catch (e) {
       Logger.e('Error checking for updates', tag: _tag, error: e);
       return (UpdateCheckResult.error, null);
